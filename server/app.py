@@ -70,6 +70,7 @@ from server.routers import (
     tasks,
     usage,
     versions,
+    workflows,
 )
 from server.routers import auth as auth_router
 from server.services.project_events import ProjectEventService
@@ -585,6 +586,7 @@ app.include_router(
     tags=["助手会话"],
 )
 app.include_router(tasks.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["任务队列"])
+app.include_router(workflows.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["Shotwise Flow"])
 app.include_router(providers.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["供应商管理"])
 app.include_router(system_config.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["系统配置"])
 app.include_router(system.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["系统"])

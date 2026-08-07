@@ -1,4 +1,13 @@
 MESSAGES = {
+    "workflow_not_found": "Workflow {id} was not found",
+    "workflow_revision_not_found": "Workflow revision {id} was not found",
+    "workflow_run_not_found": "Workflow run {id} was not found",
+    "workflow_input_invalid": "The workflow input is invalid ({reason})",
+    "workflow_cycle_detected": "The workflow contains a dependency cycle",
+    "workflow_invalid_transition": "The {entity} cannot move from {status} to {target}",
+    "workflow_revision_immutable": "Workflow revision {id} is {status} and cannot be changed",
+    "workflow_revision_not_published": "Workflow revision {id} is not published",
+    "workflow_version_conflict": "The workflow changed: expected version {expected}, current version {actual}",
     "project_not_found": "Project '{name}' does not exist or is not initialized",
     "resource_not_found": "The requested resource does not exist",
     "overview_ai_response_invalid": "The AI response could not be parsed into a project overview. Please retry or switch to a different model/provider",

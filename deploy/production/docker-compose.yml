@@ -15,8 +15,8 @@ services:
       timeout: 5s
       retries: 5
 
-  arcreel:
-    image: ghcr.io/arcreel/arcreel:latest
+  shotwise-app:
+    image: ghcr.io/ghc4412/shotwise:latest
     ports:
       - "1241:1241"
     env_file: .env

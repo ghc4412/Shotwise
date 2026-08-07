@@ -4,8 +4,7 @@
 //
 // Source code references BRAND.name (or the [[brand]] placeholder in i18n
 // resources) so the displayed product name is not hardcoded across files.
-// Defaults preserve the upstream brand; downstream distributions can override
-// via frontend/.env without code changes.
+// Downstream distributions can override these defaults via frontend/.env.
 
 const env = import.meta.env as Record<string, string | undefined>;
 
@@ -18,11 +17,11 @@ function fallback(value: string | undefined, defaultValue: string): string {
 }
 
 export const BRAND = {
-  name: fallback(env.VITE_BRAND_NAME, "ArcReel"),
-  tagline: fallback(env.VITE_BRAND_TAGLINE, "AI 视频创作工作台"),
+  name: fallback(env.VITE_BRAND_NAME, "Shotwise"),
+  tagline: fallback(env.VITE_BRAND_TAGLINE, "AI 漫剧生产平台"),
   description: fallback(
     env.VITE_BRAND_DESCRIPTION,
-    "AI 视频创作工作台，统一管理项目、剧本、分镜、视频生成与助手对话。",
+    "逐镜 AI 漫剧生产平台，统一管理剧本、生产流程、分镜、渲染资产与智能体协作。",
   ),
 } as const;
 

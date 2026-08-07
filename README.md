@@ -1,16 +1,9 @@
 <h1 align="center">
-  <br>
-  <picture>
-    <source media="(prefers-color-scheme: light)" srcset="frontend/public/android-chrome-maskable-512x512.png">
-    <source media="(prefers-color-scheme: dark)" srcset="frontend/public/android-chrome-512x512.png">
-    <img src="frontend/public/android-chrome-maskable-512x512.png" alt="ArcReel Logo" width="128" style="border-radius: 16px;">
-  </picture>
-  <br>
-  ArcReel
+  Shotwise
   <br>
 </h1>
 
-<h4 align="center">开源 AI 视频生成工作台 — 从小说到短视频，全程 AI Agent 驱动</h4>
+<h4 align="center">逐镜 AI 漫剧生产平台 — 从剧本版本到成片交付，全程可追踪</h4>
 
 <p align="center">
   <a href="README.md"><img src="https://img.shields.io/badge/lang-中文-red?style=flat-square" alt="中文"></a>
@@ -19,13 +12,13 @@
 
 <p align="center">
   <a href="#快速开始"><img src="https://img.shields.io/badge/Quick_Start-blue?style=for-the-badge" alt="Quick Start"></a>
-  <a href="https://github.com/ArcReel/ArcReel/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-green?style=for-the-badge" alt="License"></a>
-  <a href="https://github.com/ArcReel/ArcReel"><img src="https://img.shields.io/github/stars/ArcReel/ArcReel?style=for-the-badge" alt="Stars"></a>
-  <a href="https://github.com/ArcReel/ArcReel/pkgs/container/arcreel"><img src="https://img.shields.io/badge/Docker-ghcr.io-blue?style=for-the-badge&logo=docker" alt="Docker"></a>
-  <a href="https://github.com/ArcReel/ArcReel/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/ArcReel/ArcReel/test.yml?style=for-the-badge&label=Tests" alt="Tests"></a>
-  <a href="https://codecov.io/gh/ArcReel/ArcReel"><img src="https://img.shields.io/codecov/c/github/ArcReel/ArcReel?style=for-the-badge&label=Coverage" alt="Coverage"></a>
-  <a href="https://github.com/ArcReel/ArcReel/security/code-scanning"><img src="https://img.shields.io/github/actions/workflow/status/ArcReel/ArcReel/codeql.yml?style=for-the-badge&label=CodeQL" alt="CodeQL"></a>
-  <a href="https://github.com/ArcReel/ArcReel/releases/latest"><img src="https://img.shields.io/github/v/release/ArcReel/ArcReel?style=for-the-badge&label=Release" alt="Release"></a>
+  <a href="https://github.com/ghc4412/Shotwise/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-green?style=for-the-badge" alt="License"></a>
+  <a href="https://github.com/ghc4412/Shotwise"><img src="https://img.shields.io/github/stars/ghc4412/Shotwise?style=for-the-badge" alt="Stars"></a>
+  <a href="https://github.com/ghc4412/Shotwise/pkgs/container/shotwise"><img src="https://img.shields.io/badge/Docker-ghcr.io-blue?style=for-the-badge&logo=docker" alt="Docker"></a>
+  <a href="https://github.com/ghc4412/Shotwise/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/ghc4412/Shotwise/test.yml?style=for-the-badge&label=Tests" alt="Tests"></a>
+  <a href="https://codecov.io/gh/ghc4412/Shotwise"><img src="https://img.shields.io/codecov/c/github/ghc4412/Shotwise?style=for-the-badge&label=Coverage" alt="Coverage"></a>
+  <a href="https://github.com/ghc4412/Shotwise/security/code-scanning"><img src="https://img.shields.io/github/actions/workflow/status/ghc4412/Shotwise/codeql.yml?style=for-the-badge&label=CodeQL" alt="CodeQL"></a>
+  <a href="https://github.com/ghc4412/Shotwise/releases/latest"><img src="https://img.shields.io/github/v/release/ghc4412/Shotwise?style=for-the-badge&label=Release" alt="Release"></a>
 </p>
 
 <p align="center">
@@ -41,7 +34,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/hero-screenshot.png" alt="ArcReel 工作台" width="800">
+  <img src="docs/assets/hero-screenshot.png" alt="Shotwise Studio 工作台" width="800">
 </p>
 
 ---
@@ -73,6 +66,12 @@ Web UI 管理项目、预览素材、版本回滚、实时 SSE 任务追踪，�
 </tr>
 </table>
 
+## Shotwise Flow
+
+工作流按 `Definition → Revision → Run → Node Run → Item → Task → External Execution` 分层保存。发布后的 revision 不可修改，运行时通过输入指纹去重、乐观版本和 fencing token 防止重复提交与旧 worker 回写；数据库事件日志提供可回放游标，Studio 的「生产流程」页面可查看节点状态并控制运行。
+
+首版已落地工作流契约、状态机、API、数据表和 Studio 验收流程，后续能力将在此基础上增量演进。
+
 ## 工作流程
 
 ```mermaid
@@ -96,8 +95,8 @@ graph TD
 ### 默认部署（SQLite）
 
 ```bash
-git clone https://github.com/ArcReel/ArcReel.git
-cd ArcReel/deploy
+git clone https://github.com/ghc4412/Shotwise.git
+cd Shotwise/deploy
 cp .env.example .env
 docker compose up -d
 # 访问 http://localhost:1241
@@ -106,14 +105,14 @@ docker compose up -d
 ### 生产部署（PostgreSQL）
 
 ```bash
-cd ArcReel/deploy/production
+cd Shotwise/deploy/production
 cp .env.example .env    # 需设置 POSTGRES_PASSWORD
 docker compose up -d
 ```
 
 首次启动后，使用默认账号登录（用户名 `admin`，密码在 `.env` 中通过 `AUTH_PASSWORD` 设置；未设置则首次启动时自动生成并回写到 `.env`），前往 **设置页**（`/app/settings`）完成配置：
 
-1. **ArcReel 智能体** — 配置驱动 AI 助手的供应商凭据，支持 Anthropic 官方及多种兼容供应商，自定义 Base URL 与模型
+1. **Shotwise Agent** — 配置驱动 AI 助手的供应商凭据，支持 Anthropic 官方及多种兼容供应商，自定义 Base URL 与模型
 2. **AI 生图/生视频/生文本** — 配置至少一个供应商的 API Key（Gemini / 火山方舟 / Grok / OpenAI / Vidu / 阿里百炼 / MiniMax / 可灵），或添加自定义供应商
 
 > 📖 详细步骤请参考 [完整入门教程](docs/getting-started.md)
@@ -144,7 +143,7 @@ docker compose up -d
 
 ## 供应商支持
 
-ArcReel 通过统一的 `ImageBackend` / `VideoBackend` / `TextBackend` 协议，支持多个预置供应商和自定义供应商，可在全局或项目级别切换：
+Shotwise 通过统一的 `ImageBackend` / `VideoBackend` / `TextBackend` 协议，支持多个预置供应商和自定义供应商，可在全局或项目级别切换：
 
 ### 图片供应商
 
@@ -203,7 +202,7 @@ ArcReel 通过统一的 `ImageBackend` / `VideoBackend` / `TextBackend` 协议�
 
 ## AI 助手架构
 
-ArcReel 的 AI 助手基于 Claude Agent SDK 构建，采用**编排 Skill + 聚焦 Subagent** 的多智能体架构：
+Shotwise Agent 基于 Claude Agent SDK 构建，采用**编排 Skill + 聚焦 Subagent** 的多智能体架构：
 
 ```mermaid
 flowchart TD
@@ -229,10 +228,10 @@ flowchart TD
 
 ## OpenClaw 集成
 
-ArcReel 支持通过 [OpenClaw](https://openclaw.ai) 等外部 AI Agent 平台调用，实现自然语言驱动的视频创作：
+Shotwise 支持通过 [OpenClaw](https://openclaw.ai) 等外部 AI Agent 平台调用，实现自然语言驱动的视频创作：
 
-1. 在 ArcReel 设置页生成 API Key（`arc-` 前缀）
-2. 在 OpenClaw 中加载 ArcReel 的 Skill 定义（访问 `http://your-domain/skill.md` 自动获取）
+1. 在 Shotwise 设置页生成 API Key（兼容原有 `arc-` 前缀）
+2. 在 OpenClaw 中加载 Shotwise 的 Skill 定义（访问 `http://your-domain/skill.md` 自动获取）
 3. 通过 OpenClaw 对话即可创建项目、生成剧本、制作视频
 
 技术实现：API Key 认证（Bearer Token）+ 同步 Agent 对话端点（`POST /api/v1/agent/chat`），内部对接 SSE 流式助手并收集完整响应返回。
@@ -304,7 +303,7 @@ uv run pre-commit install
 本项目采用 [GNU Affero 通用公共许可证 v3.0 (AGPL-3.0)](./LICENSE) 授权，
 附加条款见 [NOTICE](./NOTICE)。
 
-Copyright © 2026 Pollo3470 and ArcReel contributors
+Copyright © 2026 Pollo3470, ArcReel contributors, and Shotwise contributors
 
 如果您所在组织的政策不允许使用 AGPL-3.0 许可的软件，或您希望在不承担
 AGPL-3.0 开源义务的前提下商用本项目，请联系：[support@arc-reel.com](mailto:support@arc-reel.com)

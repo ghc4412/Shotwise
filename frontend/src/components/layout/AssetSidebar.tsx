@@ -13,6 +13,7 @@ import {
   Plus,
   Search,
   ShoppingBag,
+  Workflow,
 } from "lucide-react";
 import { useProjectsStore } from "@/stores/projects-store";
 import { useCostStore } from "@/stores/cost-store";
@@ -91,6 +92,9 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
 
   const navItems: NavItem[] = [
     { key: "overview", path: "/", label: t("dashboard:workspace_nav_overview"), icon: LayoutDashboard },
+    ...(demoMode
+      ? []
+      : [{ key: "flow", path: "/flow", label: t("dashboard:workspace_nav_flow"), icon: Workflow }]),
     // 演示项目没有可切片的源文件，且后端不存在该项目，隐藏入口而非渲染必然报错的空页
     ...(demoMode
       ? []

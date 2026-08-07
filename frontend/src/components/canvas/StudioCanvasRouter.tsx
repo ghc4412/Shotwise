@@ -9,6 +9,7 @@ import {
   WORKSPACE_ROUTE_SCENES,
   WORKSPACE_ROUTE_PROPS,
   WORKSPACE_ROUTE_PRODUCTS,
+  WORKSPACE_ROUTE_FLOW,
 } from "@/app-routes";
 import { useTranslation } from "react-i18next";
 import { useProjectsStore } from "@/stores/projects-store";
@@ -32,6 +33,7 @@ import { ReferenceVideoCanvas } from "./reference/ReferenceVideoCanvas";
 import { AdReferenceVideoCanvas } from "./reference/AdReferenceVideoCanvas";
 import { GridImageToVideoCanvas } from "./grid/GridImageToVideoCanvas";
 import { EpisodeSourceReview } from "./EpisodeSourceReview";
+import { FlowMonitor } from "./flow/FlowMonitor";
 import { API } from "@/api";
 import {
   enqueueCharacter,
@@ -591,6 +593,10 @@ export function StudioCanvasRouter() {
       <Route path={`/${WORKSPACE_ROUTE_SOURCE}`}>
         {/* 演示项目没有源文件、后端也不存在该项目；侧栏已隐藏该入口，这里再兜底直接输入 URL 的情形 */}
         {demoMode ? <Redirect to="/" /> : <SourceFilesPage projectName={currentProjectName} />}
+      </Route>
+
+      <Route path={`/${WORKSPACE_ROUTE_FLOW}`}>
+        {demoMode ? <Redirect to="/" /> : <FlowMonitor projectName={currentProjectName} />}
       </Route>
 
       <Route path={`/${WORKSPACE_ROUTE_CHARACTERS}`}>

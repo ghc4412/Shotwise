@@ -1,4 +1,13 @@
 MESSAGES = {
+    "workflow_not_found": "Không tìm thấy quy trình {id}",
+    "workflow_revision_not_found": "Không tìm thấy phiên bản quy trình {id}",
+    "workflow_run_not_found": "Không tìm thấy lượt chạy quy trình {id}",
+    "workflow_input_invalid": "Đầu vào quy trình không hợp lệ ({reason})",
+    "workflow_cycle_detected": "Quy trình có vòng lặp phụ thuộc",
+    "workflow_invalid_transition": "{entity} không thể chuyển từ {status} sang {target}",
+    "workflow_revision_immutable": "Phiên bản quy trình {id} đang ở trạng thái {status} và không thể sửa",
+    "workflow_revision_not_published": "Phiên bản quy trình {id} chưa được phát hành",
+    "workflow_version_conflict": "Quy trình đã thay đổi: cần phiên bản {expected}, hiện tại là {actual}",
     "project_not_found": "Dự án '{name}' không tồn tại hoặc chưa được khởi tạo",
     "resource_not_found": "Tài nguyên được yêu cầu không tồn tại",
     "overview_ai_response_invalid": "Không thể phân tích phản hồi của AI thành tổng quan dự án, vui lòng thử lại hoặc đổi mô hình/nhà cung cấp",

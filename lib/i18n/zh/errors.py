@@ -1,4 +1,13 @@
 MESSAGES = {
+    "workflow_not_found": "工作流 {id} 不存在",
+    "workflow_revision_not_found": "工作流版本 {id} 不存在",
+    "workflow_run_not_found": "工作流运行 {id} 不存在",
+    "workflow_input_invalid": "工作流输入无效（{reason}）",
+    "workflow_cycle_detected": "工作流存在依赖环",
+    "workflow_invalid_transition": "{entity} 不能从 {status} 转为 {target}",
+    "workflow_revision_immutable": "工作流版本 {id} 已处于 {status} 状态，不能修改",
+    "workflow_revision_not_published": "工作流版本 {id} 尚未发布",
+    "workflow_version_conflict": "工作流已变化：预期版本 {expected}，当前版本 {actual}",
     "project_not_found": "项目 '{name}' 不存在或未初始化",
     "resource_not_found": "请求的资源不存在",
     "overview_ai_response_invalid": "AI 返回内容无法解析为项目概述，请重试或更换模型/供应商",

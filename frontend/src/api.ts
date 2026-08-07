@@ -59,6 +59,9 @@ import type {
   NarrationStep1Draft,
   ReferenceStep1Draft,
   VideoCapabilities,
+  WorkflowEvent,
+  WorkflowRunDetail,
+  WorkflowRunSummary,
 } from "@/types";
 import type { GenerationRoute } from "@/utils/generation-mode";
 import type { GridGeneration } from "@/types/grid";
@@ -2518,6 +2521,88 @@ class API {
       `/projects/${encodeURIComponent(projectName)}/reference-videos/episodes/${episode}/derive-units`,
       { method: "POST" },
     );
+  }
+
+  // ==================== Shotwise Flow ====================
+
+  static async listWorkflowRuns(
+    projectName: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<{ items: WorkflowRunSummary[] }> {
+    return this.request(`/projects/${encodeURIComponent(projectName)}/workflow-runs`, {
+      signal: options?.signal,
+    });
+  }
+
+  static async getWorkflowRun(
+    runId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<WorkflowRunDetail> {
+    return this.request(`/workflow-runs/${encodeURIComponent(runId)}`, {
+      signal: options?.signal,
+    });
+  }
+
+  static async listWorkflowEvents(
+    projectName: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<{ items: WorkflowEvent[]; cursor: number }> {
+    return this.request(`/projects/${encodeURIComponent(projectName)}/event-log?limit=200`, {
+      signal: options?.signal,
+    });
+  }
+
+  static async createWorkflowDefinition(projectName: string): Promise<{ id: string }> {
+    return this.request("/workflows", {
+      method: "POST",
+      body: JSON.stringify({
+        workspace_id: "default",
+        project_id: projectName,
+        name: `${projectName} production`,
+      }),
+    });
+  }
+
+  static async createWorkflowRevision(
+    definitionId: string,
+    body: Record<string, unknown>,
+  ): Promise<{ id: string }> {
+    return this.request(`/workflows/${encodeURIComponent(definitionId)}/revisions`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  static async publishWorkflowRevision(revisionId: string): Promise<{ id: string }> {
+    return this.request(`/workflow-revisions/${encodeURIComponent(revisionId)}/publish`, {
+      method: "POST",
+    });
+  }
+
+  static async planWorkflowRun(
+    revisionId: string,
+    projectName: string,
+  ): Promise<{ id: string; version: number }> {
+    return this.request(`/workflow-revisions/${encodeURIComponent(revisionId)}/runs`, {
+      method: "POST",
+      body: JSON.stringify({
+        workspace_id: "default",
+        project_id: projectName,
+        mode: "hybrid",
+        input_snapshot: { project_id: projectName },
+      }),
+    });
+  }
+
+  static async transitionWorkflowRun(
+    runId: string,
+    action: "start" | "pause" | "resume" | "cancel",
+    expectedVersion: number,
+  ): Promise<{ id: string; status: string; version: number }> {
+    return this.request(`/workflow-runs/${encodeURIComponent(runId)}/${action}`, {
+      method: "POST",
+      body: JSON.stringify({ expected_version: expectedVersion }),
+    });
   }
 }
 
