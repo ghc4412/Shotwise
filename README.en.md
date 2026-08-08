@@ -92,13 +92,40 @@ graph TD
 
 > ⚠️ **OS**: Linux / macOS / WSL2 / Docker recommended. Native Windows can run project creation and basic flows, but POSIX-only isolation (Bash sandbox, bwrap) auto-degrades. For production, WSL2 or Docker Desktop is still recommended
 
+### Full WSL2 Runtime
+
+```bash
+git clone https://github.com/ghc4412/Shotwise.git ~/Shotwise
+cd ~/Shotwise
+cp .env.example .env
+uv sync
+uv run alembic upgrade head
+
+cd frontend
+pnpm install --frozen-lockfile
+```
+
+Start the backend and frontend in separate terminals, then open `http://localhost:5173` from Windows:
+
+```bash
+# Terminal 1
+cd ~/Shotwise
+uv run uvicorn server.app:app --reload --reload-dir server --reload-dir lib --host 0.0.0.0 --port 1241
+
+# Terminal 2
+cd ~/Shotwise/frontend
+pnpm dev --host 0.0.0.0
+```
+
+See the [WSL2 guide](docs/wsl2.md) for dependency installation, data locations, and sandbox checks.
+
 ### Default Deployment (SQLite)
 
 ```bash
 git clone https://github.com/ghc4412/Shotwise.git
 cd Shotwise/deploy
 cp .env.example .env
-docker compose up -d
+docker compose up -d --build
 # Visit http://localhost:1241
 ```
 
@@ -107,7 +134,7 @@ docker compose up -d
 ```bash
 cd Shotwise/deploy/production
 cp .env.example .env    # Set POSTGRES_PASSWORD
-docker compose up -d
+docker compose up -d --build
 ```
 
 After first launch, log in with the default account (username `admin`, password set via `AUTH_PASSWORD` in `.env`; if not set, it will be auto-generated and written back to `.env` on first startup). Then go to **Settings** (`/app/settings`) to complete configuration:

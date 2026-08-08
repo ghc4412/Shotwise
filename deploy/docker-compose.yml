@@ -1,7 +1,9 @@
 services:
   shotwise-app:
     image: ghcr.io/ghc4412/shotwise:latest
-    # build: ../  # 本地构建时取消注释，注释掉 image 行
+    # GHCR 尚无对应标签或服务器需要验证当前源码时，Compose 可回退到本地构建。
+    build:
+      context: ..
     ports:
       - "1241:1241"
     env_file: .env

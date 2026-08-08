@@ -92,13 +92,40 @@ graph TD
 
 > ⚠️ **操作系统**：推荐 Linux / macOS / WSL2 / Docker。Windows 原生可运行项目创建与基础流程，但 Bash 沙箱、bwrap 等 POSIX-only 隔离机制会自动降级，生产部署仍建议 WSL2 或 Docker Desktop
 
+### WSL2 完整功能运行
+
+```bash
+git clone https://github.com/ghc4412/Shotwise.git ~/Shotwise
+cd ~/Shotwise
+cp .env.example .env
+uv sync
+uv run alembic upgrade head
+
+cd frontend
+pnpm install --frozen-lockfile
+```
+
+后端和前端分别启动；Windows 浏览器访问 `http://localhost:5173`：
+
+```bash
+# 终端 1
+cd ~/Shotwise
+uv run uvicorn server.app:app --reload --reload-dir server --reload-dir lib --host 0.0.0.0 --port 1241
+
+# 终端 2
+cd ~/Shotwise/frontend
+pnpm dev --host 0.0.0.0
+```
+
+完整的 WSL2 依赖安装、数据位置和沙箱检查见 [WSL2 运行指南](docs/wsl2.md)。
+
 ### 默认部署（SQLite）
 
 ```bash
 git clone https://github.com/ghc4412/Shotwise.git
 cd Shotwise/deploy
 cp .env.example .env
-docker compose up -d
+docker compose up -d --build
 # 访问 http://localhost:1241
 ```
 
@@ -107,7 +134,7 @@ docker compose up -d
 ```bash
 cd Shotwise/deploy/production
 cp .env.example .env    # 需设置 POSTGRES_PASSWORD
-docker compose up -d
+docker compose up -d --build
 ```
 
 首次启动后，使用默认账号登录（用户名 `admin`，密码在 `.env` 中通过 `AUTH_PASSWORD` 设置；未设置则首次启动时自动生成并回写到 `.env`），前往 **设置页**（`/app/settings`）完成配置：

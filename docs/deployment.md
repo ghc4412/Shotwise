@@ -1,10 +1,12 @@
 # 部署补充说明
 
-本文档补充 [`getting-started.md`](getting-started.md) 未覆盖的部署细节，主要面向已经能够通过 Docker / 本地启动 ArcReel 的运维与开发者。
+本文档补充 [`getting-started.md`](getting-started.md) 未覆盖的部署细节，主要面向已经能够通过 Docker / 本地启动 Shotwise 的运维与开发者。
+
+Windows 用户需要完整 Agent 功能时，请先按 [`wsl2.md`](wsl2.md) 将代码和运行数据放入 WSL2 的 Linux 文件系统。服务器继续使用 `deploy/`（SQLite）或 `deploy/production/`（PostgreSQL）的 Docker Compose 配置。
 
 ## Agent 沙箱依赖
 
-ArcReel 启动会进行严格的安全检查 — sandbox 工具缺失即拒绝启动。
+Shotwise 启动会进行严格的安全检查：sandbox 工具缺失即拒绝启动。
 
 | 环境 | 工具 | 安装 |
 |---|---|---|

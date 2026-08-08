@@ -17,6 +17,9 @@ services:
 
   shotwise-app:
     image: ghcr.io/ghc4412/shotwise:latest
+    # 保留 GHCR 镜像部署，同时允许首次发布前从当前源码构建。
+    build:
+      context: ../..
     ports:
       - "1241:1241"
     env_file: .env
