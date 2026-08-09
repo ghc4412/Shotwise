@@ -1,8 +1,8 @@
-# 视频生成服务层设计文档
+﻿# 视频生成服务层设计文档
 
 ## 背景
 
-当前 ArcReel 的视频生成逻辑与 Google Gemini (Veo) 深度耦合。`GeminiClient`（1400+ 行）同时封装图片和视频生成，`MediaGenerator` 直接依赖它。随着 Seedance 等供应商的接入需求，需要提取通用的视频生成服务抽象层，实现供应商可插拔。
+当前 SHOTWISE 的视频生成逻辑与 Google Gemini (Veo) 深度耦合。`GeminiClient`（1400+ 行）同时封装图片和视频生成，`MediaGenerator` 直接依赖它。随着 Seedance 等供应商的接入需求，需要提取通用的视频生成服务抽象层，实现供应商可插拔。
 
 **关联 Issue**: #98（提取通用视频/图片生成服务层）、#99（视频层）、#42（Seedance 接入）
 

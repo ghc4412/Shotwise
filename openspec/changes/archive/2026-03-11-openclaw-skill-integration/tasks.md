@@ -1,4 +1,4 @@
-## 1. 数据库层 — ApiKey 模型与迁移
+﻿## 1. 数据库层 — ApiKey 模型与迁移
 
 - [x] 1.1 创建 `lib/db/models/api_key.py` ORM 模型（id, name, key_hash, key_prefix, created_at, expires_at, last_used_at）
 - [x] 1.2 在 `lib/db/models/__init__.py` 中注册新模型
@@ -29,7 +29,7 @@
 
 ## 5. Skill 定义文件与动态渲染
 
-- [x] 5.1 创建 `public/skill.md.template`，参考 Zopia 格式编写 ArcReel Skill 定义，API URL 使用 `{{BASE_URL}}` 占位符
+- [x] 5.1 创建 `public/skill.md.template`，参考 Zopia 格式编写 SHOTWISE Skill 定义，API URL 使用 `{{BASE_URL}}` 占位符
 - [x] 5.2 创建 `GET /skill.md` 路由（无需认证），从请求 Host/scheme 推断 base URL，替换占位符后返回
 - [x] 5.3 验证不同部署地址下 `GET /skill.md` 返回正确的动态 URL
 

@@ -1,6 +1,6 @@
-# 完整入门教程
+﻿# 完整入门教程
 
-本教程指导你从零开始，使用 ArcReel 将小说转换为短视频。
+本教程指导你从零开始，使用 SHOTWISE 将小说转换为短视频。
 
 ## 你将学到
 
@@ -16,7 +16,7 @@
 
 ## 费用预估
 
-ArcReel 支持多个供应商（Gemini、火山方舟、Grok、OpenAI、Vidu、阿里百炼、MiniMax、可灵 及自定义供应商），以下以 Gemini 为例：
+SHOTWISE 支持多个供应商（Gemini、火山方舟、Grok、OpenAI、Vidu、阿里百炼、MiniMax、可灵 及自定义供应商），以下以 Gemini 为例：
 
 | 类型 | 模型 | 单价 | 说明 |
 |------|------|------|------|
@@ -31,7 +31,7 @@ ArcReel 支持多个供应商（Gemini、火山方舟、Grok、OpenAI、Vidu、�
 > - 视频：80 秒 × $0.12（Fast 模式）= $9.60
 > - **总计约 $11**
 
-> 其他供应商费用请参考各自官方定价页面，ArcReel 在设置页提供实时费用追踪。
+> 其他供应商费用请参考各自官方定价页面，SHOTWISE 在设置页提供实时费用追踪。
 
 ---
 
@@ -39,7 +39,7 @@ ArcReel 支持多个供应商（Gemini、火山方舟、Grok、OpenAI、Vidu、�
 
 ### 1.1 获取图片/视频生成供应商 API 密钥
 
-ArcReel 支持多个供应商，**至少配置一个**即可开始使用：
+SHOTWISE 支持多个供应商，**至少配置一个**即可开始使用：
 
 | 供应商 | 获取地址 | 说明 |
 |--------|---------|------|
@@ -58,7 +58,7 @@ ArcReel 支持多个供应商，**至少配置一个**即可开始使用：
 
 ### 1.2 获取 Anthropic API 密钥
 
-ArcReel 内置基于 Claude Agent SDK 的 AI 助手，负责剧本创作、智能对话引导等关键环节。
+SHOTWISE 内置基于 Claude Agent SDK 的 AI 助手，负责剧本创作、智能对话引导等关键环节。
 
 **方式 A：使用 Anthropic 官方 API**
 
@@ -104,8 +104,8 @@ docker compose version
 
 ```bash
 # 1. 克隆项目
-git clone https://github.com/ArcReel/ArcReel.git
-cd ArcReel/deploy
+git clone https://github.com/ghc4412/Shotwise.git
+cd SHOTWISE/deploy
 
 # 2. 创建环境变量文件
 cp .env.example .env
@@ -117,7 +117,7 @@ docker compose up -d
 #### 方式 B：生产部署（PostgreSQL，推荐正式使用）
 
 ```bash
-cd ArcReel/deploy/production
+cd SHOTWISE/deploy/production
 
 # 创建环境变量文件（需设置 POSTGRES_PASSWORD）
 cp .env.example .env
@@ -268,7 +268,7 @@ AI 根据剧本生成每个场景的静态图片，自动引用角色和线索�
 恭喜你完成了入门教程！接下来你可以：
 
 - 💰 查看 [Google GenAI 费用说明](google-genai-docs/pricing.md) 和 [火山方舟费用说明](ark-docs/火山方舟费用参考.md) 了解详细定价
-- 🐛 遇到问题？提交 [Issue](https://github.com/ArcReel/ArcReel/issues) 反馈
+- 🐛 遇到问题？提交 [Issue](https://github.com/ghc4412/Shotwise/issues) 反馈
 - 💬 扫码加入飞书交流群，获取帮助和最新动态：
 
 <img src="assets/feishu-qr.png" alt="飞书交流群二维码" width="280">

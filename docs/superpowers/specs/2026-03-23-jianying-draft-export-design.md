@@ -1,4 +1,4 @@
-# 剪映草稿导出功能设计
+﻿# 剪映草稿导出功能设计
 
 **日期**：2026-03-23
 **状态**：已确认
@@ -7,7 +7,7 @@
 
 ## 概述
 
-将 ArcReel 单集已生成的视频片段导出为剪映（JianYing）草稿文件，用户解压到本地剪映草稿目录后，在剪映中直接打开进行二次编辑（字幕、转场、特效等）。
+将 SHOTWISE 单集已生成的视频片段导出为剪映（JianYing）草稿文件，用户解压到本地剪映草稿目录后，在剪映中直接打开进行二次编辑（字幕、转场、特效等）。
 
 ### 设计目标
 
@@ -29,7 +29,7 @@
 
 ## 技术选型
 
-**pyJianYingDraft**（`pyjianyingdraft>=0.2.6`）：2800+ Star 的成熟社区库，API 简洁，pip 可安装，与 ArcReel Python 后端一致。系统依赖 `mediainfo`（Docker 中需 `apt-get install`）。
+**pyJianYingDraft**（`pyjianyingdraft>=0.2.6`）：2800+ Star 的成熟社区库，API 简洁，pip 可安装，与 SHOTWISE Python 后端一致。系统依赖 `mediainfo`（Docker 中需 `apt-get install`）。
 
 ---
 
@@ -146,7 +146,7 @@ if content_mode == "narration":
   - Windows: `C:\Users\你的用户名\AppData\Local\JianyingPro\User Data\Projects\com.lveditor.draft`
   - macOS: `/Users/你的用户名/Movies/JianyingPro/User Data/Projects/com.lveditor.draft`
 - 输入框下方提示：*"请填入剪映草稿目录的完整路径。打开剪映 → 设置 → 草稿位置 可查看。"*
-- `localStorage` key `arcreel_jianying_draft_path` 缓存，有缓存时优先回填（优先级高于 placeholder）
+- `localStorage` key `SHOTWISE_jianying_draft_path` 缓存，有缓存时优先回填（优先级高于 placeholder）
 
 #### 3. 导出按钮
 

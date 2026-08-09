@@ -1,4 +1,4 @@
-# 全局资产库 + Clue 重构 实现计划
+﻿# 全局资产库 + Clue 重构 实现计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -266,7 +266,7 @@ sa.UniqueConstraint("type", "name", name="uq_asset_type_name"),
 
 ```bash
 uv run alembic upgrade head
-uv run python -c "import sqlite3; c = sqlite3.connect('projects/.arcreel.db'); print(c.execute('SELECT sql FROM sqlite_master WHERE name=\"assets\"').fetchone())"
+uv run python -c "import sqlite3; c = sqlite3.connect('projects/.SHOTWISE.db'); print(c.execute('SELECT sql FROM sqlite_master WHERE name=\"assets\"').fetchone())"
 ```
 
 Expected: 输出 CREATE TABLE assets 的 DDL，包含 UNIQUE(type, name)
@@ -1012,7 +1012,7 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_startup_invokes_migrations(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
 
     with patch("lib.project_migrations.run_project_migrations") as mock_run, \
          patch("lib.project_migrations.cleanup_stale_backups") as mock_cleanup:
@@ -1247,7 +1247,7 @@ git commit -m "refactor(validator): 删 importance；scenes/props 独立校验"
 
 ```python
 def test_add_scene_creates_entry(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
     from lib.project_manager import ProjectManager
     pm = ProjectManager()
     pm.create_project("demo", "Demo")
@@ -1259,7 +1259,7 @@ def test_add_scene_creates_entry(tmp_path, monkeypatch):
 
 
 def test_add_prop_creates_entry(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
     from lib.project_manager import ProjectManager
     pm = ProjectManager()
     pm.create_project("demo", "Demo")
@@ -1269,7 +1269,7 @@ def test_add_prop_creates_entry(tmp_path, monkeypatch):
 
 
 def test_get_pending_scenes_lists_without_sheet(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
     from lib.project_manager import ProjectManager
     pm = ProjectManager()
     pm.create_project("demo", "Demo")
@@ -1568,7 +1568,7 @@ from server.app import app
 
 @pytest.mark.asyncio
 async def test_add_scene(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
     from lib.project_manager import get_project_manager, reset_project_manager
     reset_project_manager()
     pm = get_project_manager()
@@ -1592,7 +1592,7 @@ async def test_add_scene(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_update_scene(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
     from lib.project_manager import get_project_manager, reset_project_manager
     reset_project_manager()
     pm = get_project_manager()
@@ -1607,7 +1607,7 @@ async def test_update_scene(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_delete_scene(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
     from lib.project_manager import get_project_manager, reset_project_manager
     reset_project_manager()
     pm = get_project_manager()
@@ -1920,7 +1920,7 @@ async def _clean_assets_table():
 
 @pytest.mark.asyncio
 async def test_create_and_list(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post("/api/v1/assets", data={
             "type": "character", "name": "王小明", "description": "白衣少年",
@@ -1937,7 +1937,7 @@ async def test_create_and_list(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_duplicate_type_name_returns_409(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         await c.post("/api/v1/assets", data={"type": "prop", "name": "玉佩"})
         r = await c.post("/api/v1/assets", data={"type": "prop", "name": "玉佩"})
@@ -1946,7 +1946,7 @@ async def test_duplicate_type_name_returns_409(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_patch_and_delete(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post("/api/v1/assets", data={"type": "scene", "name": "A"})
         aid = r.json()["asset"]["id"]
@@ -2168,7 +2168,7 @@ git commit -m "feat(api): assets 路由基础 CRUD + 上传"
 ```python
 @pytest.mark.asyncio
 async def test_replace_image(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post("/api/v1/assets", data={"type": "scene", "name": "A"})
         aid = r.json()["asset"]["id"]
@@ -2184,7 +2184,7 @@ async def test_replace_image(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_from_project_copies_image(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
     from lib.project_manager import get_project_manager, reset_project_manager
     reset_project_manager()
     pm = get_project_manager()
@@ -2210,7 +2210,7 @@ async def test_from_project_copies_image(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_from_project_conflict_409(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
     from lib.project_manager import get_project_manager, reset_project_manager
     reset_project_manager()
     pm = get_project_manager()
@@ -2368,7 +2368,7 @@ git commit -m "feat(api): assets 图片替换 + from-project 入库 + 冲突处�
 ```python
 @pytest.mark.asyncio
 async def test_apply_to_project_success_and_skip_rename_overwrite(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
     from lib.project_manager import get_project_manager, reset_project_manager
     reset_project_manager()
     pm = get_project_manager()
@@ -2509,7 +2509,7 @@ git commit -m "feat(api): assets apply-to-project 批量 + 冲突策略"
 ```python
 @pytest.mark.asyncio
 async def test_serve_global_asset_image(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
     from lib.project_manager import get_project_manager, reset_project_manager
     reset_project_manager()
     pm = get_project_manager()
@@ -2526,7 +2526,7 @@ async def test_serve_global_asset_image(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_global_asset_path_traversal_rejected(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARCREEL_PROJECTS_DIR", str(tmp_path))
+    monkeypatch.setenv("SHOTWISE_PROJECTS_DIR", str(tmp_path))
     from httpx import AsyncClient, ASGITransport
     from server.app import app
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:

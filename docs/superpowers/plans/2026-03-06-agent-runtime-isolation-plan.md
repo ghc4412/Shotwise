@@ -1,4 +1,4 @@
-# Agent Runtime 双向隔离 Implementation Plan
+﻿# Agent Runtime 双向隔离 Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -102,7 +102,7 @@ git commit -m "refactor: migrate business skills/agents to agent_runtime_profile
 
 ## 项目概述
 
-这是 ArcReel 视频生成平台。详细架构和开发指南见 `CLAUDE.local.md`。
+这是 SHOTWISE 视频生成平台。详细架构和开发指南见 `CLAUDE.local.md`。
 
 ## 智能体运行环境
 
@@ -771,7 +771,7 @@ COPY agent_runtime_profile/ agent_runtime_profile/
 **Step 2: 验证构建**
 
 ```bash
-docker build -t arcreel-test --target production . 2>&1 | tail -5
+docker build -t SHOTWISE-test --target production . 2>&1 | tail -5
 ```
 
 Expected: build succeeds

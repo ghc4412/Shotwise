@@ -1,4 +1,4 @@
-## 1. 设计阶段（使用 /frontend-design）
+﻿## 1. 设计阶段（使用 /frontend-design）
 
 - [x] 1.1 使用 `/frontend-design` 技能设计顶栏四 Tab 的视觉样式（含圆点徽标、Tab 激活态）
 - [x] 1.2 使用 `/frontend-design` 技能设计 `TabSaveFooter` 组件的两种状态：正常嵌入态（禁用）和 sticky 高亮态（有未保存变更）
@@ -12,7 +12,7 @@
 
 ## 3. 配置 Tab 组件
 
-- [x] 3.1 创建 `AgentConfigTab` 组件（ArcReel 智能体配置），内部维护 Anthropic 相关字段的草稿状态，底部嵌入 `TabSaveFooter`
+- [x] 3.1 创建 `AgentConfigTab` 组件（SHOTWISE 智能体配置），内部维护 Anthropic 相关字段的草稿状态，底部嵌入 `TabSaveFooter`
 - [x] 3.2 创建 `MediaConfigTab` 组件（AI 生图/生视频配置），内部维护 Gemini/Vertex 相关字段的草稿状态，底部嵌入 `TabSaveFooter`
 - [x] 3.3 创建 `AdvancedConfigTab` 组件（高级配置），内部维护限速/并发字段的草稿状态，底部嵌入 `TabSaveFooter`
 - [x] 3.4 每个配置 Tab 组件实现 `isDirty` 检测（`deepEqual` 比较草稿与已保存值的 `useRef`）

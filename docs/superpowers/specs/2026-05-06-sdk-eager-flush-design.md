@@ -1,4 +1,4 @@
-# SDK 0.1.73 升级 + eager session_store_flush 接入设计
+﻿# SDK 0.1.73 升级 + eager session_store_flush 接入设计
 
 **日期**：2026-05-06
 **状态**：设计稿（待用户复核）
@@ -6,7 +6,7 @@
 
 ## 背景
 
-当前 ArcReel 使用 `claude-agent-sdk` 0.1.72，transcript 写入默认 **batched flush**：一轮 turn 完整结束才把全部 entries 一次性写入 `DbSessionStore`。这意味着 **turn 进行中** DB 里没有这一轮的任何记录。
+当前 SHOTWISE 使用 `claude-agent-sdk` 0.1.72，transcript 写入默认 **batched flush**：一轮 turn 完整结束才把全部 entries 一次性写入 `DbSessionStore`。这意味着 **turn 进行中** DB 里没有这一轮的任何记录。
 
 `server/agent_runtime/session_manager.py` 的 SSE 推送依赖 `ManagedSession.message_buffer`（in-memory，cap=100，stream_event 优先驱逐）+ `subscribe(replay_buffer=True)` 给重连客户端 replay。结果：
 
@@ -41,7 +41,7 @@
 | 决策项 | 结论 |
 |---|---|
 | SDK 版本 | `claude-agent-sdk>=0.1.73` |
-| flush 模式 | 默认 `eager`，env `ARCREEL_SDK_SESSION_STORE_FLUSH=batched` 紧急回退 |
+| flush 模式 | 默认 `eager`，env `SHOTWISE_SDK_SESSION_STORE_FLUSH=batched` 紧急回退 |
 | dedup 修复 | 修 `_is_buffer_duplicate`：echo 不仅查 transcript，也查同 buffer 内 sdk UserMessage（兜底 DB 慢于 buffer 的窗口） |
 | `message_buffer` 重构 | 不做（保留 cap=100 + replay；作为 follow-up 等多 worker 真做时一起改） |
 | 多 worker 跨进程实时推送 | 不在范围（C 场景留 follow-up） |
@@ -116,7 +116,7 @@ SSE reconnect (前端 reload)
 |---|---|
 | `pyproject.toml` | `claude-agent-sdk>=0.1.73` |
 | `uv.lock` | `uv lock --upgrade-package claude-agent-sdk` |
-| `lib/agent_session_store/__init__.py` | 新增 `session_store_flush_mode()`：解析 env `ARCREEL_SDK_SESSION_STORE_FLUSH`，返回 `"eager"` / `"batched"` |
+| `lib/agent_session_store/__init__.py` | 新增 `session_store_flush_mode()`：解析 env `SHOTWISE_SDK_SESSION_STORE_FLUSH`，返回 `"eager"` / `"batched"` |
 | `server/agent_runtime/session_manager.py` `_build_options` | `ClaudeAgentOptions(..., session_store_flush=session_store_flush_mode())` |
 | `server/agent_runtime/service.py` `_build_projector` | 增加 buffer pre-scan，把 `buffer_real_user_texts` 传给 dedup |
 | `server/agent_runtime/service.py` `_is_buffer_duplicate` | 签名加 `buffer_real_user_texts` 参数；echo dedup 链增加"撞上 buffer 内同文 sdk user"路径 |
@@ -208,18 +208,18 @@ dedup 增强**仅作用于 reconnect 重建路径**（`_build_projector`）。LI
 eager 模式下 append 调用频率从"每 turn 1 次"→"每完整 frame 1 次"。当前 `DbSessionStore.append` 已有 16 次 retry + 指数退避（针对 seq PK 竞争），SDK 内部还有 3 次 retry。仍失败时 SDK 发 `MirrorErrorMessage` 系统消息。
 
 **本期不主动处理 mirror_error**（与 `2026-05-01-sdk-session-store-design.md` §6.2 解耦）。生产部署后观察日志：
-- `arcreel.session_store` 出现 `append failed` ERROR → 收集统计
+- `SHOTWISE.session_store` 出现 `append failed` ERROR → 收集统计
 - 频率 > 阈值（待经验定）→ 启动 follow-up 实现 `MirrorErrorMessage` 在 `stream_projector` 中的告警 turn 渲染
 
 ### 4.2 慢 DB 时 SDK 自动 coalesce
 
-PR #905 描述：append 是 fire-and-forget + lock 串行化，慢时 frame 在 batcher 里合并。**ArcReel 不需要自己加节流逻辑**。
+PR #905 描述：append 是 fire-and-forget + lock 串行化，慢时 frame 在 batcher 里合并。**SHOTWISE 不需要自己加节流逻辑**。
 
 ### 4.3 多次 reconnect 重建开销
 
 eager 写入 + frontend 多次 reconnect：每次 reconnect 都要重建 projector + 拉 transcript。`_snapshot_cache` 仅缓存 terminal 会话（`status != "running"`），running 会话每次都重读 DB。
 
-ArcReel 当前规模可接受。若未来出现"频繁重连导致的 DB 读放大"，加 running 会话的短 TTL（~500ms）snapshot cache 即可。**不在本期**。
+SHOTWISE 当前规模可接受。若未来出现"频繁重连导致的 DB 读放大"，加 running 会话的短 TTL（~500ms）snapshot cache 即可。**不在本期**。
 
 ## §5 回滚开关
 
@@ -228,18 +228,18 @@ ArcReel 当前规模可接受。若未来出现"频繁重连导致的 DB 读放�
 import logging
 import os
 
-logger = logging.getLogger("arcreel.session_store")
+logger = logging.getLogger("SHOTWISE.session_store")
 
 _VALID_FLUSH_MODES = {"eager", "batched"}
 
 def session_store_flush_mode() -> str:
     """SDK ClaudeAgentOptions.session_store_flush 取值。"""
-    raw = os.getenv("ARCREEL_SDK_SESSION_STORE_FLUSH", "").strip().lower()
+    raw = os.getenv("SHOTWISE_SDK_SESSION_STORE_FLUSH", "").strip().lower()
     if raw == "batched":
         return "batched"
     if raw and raw not in _VALID_FLUSH_MODES:
         logger.warning(
-            "Unknown ARCREEL_SDK_SESSION_STORE_FLUSH=%r; defaulting to eager",
+            "Unknown SHOTWISE_SDK_SESSION_STORE_FLUSH=%r; defaulting to eager",
             raw,
         )
     return "eager"
@@ -256,7 +256,7 @@ return ClaudeAgentOptions(
 )
 ```
 
-回滚路径：`ARCREEL_SDK_SESSION_STORE_FLUSH=batched` 重启服务即可，**无代码改动 / 无数据迁移**。dedup 增强代码与 flush 模式正交（即使 batched 模式下也是更鲁棒的 dedup），不需要回滚。
+回滚路径：`SHOTWISE_SDK_SESSION_STORE_FLUSH=batched` 重启服务即可，**无代码改动 / 无数据迁移**。dedup 增强代码与 flush 模式正交（即使 batched 模式下也是更鲁棒的 dedup），不需要回滚。
 
 ## §6 测试矩阵
 
@@ -300,7 +300,7 @@ tests/agent_runtime/
     + test_flush_mode_passed_to_options_default
         — 默认环境下 ClaudeAgentOptions.session_store_flush == "eager"
     + test_flush_mode_passed_to_options_batched
-        — ARCREEL_SDK_SESSION_STORE_FLUSH=batched → "batched"
+        — SHOTWISE_SDK_SESSION_STORE_FLUSH=batched → "batched"
     + test_flush_mode_passed_to_options_when_store_off
         — store=off + flush 默认：session_store is None，flush 仍透传 "eager"
 
@@ -329,7 +329,7 @@ tests/agent_session_store/
 | 1 | `uv sync` 成功，`uv run python -c "from claude_agent_sdk import ClaudeAgentOptions; ClaudeAgentOptions(session_store_flush='eager')"` 不抛异常 |
 | 2 | `uv run python -m pytest tests/agent_runtime/` 全绿（含 §6 全部新测试） |
 | 3 | 默认启动（无 env）：`server/agent_runtime/session_manager.py` 透传 `session_store_flush="eager"` 到 `ClaudeAgentOptions`（unit test 验证） |
-| 4 | `ARCREEL_SDK_SESSION_STORE_FLUSH=batched` 启动 → 行为退化到 0.1.72 现状（unit test + 手动验证） |
+| 4 | `SHOTWISE_SDK_SESSION_STORE_FLUSH=batched` 启动 → 行为退化到 0.1.72 现状（unit test + 手动验证） |
 | 5 | 手动 reproduce：发消息 → 立即 reload → user 不消失 + 不双显 |
 | 6 | 手动 reproduce：长 turn 跑到 buffer 驱逐部分 stream_event → reload → assistant turn 主体可见（流式打字机细节缺失可接受） |
 | 7 | 手动 reproduce：发消息 → `kill -9 服务` → 重启 → 进会话 → 看到中断前的 partial transcript（会话状态 `interrupted`） |
@@ -362,4 +362,4 @@ tests/agent_session_store/
 - **`MirrorErrorMessage` 渲染**：在 `stream_projector` 中识别并转为前端可见的告警 turn
 - **Prometheus 指标**：`session_store.mirror_errors_total` / `session_store.append_p99_ms`
 - **LIVE 路径 R1 / R2 残留排查**：若手动复现仍能触发，单独 issue
-- **稳定后清理**：移除 `ARCREEL_SDK_SESSION_STORE_FLUSH=batched` 兜底分支
+- **稳定后清理**：移除 `SHOTWISE_SDK_SESSION_STORE_FLUSH=batched` 兜底分支

@@ -1,8 +1,8 @@
-## Context
+﻿## Context
 
 ### 现状
 
-ArcReel 的剧本创建流程中，`normalize_drama_script.py` 默认读取 `source/` 下所有文件拼接后传给 Gemini。对于短篇小说这没问题，但用户上传完整长篇小说时，无法指定"本集只用第 X 到第 Y 段"。`manga-workflow` 编排中虽然预留了"本集小说范围"参数位，但没有实际的切分机制。
+SHOTWISE 的剧本创建流程中，`normalize_drama_script.py` 默认读取 `source/` 下所有文件拼接后传给 Gemini。对于短篇小说这没问题，但用户上传完整长篇小说时，无法指定"本集只用第 X 到第 Y 段"。`manga-workflow` 编排中虽然预留了"本集小说范围"参数位，但没有实际的切分机制。
 
 ### 依赖关系
 

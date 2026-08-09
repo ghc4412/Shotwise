@@ -1,4 +1,4 @@
-## 1. 下载 Token 后端实现
+﻿## 1. 下载 Token 后端实现
 
 - [x] 1.1 在 `server/auth.py` 中添加 `create_download_token(username, project_name)` 和 `verify_download_token(token, project_name)` 函数
 - [x] 1.2 在 `server/routers/projects.py` 中添加 `POST /api/v1/projects/{name}/export/token` 端点，签发下载 token
@@ -12,7 +12,7 @@
 - [x] 2.2 修改 `server/services/project_archive.py` 的 `export_project` 方法，接受 `scope` 参数
 - [x] 2.3 实现 `scope=current` 逻辑：遍历目录时跳过 `versions/storyboards/`、`versions/videos/`、`versions/characters/`、`versions/clues/` 下的文件
 - [x] 2.4 实现 `scope=current` 时 `versions/versions.json` 裁剪逻辑：只保留每个资源的 current_version 条目
-- [x] 2.5 修改 `arcreel-export.json` 清单写入逻辑，`scope` 字段反映实际导出范围
+- [x] 2.5 修改 `SHOTWISE-export.json` 清单写入逻辑，`scope` 字段反映实际导出范围
 - [x] 2.6 为 scope 相关逻辑编写单元测试（`tests/test_project_archive_service.py` 补充）
 
 ## 3. 前端导出交互改造

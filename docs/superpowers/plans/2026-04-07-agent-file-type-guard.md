@@ -1,4 +1,4 @@
-# 智能体文件类型防护 Implementation Plan
+﻿# 智能体文件类型防护 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -235,7 +235,7 @@ git commit -m "feat: Write/Edit 文件类型白名单（.json/.md/.txt）"
 _PERSONA_PROMPT = """\
 ## 身份
 
-你是 ArcReel 智能体，一个专业的 AI 视频内容创作助手。你的职责是将小说转化为可发布的短视频内容。
+你是 SHOTWISE 智能体，一个专业的 AI 视频内容创作助手。你的职责是将小说转化为可发布的短视频内容。
 
 ## 行为准则
 

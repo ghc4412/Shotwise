@@ -1,10 +1,10 @@
-# SDK SessionStore 接入实现计划
+﻿# SDK SessionStore 接入实现计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 用 `claude-agent-sdk` 0.1.65 的 `SessionStore` 协议替换 `sdk_transcript_adapter.py` 对私有 `_internal._read_session_file` 的依赖，并把会话 transcript 镜像到项目数据库（dev SQLite / prod PG）。
 
-**Architecture:** 自定义 `DbSessionStore` 走 `lib/db/`；行级 `agent_session_entries` 表 + 一行/会话 `agent_session_summaries` 表（`fold_session_summary` 维护快路径）；`SessionStoreEntry` 由 SDK 在 ~100ms 节奏批量推送，单事务内取 seq + 部分唯一索引去重 + 行锁 fold summary；本地 jsonl 副本保留作兜底；启动钩子用 SDK 公开 `import_session_to_store(directory=cwd)` 一次性导入历史会话；环境变量 `ARCREEL_SDK_SESSION_STORE=off` 5 秒回滚。
+**Architecture:** 自定义 `DbSessionStore` 走 `lib/db/`；行级 `agent_session_entries` 表 + 一行/会话 `agent_session_summaries` 表（`fold_session_summary` 维护快路径）；`SessionStoreEntry` 由 SDK 在 ~100ms 节奏批量推送，单事务内取 seq + 部分唯一索引去重 + 行锁 fold summary；本地 jsonl 副本保留作兜底；启动钩子用 SDK 公开 `import_session_to_store(directory=cwd)` 一次性导入历史会话；环境变量 `SHOTWISE_SDK_SESSION_STORE=off` 5 秒回滚。
 
 **Tech Stack:** SQLAlchemy 2.x async + Alembic + claude-agent-sdk 0.1.71 + pytest-asyncio + FastAPI lifespan
 
@@ -523,7 +523,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from lib.agent_session_store.models import AgentSessionEntry, AgentSessionSummary
 from lib.db.base import DEFAULT_USER_ID, utc_now
 
-logger = logging.getLogger("arcreel.session_store")
+logger = logging.getLogger("SHOTWISE.session_store")
 
 
 def _normalize_key(key: dict) -> tuple[str, str, str]:
@@ -1456,7 +1456,7 @@ from claude_agent_sdk import (
 
 from lib.agent_session_store.store import DbSessionStore
 
-logger = logging.getLogger("arcreel.session_store.import")
+logger = logging.getLogger("SHOTWISE.session_store.import")
 
 MARKER_FILENAME = ".session_store_migration_done"
 
@@ -1558,7 +1558,7 @@ git commit -m "feat(session-store): startup migration via SDK public APIs"
 
 ```python
 # tests/agent_runtime/test_session_manager_store_injection.py
-"""SessionManager._build_session_store reads ARCREEL_SDK_SESSION_STORE."""
+"""SessionManager._build_session_store reads SHOTWISE_SDK_SESSION_STORE."""
 from __future__ import annotations
 
 import os
@@ -1571,7 +1571,7 @@ from server.agent_runtime.session_manager import SessionManager
 
 @pytest.mark.asyncio
 async def test_store_enabled_by_default(monkeypatch, session_factory, tmp_path):
-    monkeypatch.delenv("ARCREEL_SDK_SESSION_STORE", raising=False)
+    monkeypatch.delenv("SHOTWISE_SDK_SESSION_STORE", raising=False)
     sm = SessionManager(data_dir=tmp_path, projects_root=tmp_path)
     sm._session_factory = session_factory   # test seam
     store = sm._build_session_store()
@@ -1580,7 +1580,7 @@ async def test_store_enabled_by_default(monkeypatch, session_factory, tmp_path):
 
 @pytest.mark.asyncio
 async def test_store_off_returns_none(monkeypatch, session_factory, tmp_path):
-    monkeypatch.setenv("ARCREEL_SDK_SESSION_STORE", "off")
+    monkeypatch.setenv("SHOTWISE_SDK_SESSION_STORE", "off")
     sm = SessionManager(data_dir=tmp_path, projects_root=tmp_path)
     sm._session_factory = session_factory
     store = sm._build_session_store()
@@ -1611,7 +1611,7 @@ from lib.db.base import DEFAULT_USER_ID
 # in SessionManager class
 def _build_session_store(self):
     """Create a per-user DbSessionStore, or None if store mode is disabled."""
-    mode = os.getenv("ARCREEL_SDK_SESSION_STORE", "db")
+    mode = os.getenv("SHOTWISE_SDK_SESSION_STORE", "db")
     if mode == "off":
         return None
     factory = getattr(self, "_session_factory", None) or async_session_factory
@@ -1707,7 +1707,7 @@ class SdkTranscriptAdapter:
         if not sdk_session_id:
             return []
         if self._store is None:
-            # Roll-back path: ARCREEL_SDK_SESSION_STORE=off — fall through to
+            # Roll-back path: SHOTWISE_SDK_SESSION_STORE=off — fall through to
             # SDK's filesystem reader. Kept until store path soaks for 1-2
             # releases per design doc §4.4.
             return self._read_via_local_jsonl(sdk_session_id)
@@ -1751,7 +1751,7 @@ class SdkTranscriptAdapter:
             result["parent_tool_use_id"] = parent_tool_use_id
         return result
 
-    # --- legacy fallback (ARCREEL_SDK_SESSION_STORE=off) -------------------
+    # --- legacy fallback (SHOTWISE_SDK_SESSION_STORE=off) -------------------
 
     def _read_via_local_jsonl(self, sdk_session_id: str) -> list[dict[str, Any]]:
         """Use SDK public get_session_messages (filesystem) as fallback."""
@@ -2005,13 +2005,13 @@ try:
     await migrate_local_transcripts_to_store(
         store,
         projects_root=PROJECT_ROOT / "projects",
-        data_dir=PROJECT_ROOT / "projects" / ".arcreel_data",
+        data_dir=PROJECT_ROOT / "projects" / ".SHOTWISE_data",
     )
 except Exception:
     logger.exception("session-store transcript migration failed (non-fatal)")
 ```
 
-> data_dir 选址需与 ArcReel 当前 `.arcreel.db` 同级，确保 docker volume 自然带上；
+> data_dir 选址需与 SHOTWISE 当前 `.SHOTWISE.db` 同级，确保 docker volume 自然带上；
 > 如果项目已有约定的 data_dir 常量，直接复用。
 
 - [ ] **Step 3: 跑测试**
@@ -2131,7 +2131,7 @@ services:
     env:
       POSTGRES_USER: test
       POSTGRES_PASSWORD: test
-      POSTGRES_DB: arcreel_test
+      POSTGRES_DB: SHOTWISE_test
     options: >-
       --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     ports:
@@ -2140,7 +2140,7 @@ services:
 steps:
   - name: Set DATABASE_URL (postgres)
     if: matrix.db == 'postgres'
-    run: echo "DATABASE_URL=postgresql+asyncpg://test:test@localhost:5432/arcreel_test" >> $GITHUB_ENV
+    run: echo "DATABASE_URL=postgresql+asyncpg://test:test@localhost:5432/SHOTWISE_test" >> $GITHUB_ENV
   - name: Run session-store conformance (postgres)
     if: matrix.db == 'postgres'
     run: uv run alembic upgrade head && uv run python -m pytest tests/agent_session_store/ -v
@@ -2154,16 +2154,16 @@ steps:
 - [ ] **Step 3: 本地用 PG 验证一次 conformance**
 
 ```bash
-docker run --rm -d --name arcreel-pg-test -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test \
-  -e POSTGRES_DB=arcreel_test -p 5432:5432 postgres:16
+docker run --rm -d --name SHOTWISE-pg-test -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test \
+  -e POSTGRES_DB=SHOTWISE_test -p 5432:5432 postgres:16
 
-DATABASE_URL=postgresql+asyncpg://test:test@localhost:5432/arcreel_test \
+DATABASE_URL=postgresql+asyncpg://test:test@localhost:5432/SHOTWISE_test \
   uv run alembic upgrade head
 
-DATABASE_URL=postgresql+asyncpg://test:test@localhost:5432/arcreel_test \
+DATABASE_URL=postgresql+asyncpg://test:test@localhost:5432/SHOTWISE_test \
   uv run python -m pytest tests/agent_session_store/ -v
 
-docker stop arcreel-pg-test
+docker stop SHOTWISE-pg-test
 ```
 
 Expected: all pass under PG dialect。如有失败，常见原因：
@@ -2192,7 +2192,7 @@ git commit -m "ci: run session-store tests on sqlite + postgres matrix"
 | §3 load / list_sessions / delete / list_subkeys / list_session_summaries | Task 4, 7 |
 | §3 project_key（make_project_key wrapper） | Task 3 |
 | §4 调用面改造（session_manager / sdk_transcript_adapter / service.py） | Task 10, 11, 12 |
-| §4.3 环境变量回滚 ARCREEL_SDK_SESSION_STORE | Task 10 |
+| §4.3 环境变量回滚 SHOTWISE_SDK_SESSION_STORE | Task 10 |
 | §5 启动迁移（公开 API + marker + 单条容错） | Task 9, 14 |
 | §6.2 mirror_error system 消息识别 | Task 13 |
 | §6.3 日志规范 | Task 4–9（每个 store 方法都加了 logger.info/warning/error） |
@@ -2217,7 +2217,7 @@ git commit -m "ci: run session-store tests on sqlite + postgres matrix"
 ### 多 worker 并发锁
 
 Spec §5.4 第 6 条要求「config 表锁 + marker 双重保护」。本计划当前只实现了 marker，
-单 worker 部署足够。**多 worker 部署的额外锁留给 Task 17 增补**——但 ArcReel 当前
+单 worker 部署足够。**多 worker 部署的额外锁留给 Task 17 增补**——但 SHOTWISE 当前
 `uvicorn` 默认单 worker，不影响首期发布。如果你的部署确实是多 worker，请在 Task 14
 之后插入：
 

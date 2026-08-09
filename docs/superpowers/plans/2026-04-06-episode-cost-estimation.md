@@ -1,4 +1,4 @@
-# 单集费用估算 Implementation Plan
+﻿# 单集费用估算 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -60,7 +60,7 @@
 
 - [ ] **Step 3: 生成 Alembic migration**
 
-Run: `cd /Users/pollochen/MyProjects/ArcReel/.worktrees/feature/episode-cost-estimation && uv run alembic revision --autogenerate -m "add segment_id to api_calls"`
+Run: `cd /Users/pollochen/MyProjects/SHOTWISE/.worktrees/feature/episode-cost-estimation && uv run alembic revision --autogenerate -m "add segment_id to api_calls"`
 Expected: 生成新的 migration 文件
 
 - [ ] **Step 4: 应用 migration**

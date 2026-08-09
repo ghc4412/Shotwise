@@ -1,15 +1,15 @@
-# ArcReel 视频 API 协议适配调研报告
+﻿# SHOTWISE 视频 API 协议适配调研报告
 
 **调研截止日期**：2026-05-27
 **用途**：作为后续 PRD 与设计文档撰写的输入素材
 **作者**：协助调研（Claude）
-**关联背景**：ArcReel 视频供应商体系扩展、自定义供应商生态对接
+**关联背景**：SHOTWISE 视频供应商体系扩展、自定义供应商生态对接
 
 ---
 
 ## 0. 调研范围与定位
 
-本报告是**调研性质**的素材汇编，**不包含**具体的目录结构、Adapter 类设计、实施计划。这些内容应在后续 PRD 和设计文档阶段，基于 ArcReel 当前 `lib/video_backends/` + `lib/custom_provider/` 架构产出。
+本报告是**调研性质**的素材汇编，**不包含**具体的目录结构、Adapter 类设计、实施计划。这些内容应在后续 PRD 和设计文档阶段，基于 SHOTWISE 当前 `lib/video_backends/` + `lib/custom_provider/` 架构产出。
 
 调研覆盖的问题：
 1. 中转站视频 API 端口格式有哪些事实标准
@@ -21,20 +21,20 @@
 7. 运行时 plugin 机制的可行性与设计选项（支撑已规划的社区化协议分享功能）
 
 不在调研范围：
-- ArcReel 代码层面的目录组织 / 类继承 / 文件命名
+- SHOTWISE 代码层面的目录组织 / 类继承 / 文件命名
 - 数据库 schema 变更 / Alembic 迁移
 - 前端 UI 改动
 - 具体的实施时间线
 
 ---
 
-## 1. ArcReel 架构调研基线（重要：已对齐现状）
+## 1. SHOTWISE 架构调研基线（重要：已对齐现状）
 
 > 这一节是**理解后续调研结论的前提**，所有协议适配建议都必须套在这套架构上。
 
 ### 1.1 视频 backend 抽象层
 
-ArcReel 已在 `lib/video_backends/` 建立成熟的视频生成抽象：
+SHOTWISE 已在 `lib/video_backends/` 建立成熟的视频生成抽象：
 
 | 关键元素 | 位置 | 说明 |
 |---|---|---|
@@ -44,7 +44,7 @@ ArcReel 已在 `lib/video_backends/` 建立成熟的视频生成抽象：
 | `register_backend(name, factory)` | `lib/video_backends/registry.py` | 注册机制 |
 | 已有 backend 实现 | `gemini.py` / `ark.py` / `grok.py` / `openai.py` / `newapi.py` / `vidu.py` | 6 家供应商 |
 
-**ArcReel 词汇表约定**：用 **backend**（按 provider + model 构造、真正调用 API 的客户端对象）指代生成后端，术语表 `_Avoid` 标注避免使用 `adapter` 一词。其本质是 Ports & Adapters 范式中的 Adapter 角色，但 ArcReel 统称 backend 以保持与 provider 派生语义、frontend 对仗、三套媒体后端的命名一致（与 SQLAlchemy / Django 用 backend 命名同类角色的惯例一致）。架构对齐的讨论见 9.1。
+**SHOTWISE 词汇表约定**：用 **backend**（按 provider + model 构造、真正调用 API 的客户端对象）指代生成后端，术语表 `_Avoid` 标注避免使用 `adapter` 一词。其本质是 Ports & Adapters 范式中的 Adapter 角色，但 SHOTWISE 统称 backend 以保持与 provider 派生语义、frontend 对仗、三套媒体后端的命名一致（与 SQLAlchemy / Django 用 backend 命名同类角色的惯例一致）。架构对齐的讨论见 9.1。
 
 ### 1.2 自定义供应商体系
 
@@ -82,7 +82,7 @@ ArcReel 已在 `lib/video_backends/` 建立成熟的视频生成抽象：
 
 ### 1.4 协议绑定到模型级别（架构决策）
 
-ArcReel 已在 `2026-04-26-custom-provider-model-endpoint-design` 中明确确认：
+SHOTWISE 已在 `2026-04-26-custom-provider-model-endpoint-design` 中明确确认：
 
 > 一个中转站 = 一个 provider；同一个 provider 下不同模型可以走完全不同的协议；
 > 协议归属下沉到模型层（`CustomProviderModel.endpoint` 字段）；
@@ -102,7 +102,7 @@ ArcReel 已在 `2026-04-26-custom-provider-model-endpoint-design` 中明确确�
 **形态**：multipart/form-data 或 JSON
 **参数**：`model` + `prompt` + `seconds`（字符串）+ `size`（"1280x720"）+ `input_reference`
 **鉴权**：`Authorization: Bearer`
-**代表实例**：OpenAI 官方、AiHubMix、七牛云 sora 路径、Wisdom Gate、Azure OpenAI、ArcReel 已有 `openai-video` endpoint
+**代表实例**：OpenAI 官方、AiHubMix、七牛云 sora 路径、Wisdom Gate、Azure OpenAI、SHOTWISE 已有 `openai-video` endpoint
 
 **关键事实**：
 - OpenAI 官方公告 **Sora 2 / Sora 2 Pro 将于 2026-09-24 退役**（developer notification 2026-03-24 发出）
@@ -115,7 +115,7 @@ ArcReel 已在 `2026-04-26-custom-provider-model-endpoint-design` 中明确确�
 **形态**：纯 JSON
 **参数**：`model` + `prompt` + `image` + `duration`（数字）+ `width`/`height` + `metadata`（对象）
 **鉴权**：`Authorization: Bearer`
-**代表实例**：所有基于 NewAPI / OneAPI 部署的中转站（DMXAPI、closeai、burn.hair 等数十家）；ArcReel 已有 `newapi-video` endpoint
+**代表实例**：所有基于 NewAPI / OneAPI 部署的中转站（DMXAPI、closeai、burn.hair 等数十家）；SHOTWISE 已有 `newapi-video` endpoint
 
 **关键事实**：
 - `metadata{}` 字段是 vendor-specific 透传的黑盒（NewAPI 文档明确列出的只有 Kling 的 `image_tail`/`negative_prompt`/`seed` 和 Jimeng 的 `req_key`/`image_urls`/`aspect_ratio`，其他完全靠中转站中间件）
@@ -142,7 +142,7 @@ ArcReel 已在 `2026-04-26-custom-provider-model-endpoint-design` 中明确确�
 - 例：同一端点下 Kling 接 `cfg_scale` / `negative_prompt` / `image_url` / `last_image_url`；Veo 3.1 接 `image_urls[]`；Seedance 接 `reference_images[]` / `reference_audios[]` / `reference_videos[]` / `generate_audio`；Sora 接 `resolution` / `image_url`
 - model 命名碎片化严重：AIMLAPI 用 `kling-video/v1/standard/text-to-video`，APIMart 用 `sora-2-vip`，getimg.ai 用 `happyhorse-1`（自有品牌名）
 - **被很多中转站采用**，是流派 B 之外的主流事实标准
-- 在 ArcReel 当前 ENDPOINT_REGISTRY 中**尚未覆盖**
+- 在 SHOTWISE 当前 ENDPOINT_REGISTRY 中**尚未覆盖**
 
 ### 2.4 流派 D：动词 create/submit 风格
 
@@ -172,7 +172,7 @@ ArcReel 已在 `2026-04-26-custom-provider-model-endpoint-design` 中明确确�
 
 ## 3. 主流官方视频平台 API 调研
 
-### 3.1 已被 ArcReel 接入的平台
+### 3.1 已被 SHOTWISE 接入的平台
 
 | 平台 | 当前状态 | 协议归属 | 备注 |
 |---|---|---|---|
@@ -389,11 +389,11 @@ ArcReel 已在 `2026-04-26-custom-provider-model-endpoint-design` 中明确确�
 
 ## 6. 协议优先级建议
 
-> 优先级评分维度（每项 1-5）：中转站生态覆盖度 / 模型能力覆盖 / 文档完整性 / 实现复杂度（越简单越高）/ 长期稳定性 / ArcReel 网文场景需求度
+> 优先级评分维度（每项 1-5）：中转站生态覆盖度 / 模型能力覆盖 / 文档完整性 / 实现复杂度（越简单越高）/ 长期稳定性 / SHOTWISE 网文场景需求度
 
 ### 6.1 已实现协议（保持）
 
-| 协议 | ArcReel endpoint | 状态 | 备注 |
+| 协议 | SHOTWISE endpoint | 状态 | 备注 |
 |---|---|---|---|
 | OpenAI Sora 兼容 | `openai-video` | ✅ 已实现 | 注意 2026-09-24 deprecation |
 | NewAPI 自有 | `newapi-video` | ✅ 已实现 | metadata 透传需扩展 vendor 映射表 |
@@ -433,7 +433,7 @@ ArcReel 已在 `2026-04-26-custom-provider-model-endpoint-design` 中明确确�
 |---|---|
 | 字节即梦 Jimeng 直连 | 火山 SigV4 签名复杂度极高；建议走中转层（流派 B/C 普遍代理） |
 | PiAPI 单独适配 | 与 Kie.ai 重叠度高，覆盖到 P1 即可 |
-| Replicate predictions | ArcReel 用户群体重叠度低 |
+| Replicate predictions | SHOTWISE 用户群体重叠度低 |
 | Together AI | 同上 |
 
 ---
@@ -448,10 +448,10 @@ ArcReel 已在 `2026-04-26-custom-provider-model-endpoint-design` 中明确确�
 |---|---|---|---|
 | 协议覆盖率 | 100%（兜底） | 50-60%（JWT/SigV4/multipart/两步流程无法表达） | plugin |
 | 接入难度 | 写 backend 类 + 测试 | 写 YAML + 调试模板 | 表面打平，实际 plugin 更易调试 |
-| ArcReel 维护成本 | 每个 backend 独立，已有体系 | 需要新增 Jinja2 + JSONPath + state mapping + probe + 文档 | plugin（重大优势） |
+| SHOTWISE 维护成本 | 每个 backend 独立，已有体系 | 需要新增 Jinja2 + JSONPath + state mapping + probe + 文档 | plugin（重大优势） |
 | 调试体验 | 标准 Python traceback | YAML schema 错误 / 模板渲染错误 / 字段路径错误 | plugin 大胜 |
 | AI 辅助代码生成 | Cursor/Claude Code 30 秒出完整 backend | 需要先理解自创 YAML schema | plugin（2024+ 关键反转） |
-| ArcReel 用户画像匹配度 | 全员开发者，会 Python | 适合非程序员 | plugin |
+| SHOTWISE 用户画像匹配度 | 全员开发者，会 Python | 适合非程序员 | plugin |
 
 ### 7.2 关键决策依据
 
@@ -468,11 +468,11 @@ ArcReel 已在 `2026-04-26-custom-provider-model-endpoint-design` 中明确确�
 9. OpenAI Sora 内容下载分 variants（`?variant=video|thumbnail|spritesheet`）
 10. PiAPI 状态码非标（外层字符串 + 内层 `output.status: 99` 整数）
 
-**声明式 YAML 能覆盖的场景**正好是 ArcReel 已经在 V1 内置 backend 里覆盖的（NewAPI、OpenAI 兼容、Kie.ai 等纯 JSON in/out 流派），用户用声明式接入的动机被消除。
+**声明式 YAML 能覆盖的场景**正好是 SHOTWISE 已经在 V1 内置 backend 里覆盖的（NewAPI、OpenAI 兼容、Kie.ai 等纯 JSON in/out 流派），用户用声明式接入的动机被消除。
 
-### 7.3 ArcReel 现状适配
+### 7.3 SHOTWISE 现状适配
 
-ArcReel 当前**自定义供应商接入流程已经存在且不需要重新设计**：
+SHOTWISE 当前**自定义供应商接入流程已经存在且不需要重新设计**：
 
 1. 用户 → 设置页 → 添加自定义供应商
 2. 填 `display_name` + `discovery_format` + `base_url` + `api_key`
@@ -505,11 +505,11 @@ ArcReel 当前**自定义供应商接入流程已经存在且不需要重新设�
 
 ## 7.5 运行时 Plugin 机制调研（功能规划支撑材料）
 
-> 本节为 ArcReel 已规划的「运行时 plugin」功能提供可行性与设计选项的调研信息。目标：让用户无需修改 ArcReel 源码、无需重新构建镜像，即可加载第三方贡献的视频协议 backend，从而支持社区化分享、降低自定义协议接入门槛。本节**不替 PRD 做决策**，仅汇总可行路径、业界做法、与 ArcReel 现有架构的契合点和待解决问题。
+> 本节为 SHOTWISE 已规划的「运行时 plugin」功能提供可行性与设计选项的调研信息。目标：让用户无需修改 SHOTWISE 源码、无需重新构建镜像，即可加载第三方贡献的视频协议 backend，从而支持社区化分享、降低自定义协议接入门槛。本节**不替 PRD 做决策**，仅汇总可行路径、业界做法、与 SHOTWISE 现有架构的契合点和待解决问题。
 
-### 7.5.1 ArcReel 现有注册机制现状（运行时 plugin 的改造起点）
+### 7.5.1 SHOTWISE 现有注册机制现状（运行时 plugin 的改造起点）
 
-调研 ArcReel 源码后确认的现状（这是设计运行时 plugin 必须基于的事实）：
+调研 SHOTWISE 源码后确认的现状（这是设计运行时 plugin 必须基于的事实）：
 
 1. **backend 注册是进程内静态字典**。三套 media backend（`video_backends` / `image_backends` / `text_backends`）各有一个 `registry.py`，模式完全一致：
 
@@ -531,22 +531,22 @@ ArcReel 当前**自定义供应商接入流程已经存在且不需要重新设�
 
 4. **backend 构造参数从 DB 配置注入**。`create_text_backend_for_task()` 等工厂从 `ConfigResolver.provider_config()` 读 DB 取 `api_key` 等显式传入 backend 构造器，不再依赖环境变量 fallback（`2026-05-12-agent-sandbox-design` 已清理所有 env fallback）。运行时 plugin 的 backend 必须同样接受显式配置注入，不能读环境变量。
 
-**结论**：ArcReel 的 `register_backend()` + Protocol 鸭子类型设计**天然适合运行时扩展**，核心改造点是让 `ENDPOINT_REGISTRY` 从静态字典变为「内置 + plugin 动态注入」两层结构，并补上 plugin 发现、加载、安全、生命周期管理。
+**结论**：SHOTWISE 的 `register_backend()` + Protocol 鸭子类型设计**天然适合运行时扩展**，核心改造点是让 `ENDPOINT_REGISTRY` 从静态字典变为「内置 + plugin 动态注入」两层结构，并补上 plugin 发现、加载、安全、生命周期管理。
 
 ### 7.5.2 业界运行时 plugin 机制对标
 
-| 方案 | 发现机制 | 注册方式 | 适合 ArcReel 之处 | 不适合之处 |
+| 方案 | 发现机制 | 注册方式 | 适合 SHOTWISE 之处 | 不适合之处 |
 |---|---|---|---|---|
-| **Python entry_points**（PEP 621） | `importlib.metadata.entry_points(group=...)` | 用户 `pip install arcreel-plugin-xxx` 后自动可见 | 标准、零三方依赖、契合"社区分享 pip 包"愿景 | 必须打包成 wheel，本地裸文件不行；Docker 环境用户加包要重建镜像或挂载 |
+| **Python entry_points**（PEP 621） | `importlib.metadata.entry_points(group=...)` | 用户 `pip install SHOTWISE-plugin-xxx` 后自动可见 | 标准、零三方依赖、契合"社区分享 pip 包"愿景 | 必须打包成 wheel，本地裸文件不行；Docker 环境用户加包要重建镜像或挂载 |
 | **目录扫描 + importlib** | 扫描指定目录下 `*_backend.py`，`importlib.util.spec_from_file_location` 动态加载 | 文件落地即生效，配合 `__subclasses__()` 自动捕获 | 自部署用户挂载 volume 即可加载，无需重建镜像；本地开发友好 | 需要自己处理重复加载、命名冲突、错误隔离 |
-| **pluggy**（pytest 插件系统） | hook 规范 + setuptools entry_points | hook 多播（1:N） | 成熟稳定 | ArcReel 是 1:1 路由（一个 model → 一个 backend），不需要 hook 多播；pluggy 缺生命周期管理（token 缓存/连接池），属过度设计 |
+| **pluggy**（pytest 插件系统） | hook 规范 + setuptools entry_points | hook 多播（1:N） | 成熟稳定 | SHOTWISE 是 1:1 路由（一个 model → 一个 backend），不需要 hook 多播；pluggy 缺生命周期管理（token 缓存/连接池），属过度设计 |
 | **LiteLLM `custom_provider_map`** | 配置文件中声明 `{provider, custom_handler}` | 模块路径 + 实例变量 | 直接对标"用户注册自定义 provider"场景 | LiteLLM 视频端点目前不支持 CustomLLM（连 embedding 都还在 issue 阶段），无法直接复用其视频路径 |
 
-**业界共识**：entry_points（已发布插件）+ 目录扫描（本地开发/自部署）双轨制是当代 Python 应用插件发现的主流组合。ArcReel 的 Docker 部署形态决定了**目录扫描 + volume 挂载**对自部署用户更友好，而 entry_points 更适合"发布到 PyPI 供社区一键安装"的成熟插件。
+**业界共识**：entry_points（已发布插件）+ 目录扫描（本地开发/自部署）双轨制是当代 Python 应用插件发现的主流组合。SHOTWISE 的 Docker 部署形态决定了**目录扫描 + volume 挂载**对自部署用户更友好，而 entry_points 更适合"发布到 PyPI 供社区一键安装"的成熟插件。
 
-**LiteLLM 的演进轨迹（直接参考价值）**：LiteLLM 最初只支持手工 `litellm.custom_provider_map = [{"provider": ..., "custom_handler": ...}]` 运行时赋值；社区在 issue #7733 提出希望用 entry_points 让第三方包自动注册（当时只能用 `.pth` hack），随后 PR #15881 实现了通过 `pyproject.toml` 的 `[project.entry-points.litellm]` 声明 CustomLLM 子类、由 `importlib.metadata` 自动发现注册。这条"手工注册 → entry_points 自动发现"的演进路径与 ArcReel 现状（`register_backend()` 手工调用）高度吻合,可作为分阶段实现的直接蓝本。
+**LiteLLM 的演进轨迹（直接参考价值）**：LiteLLM 最初只支持手工 `litellm.custom_provider_map = [{"provider": ..., "custom_handler": ...}]` 运行时赋值；社区在 issue #7733 提出希望用 entry_points 让第三方包自动注册（当时只能用 `.pth` hack），随后 PR #15881 实现了通过 `pyproject.toml` 的 `[project.entry-points.litellm]` 声明 CustomLLM 子类、由 `importlib.metadata` 自动发现注册。这条"手工注册 → entry_points 自动发现"的演进路径与 SHOTWISE 现状（`register_backend()` 手工调用）高度吻合,可作为分阶段实现的直接蓝本。
 
-**一个必须规避的 LiteLLM 已知缺陷**：issue #23352 报告，当 plugin 注册的 model 名（剥离前缀后）与某个内置 provider 的已知 model 撞名时，请求会被**静默路由到内置 provider 而非 plugin handler**，且不报错。对 ArcReel 的启示：plugin endpoint 的派发优先级和命名空间隔离必须在设计时就明确，**显式注册的 plugin 应优先于启发式推断**，避免同名静默劫持。
+**一个必须规避的 LiteLLM 已知缺陷**：issue #23352 报告，当 plugin 注册的 model 名（剥离前缀后）与某个内置 provider 的已知 model 撞名时，请求会被**静默路由到内置 provider 而非 plugin handler**，且不报错。对 SHOTWISE 的启示：plugin endpoint 的派发优先级和命名空间隔离必须在设计时就明确，**显式注册的 plugin 应优先于启发式推断**，避免同名静默劫持。
 
 ### 7.5.3 运行时 Plugin 需要解决的设计问题（待 PRD 决策）
 
@@ -568,9 +568,9 @@ ArcReel 当前**自定义供应商接入流程已经存在且不需要重新设�
 - plugin 的配置注入：如何让 plugin backend 拿到用户在 UI 填的 api_key / base_url？需要复用现有 `CustomProvider` 的凭证存储 + `mask_secret()` 掩蔽。
 
 **D. 安全（运行时执行第三方代码的核心风险）**
-- plugin 是任意 Python 代码，运行在 ArcReel 进程内，拥有完整文件系统/网络访问权限。
-- 是否需要沙箱？ArcReel 已有 agent sandbox（bubblewrap/seatbelt，见 `2026-05-12-agent-sandbox-design`），但那是针对 Agent SDK 的 Bash 子进程隔离，**backend plugin 运行在主进程**，无法直接复用同一沙箱。
-- **进程内 Python 沙箱不可行（调研明确结论）**：RestrictedPython 官方自述"is not a sandbox system or a secured environment"，业界共识是 CPython 进程内沙箱因 Python 动态特性（`__import__` 滥用、introspection 逃逸、反序列化攻击）几乎无法做到真正安全（pysandbox 作者已宣告此路不通）。真正的隔离只能靠进程/容器边界（seccomp、namespace、micro-VM 如 Firecracker、WASM 编译），但这些都与"plugin 作为 backend 在主进程被调用"的形态冲突。**因此 ArcReel 的 plugin 安全不应寄望于代码级沙箱，而应走"来源信任"路线。**
+- plugin 是任意 Python 代码，运行在 SHOTWISE 进程内，拥有完整文件系统/网络访问权限。
+- 是否需要沙箱？SHOTWISE 已有 agent sandbox（bubblewrap/seatbelt，见 `2026-05-12-agent-sandbox-design`），但那是针对 Agent SDK 的 Bash 子进程隔离，**backend plugin 运行在主进程**，无法直接复用同一沙箱。
+- **进程内 Python 沙箱不可行（调研明确结论）**：RestrictedPython 官方自述"is not a sandbox system or a secured environment"，业界共识是 CPython 进程内沙箱因 Python 动态特性（`__import__` 滥用、introspection 逃逸、反序列化攻击）几乎无法做到真正安全（pysandbox 作者已宣告此路不通）。真正的隔离只能靠进程/容器边界（seccomp、namespace、micro-VM 如 Firecracker、WASM 编译），但这些都与"plugin 作为 backend 在主进程被调用"的形态冲突。**因此 SHOTWISE 的 plugin 安全不应寄望于代码级沙箱，而应走"来源信任"路线。**
 - 缓解方向（来源信任路线）：plugin 来源审核（仅信任 PyPI 签名包 / 仅信任白名单 GitHub 仓库）、安装时人工确认、社区评分机制、官方维护的已审核 plugin 清单、安装前代码静态扫描（依赖/危险调用检测）——具体取舍待 PRD 决策。
 - 凭证泄漏风险：恶意 plugin 可读取其他 provider 的 api_key。需要评估是否限制 plugin 只能访问挂载到自己的凭证。
 
@@ -579,9 +579,9 @@ ArcReel 当前**自定义供应商接入流程已经存在且不需要重新设�
 - 卸载 / 更新：用户禁用或更新 plugin 时，如何清理已注册的 backend 和 endpoint？
 
 **F. 分发与社区化**
-- 社区分享形态：GitHub 仓库 / PyPI 包 / ArcReel 官方 plugin 市场？
-- 版本兼容：plugin 声明兼容的 ArcReel 版本范围（Protocol 接口变更时的兼容策略）。
-- 文档与脚手架：提供 `arcreel backend scaffold` 类工具 + AI prompt 模板，让用户用 Cursor/Claude Code 快速生成符合 Protocol 的 plugin 骨架（7.1 已论证 AI 辅助生成是 plugin 方案相比声明式的关键优势）。
+- 社区分享形态：GitHub 仓库 / PyPI 包 / SHOTWISE 官方 plugin 市场？
+- 版本兼容：plugin 声明兼容的 SHOTWISE 版本范围（Protocol 接口变更时的兼容策略）。
+- 文档与脚手架：提供 `SHOTWISE backend scaffold` 类工具 + AI prompt 模板，让用户用 Cursor/Claude Code 快速生成符合 Protocol 的 plugin 骨架（7.1 已论证 AI 辅助生成是 plugin 方案相比声明式的关键优势）。
 
 ### 7.5.4 与现有架构的契合度评估
 
@@ -603,7 +603,7 @@ ArcReel 当前**自定义供应商接入流程已经存在且不需要重新设�
 
 1. **最小可用（仅自部署）**：目录扫描 + volume 挂载，仅支持自部署用户在受信环境加载自己写的 plugin，不解决安全问题（信任用户自己）。改造量最小，可快速验证机制。
 2. **社区分享（PyPI + 审核）**：entry_points + PyPI 包发布，配合官方维护的"已审核 plugin 清单"，社区贡献需经过审核才进入推荐列表。平衡了开放性和安全性。
-3. **官方 plugin 市场**：ArcReel 维护 plugin 注册表 + 版本兼容声明 + 社区评分，用户在 UI 内一键安装。体验最好，但需要市场基础设施和持续运营投入。
+3. **官方 plugin 市场**：SHOTWISE 维护 plugin 注册表 + 版本兼容声明 + 社区评分，用户在 UI 内一键安装。体验最好，但需要市场基础设施和持续运营投入。
 
 这三条路径不互斥，可作为功能演进的三个阶段。
 
@@ -615,19 +615,19 @@ ArcReel 当前**自定义供应商接入流程已经存在且不需要重新设�
 
 - 官方发布通告 2026-03-24，**Sora 2 / Sora 2 Pro 及 Videos API 将于 2026-09-24 关停**
 - 影响 model id：`sora-2`、`sora-2-pro`、`sora-2-2025-10-06`、`sora-2-2025-12-08`、`sora-2-pro-2025-10-06`
-- ArcReel 必须在 2026-Q3 前完成 sora-3 或替代模型迁移评估
+- SHOTWISE 必须在 2026-Q3 前完成 sora-3 或替代模型迁移评估
 - `/v1/videos` 路径事实标准会保留，中转站惯性沿用
 
 ### 8.2 NewAPI metadata 透传完整度不可控
 
 - 同一个 Kling `camera_control` 在 DMXAPI 能用，在某些自部署 NewAPI 上可能丢失
-- ArcReel `newapi-video` backend 需要在 channel 配置或文档层面标注实测透传的字段集
+- SHOTWISE `newapi-video` backend 需要在 channel 配置或文档层面标注实测透传的字段集
 - 部分高级能力（motion brush / camera control）建议在 UI 中标注"可能在某些中转站不可用"
 
 ### 8.3 视频 URL 过期统一陷阱
 
 - 所有平台都用临时 URL，最危险的 MiniMax 仅 **9 小时**
-- ArcReel 必须在 SUCCEEDED 后 **10 秒内启动转存**到本地或对象存储
+- SHOTWISE 必须在 SUCCEEDED 后 **10 秒内启动转存**到本地或对象存储
 - 不要依赖 vendor URL 作为前端展示链接
 
 ### 8.4 状态字符串差异
@@ -646,20 +646,20 @@ ArcReel 当前**自定义供应商接入流程已经存在且不需要重新设�
 - getimg.ai：`happyhorse-1`（自有品牌名）
 - xAI 官方：`grok-imagine-video`
 
-ArcReel 需要在 channel 配置层维护 model name 别名映射，或者在 `infer_endpoint()` 启发式中接受用户手工修正。
+SHOTWISE 需要在 channel 配置层维护 model name 别名映射，或者在 `infer_endpoint()` 启发式中接受用户手工修正。
 
 ### 8.6 流派 C v2 的 discovery 局限
 
 `/v1/models` 列表无法可靠区分 `/v1/video/generations` vs `/v2/video/generations` 的目标端点，因为两者 model id 命名完全一致。
 
-**自动启发式只能给一个默认值**（建议 `newapi-video` 更常见），用户在 UI 上按实际中转站文档手工切换。这是 NewAPI / OneAPI 衍生中转站生态的固有限制，不是 ArcReel 的设计缺陷。
+**自动启发式只能给一个默认值**（建议 `newapi-video` 更常见），用户在 UI 上按实际中转站文档手工切换。这是 NewAPI / OneAPI 衍生中转站生态的固有限制，不是 SHOTWISE 的设计缺陷。
 
 ### 8.7 Seedance 2.0 国内/海外 model ID 不通用
 
 - 国内：`doubao-seedance-2-0-260128`
 - 海外：`dreamina-seedance-2-0-260128`
 - 跨区调用必然 404
-- ArcReel 已有 ark / ark-agent-plan 双 provider 设计可参考
+- SHOTWISE 已有 ark / ark-agent-plan 双 provider 设计可参考
 
 ### 8.8 内容审核错误码
 
@@ -681,7 +681,7 @@ ArcReel 需要在 channel 配置层维护 model name 别名映射，或者在 `i
 > 这一组是**比单个协议接入更高层的决策**：在大规模新增协议之前，先评估当前 `lib/video_backends/` + `lib/custom_provider/` 架构是否需要对齐业内成熟实现做调整。**重要前提：避免被命名带偏。**
 
 **关于命名（先澄清，避免误导）**：
-- ArcReel 当前的 `VideoBackend` Protocol + 各 `XxxVideoBackend` 实现，**本质上已经是业内推崇的 Ports & Adapters（六边形架构）范式**——Protocol 即 Port，各 backend 即 Adapter。架构骨架已对齐优秀实践。
+- SHOTWISE 当前的 `VideoBackend` Protocol + 各 `XxxVideoBackend` 实现，**本质上已经是业内推崇的 Ports & Adapters（六边形架构）范式**——Protocol 即 Port，各 backend 即 Adapter。架构骨架已对齐优秀实践。
 - 术语表（CONTEXT.md）选择 `backend` 而非 `adapter` 命名，理由是：backend 与 provider 的"派生"语义契合（一个 provider 派生多个 backend）、与 frontend 对仗、以及 video/image/text 三套媒体后端命名一致。**SQLAlchemy / Django 等成熟项目同样用 backend 而非 adapter 命名同类角色**，命名本身不构成"未对齐业内"的问题。
 - **结论倾向**：不建议以"对齐 adapter 命名"为目标做重构；命名是表层，真正该评估的是下面的能力缺口。
 
@@ -740,7 +740,7 @@ ArcReel 需要在 channel 配置层维护 model name 别名映射，或者在 `i
 - Luma: https://docs.lumalabs.ai/docs/video-generation
 - PixVerse: https://docs.platform.pixverse.ai/
 
-### ArcReel 现有设计文档（背景对齐）
+### SHOTWISE 现有设计文档（背景对齐）
 
 - `docs/superpowers/specs/2026-03-16-video-service-layer-design.md` — VideoBackend Protocol
 - `docs/superpowers/specs/2026-03-31-custom-provider-design.md` — 自定义供应商初版
@@ -760,5 +760,5 @@ ArcReel 需要在 channel 配置层维护 model name 别名映射，或者在 `i
 ---
 
 **报告版本**：v1（最终调研版）
-**对齐架构**：ArcReel `lib/video_backends/` + `lib/custom_provider/` + `ENDPOINT_REGISTRY`
+**对齐架构**：SHOTWISE `lib/video_backends/` + `lib/custom_provider/` + `ENDPOINT_REGISTRY`
 **下一步**：基于本报告撰写具体 endpoint 接入的 PRD 和设计文档
