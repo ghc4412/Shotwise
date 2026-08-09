@@ -1,4 +1,4 @@
-# Text Backends Implementation Plan
+﻿# Text Backends Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -2257,7 +2257,7 @@ async function getConfigIssues(): Promise<ConfigIssue[]> {
     issues.push({
       key: "anthropic",
       tab: "agent",
-      label: "ArcReel 智能体 API Key（Anthropic）未配置",
+      label: "SHOTWISE 智能体 API Key（Anthropic）未配置",
     });
   }
 

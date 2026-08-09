@@ -1,22 +1,22 @@
-## ADDED Requirements
+﻿## ADDED Requirements
 
 ### Requirement: 顶栏四 Tab 结构
 
-配置页 SHALL 将顶栏 Tab 从原有的 `[config, api-keys]` 扩展为四个 Tab：**ArcReel 智能体配置**（agent）、**AI 生图/生视频配置**（media）、**高级配置**（advanced）、**API Keys**（api-keys）。
+配置页 SHALL 将顶栏 Tab 从原有的 `[config, api-keys]` 扩展为四个 Tab：**SHOTWISE 智能体配置**（agent）、**AI 生图/生视频配置**（media）、**高级配置**（advanced）、**API Keys**（api-keys）。
 
 各 Tab 承载内容：
-- **ArcReel 智能体配置**：Anthropic API Key、Base URL、各模型选择字段
+- **SHOTWISE 智能体配置**：Anthropic API Key、Base URL、各模型选择字段
 - **AI 生图/生视频配置**：Gemini API Key、Base URL、后端选择、模型选择、Vertex 凭证等
 - **高级配置**：速率限制（RPM）、请求间隔、最大并发 Worker 数
 - **API Keys**：现有 API Key 管理功能（不变）
 
 #### Scenario: 用户打开系统配置页
 - **WHEN** 用户导航至 `/app/settings`
-- **THEN** 页面 SHALL 显示四个顶栏 Tab，默认激活第一个 Tab（ArcReel 智能体配置）
+- **THEN** 页面 SHALL 显示四个顶栏 Tab，默认激活第一个 Tab（SHOTWISE 智能体配置）
 
 #### Scenario: Tab 顺序
 - **WHEN** 页面渲染时
-- **THEN** Tab 顺序 SHALL 固定为：ArcReel 智能体配置 → AI 生图/生视频配置 → 高级配置 → API Keys
+- **THEN** Tab 顺序 SHALL 固定为：SHOTWISE 智能体配置 → AI 生图/生视频配置 → 高级配置 → API Keys
 
 ---
 
@@ -87,7 +87,7 @@
 当系统必填配置未完整设置时，所有通往设置页的入口 SHALL 以红色圆点徽标标记，提醒用户进入设置完成配置。
 
 **必填配置定义**：以下三项均需满足，系统才能正常运行：
-1. ArcReel 智能体 API Key（`anthropic_api_key.is_set`）
+1. SHOTWISE 智能体 API Key（`anthropic_api_key.is_set`）
 2. AI 生图后端凭证：若 `image_backend = "aistudio"` 则 `gemini_api_key.is_set`；若 `"vertex"` 则 `vertex_credentials.is_set`
 3. AI 生视频后端凭证：若 `video_backend = "aistudio"` 则 `gemini_api_key.is_set`；若 `"vertex"` 则 `vertex_credentials.is_set`
 
@@ -115,7 +115,7 @@
 
 #### Scenario: Anthropic API Key 未配置
 - **WHEN** 用户进入设置页，且 `anthropic_api_key.is_set === false`
-- **THEN** 警告横幅 SHALL 包含一条"ArcReel 智能体 API Key（Anthropic）未配置"，并链接到"ArcReel 智能体配置" Tab
+- **THEN** 警告横幅 SHALL 包含一条"SHOTWISE 智能体 API Key（Anthropic）未配置"，并链接到"SHOTWISE 智能体配置" Tab
 
 #### Scenario: AI 生图后端凭证未配置（AI Studio）
 - **WHEN** `image_backend = "aistudio"` 且 `gemini_api_key.is_set === false`

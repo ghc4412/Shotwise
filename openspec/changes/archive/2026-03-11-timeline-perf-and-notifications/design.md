@@ -1,6 +1,6 @@
-## Context
+﻿## Context
 
-ArcReel 前端的分镜场景板（TimelineCanvas）使用简单的 `overflow-y-auto` 垂直堆叠所有 SegmentCard，没有虚拟滚动或懒加载。一个剧集通常有 30-100 个分镜，页面加载时会同时发起所有图片和视频的请求。
+SHOTWISE 前端的分镜场景板（TimelineCanvas）使用简单的 `overflow-y-auto` 垂直堆叠所有 SegmentCard，没有虚拟滚动或懒加载。一个剧集通常有 30-100 个分镜，页面加载时会同时发起所有图片和视频的请求。
 
 当任意资源变更时，`invalidateMediaAssets()` 递增全局 `mediaRevision` 计数器，导致所有订阅该值的组件（SegmentCard、CharacterCard、ClueCard、OverviewCanvas、AssetSidebar、AvatarStack、VersionTimeMachine）同时触发媒体 URL `?v=N` 变化，浏览器重新加载全部资源。
 

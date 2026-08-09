@@ -1,8 +1,8 @@
-# 参考生视频模式 实现 Roadmap（多 PR 拆分）
+﻿# 参考生视频模式 实现 Roadmap（多 PR 拆分）
 
 > **For agentic workers:** 本文件是 7 个 PR 的索引。每个 PR 指向独立的详细 plan 文件（`2026-04-17-reference-to-video-prN-*.md`），按依赖顺序逐个执行。REQUIRED SUB-SKILL：对每个独立 plan 使用 superpowers:subagent-driven-development 或 superpowers:executing-plans。
 
-**Goal**：在 ArcReel 新增第三种生成模式「参考生视频」——直接用角色/场景/道具参考图多镜头生成视频，跳过分镜。覆盖四家供应商（Ark / Grok / Veo / Sora），并完成前端、后端、Agent 全链路。
+**Goal**：在 SHOTWISE 新增第三种生成模式「参考生视频」——直接用角色/场景/道具参考图多镜头生成视频，跳过分镜。覆盖四家供应商（Ark / Grok / Veo / Sora），并完成前端、后端、Agent 全链路。
 
 **Architecture**：新增 `generation_mode` 项目级 / 集级字段；脚本形态新增 `content_mode=reference_video`（`video_units[]` + multi-shot prompt + `@` 提及）；后端新增 `/reference-videos` 路由族 + executor；前端新增 `ReferenceVideoCanvas` + `MentionPicker` + `GenerationModeSelector`；Agent 新增 `split-reference-video-units` subagent，并扩展 `generate-script` / `generate-video` / `manga-workflow` 按 mode 分支。
 

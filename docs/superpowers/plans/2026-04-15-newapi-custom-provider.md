@@ -1,8 +1,8 @@
-# NewAPI 自定义供应商格式 Implementation Plan
+﻿# NewAPI 自定义供应商格式 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 为 ArcReel 的自定义供应商体系新增 `api_format = "newapi"`，其中文本/图片复用 OpenAI delegate，视频通过直连 NewAPI 统一端点 `/v1/video/generations` 的新后端 `NewAPIVideoBackend` 实现。
+**Goal:** 为 SHOTWISE 的自定义供应商体系新增 `api_format = "newapi"`，其中文本/图片复用 OpenAI delegate，视频通过直连 NewAPI 统一端点 `/v1/video/generations` 的新后端 `NewAPIVideoBackend` 实现。
 
 **Architecture:** `api_format` 扩成三值枚举 `{openai, google, newapi}`。Factory 在 `newapi` 分支下：文本/图片走 `OpenAITextBackend`/`OpenAIImageBackend`（OpenAI 兼容），视频走新的 `NewAPIVideoBackend`（`httpx` 直连：`POST /v1/video/generations` → 轮询 `GET /v1/video/generations/{task_id}` → 下载 `url`）。模型发现与连接测试复用 OpenAI 路径。
 

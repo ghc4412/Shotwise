@@ -1,7 +1,7 @@
-# SQLAlchemy Async ORM 迁移设计
+﻿# SQLAlchemy Async ORM 迁移设计
 
 **日期**：2026-03-04
-**Issue**：[#48](https://github.com/ArcReel/ArcReel/issues/48)
+**Issue**：[#48](https://github.com/ghc4412/Shotwise/issues/48)
 **状态**：已批准
 
 ---
@@ -64,8 +64,8 @@ scripts/
 ### Engine 配置 (`lib/db/engine.py`)
 
 - **DATABASE_URL 解析**：从环境变量 `DATABASE_URL` 读取
-  - 默认值：`sqlite+aiosqlite:///{app_data_dir()/.arcreel.db}`（`app_data_dir()` 默认 `PROJECT_ROOT/projects`，可经 `ARCREEL_DATA_DIR` 覆盖；开发态即 `projects/.arcreel.db`）
-  - PostgreSQL：`postgresql+asyncpg://user:pass@host:5432/arcreel`
+  - 默认值：`sqlite+aiosqlite:///{app_data_dir()/.SHOTWISE.db}`（`app_data_dir()` 默认 `PROJECT_ROOT/projects`，可经 `SHOTWISE_DATA_DIR` 覆盖；开发态即 `projects/.SHOTWISE.db`）
+  - PostgreSQL：`postgresql+asyncpg://user:pass@host:5432/SHOTWISE`
 - **SQLite 专用配置**：通过 `event.listens_for("connect")` 设置 WAL + busy_timeout
 - **AsyncSession 工厂**：`async_sessionmaker(engine, expire_on_commit=False)`
 - **FastAPI Depends**：`get_async_session()` 生成器注入 AsyncSession
@@ -76,7 +76,7 @@ def get_database_url() -> str:
     url = os.environ.get("DATABASE_URL", "").strip()
     if url:
         return url
-    db_path = app_data_dir() / ".arcreel.db"
+    db_path = app_data_dir() / ".SHOTWISE.db"
     return f"sqlite+aiosqlite:///{db_path}"
 
 async_engine = create_async_engine(get_database_url(), echo=False, pool_pre_ping=True)
@@ -317,9 +317,9 @@ alembic/
 `.env.example` 新增：
 ```bash
 # 数据库配置（默认使用 SQLite）
-# SQLite（开发/单机）: sqlite+aiosqlite:///./projects/.arcreel.db
-# PostgreSQL（生产）:  postgresql+asyncpg://user:pass@host:5432/arcreel
-# DATABASE_URL=sqlite+aiosqlite:///./projects/.arcreel.db
+# SQLite（开发/单机）: sqlite+aiosqlite:///./projects/.SHOTWISE.db
+# PostgreSQL（生产）:  postgresql+asyncpg://user:pass@host:5432/SHOTWISE
+# DATABASE_URL=sqlite+aiosqlite:///./projects/.SHOTWISE.db
 ```
 
 ### 新增依赖

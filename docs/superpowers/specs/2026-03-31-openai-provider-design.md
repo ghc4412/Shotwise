@@ -1,10 +1,10 @@
-# OpenAI 预置供应商设计文档
+﻿# OpenAI 预置供应商设计文档
 
 > 日期：2026-03-31 | 状态：已确认 | 分支：feature/openai-provider
 
 ## 概述
 
-在 ArcReel 中新增 OpenAI 为第五个预置供应商，支持文本（GPT-5.4）、图片（GPT Image 1.5）、视频（Sora 2）三种媒体类型。采用"共享模块 + 三个独立 Backend"的架构，参照现有 `gemini_shared.py` 模式新增 `openai_shared.py`。
+在 SHOTWISE 中新增 OpenAI 为第五个预置供应商，支持文本（GPT-5.4）、图片（GPT Image 1.5）、视频（Sora 2）三种媒体类型。采用"共享模块 + 三个独立 Backend"的架构，参照现有 `gemini_shared.py` 模式新增 `openai_shared.py`。
 
 ### 范围
 

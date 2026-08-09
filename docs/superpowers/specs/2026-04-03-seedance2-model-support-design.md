@@ -1,6 +1,6 @@
-# Seedance 2.0 模型支持设计
+﻿# Seedance 2.0 模型支持设计
 
-> 关联 Issue: [ArcReel/ArcReel#42](https://github.com/ArcReel/ArcReel/issues/42)
+> 关联 Issue: [ghc4412/Shotwise#42](https://github.com/ghc4412/Shotwise/issues/42)
 > 日期: 2026-04-03
 > 范围: 最小可用（模型注册 + 定价 + 能力声明）
 

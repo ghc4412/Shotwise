@@ -1,8 +1,8 @@
-# 全局资产库 + Clue 重构设计
+﻿# 全局资产库 + Clue 重构设计
 
 ## 背景
 
-ArcReel 当前项目之间互相隔离，同一用户反复创作相似世界观时（如古风短剧系列），角色 / 线索需要重复录入，无法跨项目复用。本设计引入**全局资产库**（可跨项目复用的人物 / 场景 / 道具仓库），并借此机会**彻底重构旧 `clue` 概念**：线索拆分为独立的 `scene`（场景）和 `prop`（道具）两类一级对象，删除 `importance` 字段。
+SHOTWISE 当前项目之间互相隔离，同一用户反复创作相似世界观时（如古风短剧系列），角色 / 线索需要重复录入，无法跨项目复用。本设计引入**全局资产库**（可跨项目复用的人物 / 场景 / 道具仓库），并借此机会**彻底重构旧 `clue` 概念**：线索拆分为独立的 `scene`（场景）和 `prop`（道具）两类一级对象，删除 `importance` 字段。
 
 同时修复项目工作台中几处 UI 痛点（手动新增按钮位置、非模态表单、空态无法进入页面）。
 
@@ -16,7 +16,7 @@ ArcReel 当前项目之间互相隔离，同一用户反复创作相似世界观
 
 ### 非目标
 
-- 多用户 / 权限 / 分享（ArcReel 当前单用户）
+- 多用户 / 权限 / 分享（SHOTWISE 当前单用户）
 - 资产版本历史（资产库只保留最新态，旧版本不保留）
 - 软删 / 回收站（硬删 + 物理删图）
 - 分镜图（SegmentCard）加入资产库（分镜是叙事产物，不属于跨项目可复用资产）
@@ -145,7 +145,7 @@ lib/project_migrations/
 
 **启动流程**（`server/app.py` 的 startup event）：
 1. 执行 `alembic upgrade head`（DB schema）
-2. 扫 `projects/` 每个项目目录（跳过 `_global_assets/`、`.arcreel.db` 等）
+2. 扫 `projects/` 每个项目目录（跳过 `_global_assets/`、`.SHOTWISE.db` 等）
 3. 读取 `project.json.schema_version`（缺失视为 0）
 4. 当 `< CURRENT_SCHEMA_VERSION`：
    - 迁移前复制备份：`project.json.bak.v{from}-{timestamp}`

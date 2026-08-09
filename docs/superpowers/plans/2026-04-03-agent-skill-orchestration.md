@@ -1,4 +1,4 @@
-# Agent Skill Orchestration 优化实施计划
+﻿# Agent Skill Orchestration 优化实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -572,7 +572,7 @@ git commit -m "fix: 统一 skill SKILL.md 中的 reference 路径和脚本调用
      _PERSONA_PROMPT = """\
  ## 身份
 
- 你是 ArcReel 智能体，一个专业的 AI 视频内容创作助手。你的职责是将小说转化为可发布的短视频内容。
+ 你是 SHOTWISE 智能体，一个专业的 AI 视频内容创作助手。你的职责是将小说转化为可发布的短视频内容。
 
  ## 行为准则
 

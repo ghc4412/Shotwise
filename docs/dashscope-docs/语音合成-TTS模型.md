@@ -1,8 +1,8 @@
-# 阿里百炼语音合成（TTS）模型调研
+﻿# 阿里百炼语音合成（TTS）模型调研
 
 更新时间：2026-06-02（基于百炼控制台模型市场 + 官方文档核实）
 
-本文档为 ArcReel issue #707 集成 DashScope TTS 供应商的调研参考。
+本文档为 SHOTWISE issue #707 集成 DashScope TTS 供应商的调研参考。
 
 ## 模型总览
 
@@ -107,7 +107,7 @@ Content-Type: application/json
 
 **示例 instructions**: `"语速较快，带有明显的上扬语调，适合介绍时尚产品"` / `"用低沉沙哑的声音，缓慢地讲述一个悲伤的故事"`
 
-**ArcReel 适用场景**: drama 模式下按角色情感调整语气，narration 模式下控制朗读风格
+**SHOTWISE 适用场景**: drama 模式下按角色情感调整语气，narration 模式下控制朗读风格
 
 ### 3. Qwen3-TTS-VC — 声音复刻
 
@@ -149,7 +149,7 @@ language: "zh"  (支持 zh/en/de/it/pt/es/ja/ko/fr/ru)
 
 **费用**: 每次创建音色 0.2 元，合成按 0.8 元/万字符计费。
 
-**ArcReel 适用场景**: 根据小说角色描述自动生成对应音色，无需人工选择预设音色
+**SHOTWISE 适用场景**: 根据小说角色描述自动生成对应音色，无需人工选择预设音色
 
 ### 5. 实时版本（Realtime）
 
@@ -169,7 +169,7 @@ language: "zh"  (支持 zh/en/de/it/pt/es/ja/ko/fr/ru)
 - `server_commit`（默认）：服务端自动分句并合成
 - `commit`：客户端显式 commit 触发合成
 
-**ArcReel 评估**: ArcReel 场景为离线视频生成，非实时模型即可满足需求。实时版本适合后续扩展语音预览/交互场景。
+**SHOTWISE 评估**: SHOTWISE 场景为离线视频生成，非实时模型即可满足需求。实时版本适合后续扩展语音预览/交互场景。
 
 ---
 
@@ -204,13 +204,13 @@ language: "zh"  (支持 zh/en/de/it/pt/es/ja/ko/fr/ru)
 
 与 Plus 相比延迟更低，但表现力稍弱。
 
-**CosyVoice vs Qwen3-TTS 选型**: Qwen3-TTS-Flash 与 CosyVoice-v3.5-Flash 同价（0.8 元/万字符），但 Qwen3-TTS RPM 更高（180 vs 3 RPS）；CosyVoice 多语种覆盖更广（含泰语、印尼语、越南语）。ArcReel 面向越南市场时 CosyVoice 是更好的选择。
+**CosyVoice vs Qwen3-TTS 选型**: Qwen3-TTS-Flash 与 CosyVoice-v3.5-Flash 同价（0.8 元/万字符），但 Qwen3-TTS RPM 更高（180 vs 3 RPS）；CosyVoice 多语种覆盖更广（含泰语、印尼语、越南语）。SHOTWISE 面向越南市场时 CosyVoice 是更好的选择。
 
 ---
 
 ## 三、系统预设音色
 
-Qwen3-TTS 系列共 48 个系统音色。以下为 ArcReel 场景最相关的音色子集：
+Qwen3-TTS 系列共 48 个系统音色。以下为 SHOTWISE 场景最相关的音色子集：
 
 ### 通用音色（全模型支持）
 
@@ -263,7 +263,7 @@ Qwen3-TTS 系列共 48 个系统音色。以下为 ArcReel 场景最相关的音
 
 ---
 
-## 四、ArcReel 集成建议
+## 四、SHOTWISE 集成建议
 
 ### 推荐方案
 

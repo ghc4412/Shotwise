@@ -1,4 +1,4 @@
-# ClaudeSDKClient 迁移实现计划
+﻿# ClaudeSDKClient 迁移实现计划
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -1641,7 +1641,7 @@ git commit -m "chore: remove deprecated streaming module"
 **Step 1: 运行后端测试**
 
 ```bash
-cd /Users/pollochen/Documents/ArcReel/.worktrees/sdk-client-migration
+cd /Users/pollochen/Documents/SHOTWISE/.worktrees/sdk-client-migration
 python -m pytest tests/ -v
 ```
 
