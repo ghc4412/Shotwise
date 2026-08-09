@@ -1,6 +1,6 @@
 # 生成模式参考
 
-ArcReel 把"做什么内容"和"怎么生成视频"拆成两条独立维度。`content_mode` 严格表达**内容类型**（narration / drama），`generation_mode` 表达**视频来源 / 生成路径**（storyboard / reference_video）。二者均由 `project.json` 顶层字段唯一决定，项目创建后不可更改，不存在集级覆盖。组合上可枚举如下；参考生视频路径下内容类型仅作画面比例 / 默认时长等次级决策。
+SHOTWISE 把"做什么内容"和"怎么生成视频"拆成两条独立维度。`content_mode` 严格表达**内容类型**（narration / drama），`generation_mode` 表达**视频来源 / 生成路径**（storyboard / reference_video）。二者均由 `project.json` 顶层字段唯一决定，项目创建后不可更改，不存在集级覆盖。组合上可枚举如下；参考生视频路径下内容类型仅作画面比例 / 默认时长等次级决策。
 
 宫格不是独立生成模式：`grid_storyboard` 是仅在 `generation_mode="storyboard"` 下生效的独立布尔开关（由用户在设置页开关，agent 无对应写入权限），决定 Step 6 走分镜图还是宫格图，不影响 Step 3/4/5/7/8 的分派。
 
