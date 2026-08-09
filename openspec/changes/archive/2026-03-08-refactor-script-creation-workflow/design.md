@@ -2,7 +2,7 @@
 
 ### 现状
 
-ArcReel 使用 Claude Agent SDK 运行一个主 agent 会话，通过 Agent 工具（原 Task 工具）dispatch subagent 处理具体任务。当前有两个大型 subagent（`novel-to-narration-script`、`novel-to-storyboard-script`）各自包含 3-4 个步骤和用户确认点，以及一个静态编排文档 `manga-workflow`。
+Shotwise 使用 Claude Agent SDK 运行一个主 agent 会话，通过 Agent 工具（原 Task 工具）dispatch subagent 处理具体任务。当前有两个大型 subagent（`novel-to-narration-script`、`novel-to-storyboard-script`）各自包含 3-4 个步骤和用户确认点，以及一个静态编排文档 `manga-workflow`。
 
 ### Claude Code Subagent 机制约束
 

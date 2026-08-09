@@ -109,13 +109,13 @@ GET /api/v1/tasks/{task_id}
 | `SR` | int | 输出分辨率档位(如 720) |
 | `ratio` | string | 输出宽高比 |
 
-## ArcReel 集成要点
+## Shotwise 集成要点
 
 - **R2V 单镜头参考图上限 = 9**(`max_reference_images: 9`)
 - **resolutions**:`["720P", "1080P"]`
 - **supported_durations**:`[3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]`
 - **capabilities**:`["reference_images", "generate_audio"]`(音频恒开,无开关参数)
-- **水印**:`watermark=false` 关闭,默认会带 "Happy Horse" 水印 — ArcReel 应在 backend 默认传 `false`
+- **水印**:`watermark=false` 关闭,默认会带 "Happy Horse" 水印 — Shotwise 应在 backend 默认传 `false`
 
 ## 同系列模型(待官方扩充)
 

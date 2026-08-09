@@ -14,11 +14,11 @@
 
 #### Scenario: normalize-drama-script subagent 契约
 - **WHEN** 该 subagent 被 dispatch
-- **THEN** 它接收项目名称、集数作为输入，首次生成时调用进程内 MCP 工具 `mcp__arcreel__normalize_drama_script`（使用项目配置的文本模型）生成规范化剧本和镜头预算，保存 `drafts/episode_{N}/step1_normalized_script.md` 和 `step2_shot_budget.md`，返回场景数量和镜头分布摘要；后续修改时由 subagent 直接编辑已有的 Markdown 文件
+- **THEN** 它接收项目名称、集数作为输入，首次生成时调用进程内 MCP 工具 `mcp__shotwise__normalize_drama_script`（使用项目配置的文本模型）生成规范化剧本和镜头预算，保存 `drafts/episode_{N}/step1_normalized_script.md` 和 `step2_shot_budget.md`，返回场景数量和镜头分布摘要；后续修改时由 subagent 直接编辑已有的 Markdown 文件
 
 #### Scenario: create-episode-script subagent 契约
 - **WHEN** 该 subagent 被 dispatch
-- **THEN** 它接收项目名称和集数作为输入，预加载 generate-script skill，调用进程内 MCP 工具 `mcp__arcreel__generate_episode_script` 生成 JSON，验证输出，返回生成结果摘要
+- **THEN** 它接收项目名称和集数作为输入，预加载 generate-script skill，调用进程内 MCP 工具 `mcp__shotwise__generate_episode_script` 生成 JSON，验证输出，返回生成结果摘要
 
 ### Requirement: 每个 subagent 须为单任务聚焦设计
 
@@ -50,10 +50,10 @@
 
 #### Scenario: skill 内容在 subagent 启动时注入
 - **WHEN** subagent 被 dispatch
-- **THEN** generate-script skill 的完整内容已在 subagent context 中，subagent 可按 skill 指示调用 `mcp__arcreel__generate_episode_script` 工具
+- **THEN** generate-script skill 的完整内容已在 subagent context 中，subagent 可按 skill 指示调用 `mcp__shotwise__generate_episode_script` 工具
 
 #### Scenario: subagent 验证生成结果
-- **WHEN** `mcp__arcreel__generate_episode_script` 工具执行完成
+- **WHEN** `mcp__shotwise__generate_episode_script` 工具执行完成
 - **THEN** subagent 验证 scripts/episode_{N}.json 存在且通过数据验证，如有错误则尝试修正后重新生成
 
 ### Requirement: 删除旧的多步 subagent 定义
@@ -82,7 +82,7 @@ SHALL 提供 `add_assets.py` 脚本（位于 manage-project skill 的 scripts/ �
 
 ### Requirement: 须提供 drama 模式规范化剧本的进程内 MCP 工具
 
-SHALL 提供进程内 MCP 工具 `mcp__arcreel__normalize_drama_script`（实现于 `server/agent_runtime/sdk_tools/text_generation.py`），使用项目配置的文本模型将小说原文转化为 Markdown 格式的规范化剧本和镜头预算。
+SHALL 提供进程内 MCP 工具 `mcp__shotwise__normalize_drama_script`（实现于 `server/agent_runtime/sdk_tools/text_generation.py`），使用项目配置的文本模型将小说原文转化为 Markdown 格式的规范化剧本和镜头预算。
 
 #### Scenario: 首次生成规范化剧本
 - **WHEN** `normalize-drama-script` subagent 调用该工具
@@ -90,4 +90,4 @@ SHALL 提供进程内 MCP 工具 `mcp__arcreel__normalize_drama_script`（实现
 
 #### Scenario: 输出格式与 script 生成阶段兼容
 - **WHEN** 规范化剧本生成完成
-- **THEN** 输出的 `step1_normalized_script.md` 格式与后续 `mcp__arcreel__generate_episode_script` 所期望的输入格式一致，确保 JSON 剧本生成阶段可无缝消费
+- **THEN** 输出的 `step1_normalized_script.md` 格式与后续 `mcp__shotwise__generate_episode_script` 所期望的输入格式一致，确保 JSON 剧本生成阶段可无缝消费

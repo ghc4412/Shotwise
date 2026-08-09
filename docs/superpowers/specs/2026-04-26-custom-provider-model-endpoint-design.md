@@ -6,7 +6,7 @@
 
 ## 背景
 
-ArcReel 的自定义供应商当前以 `CustomProvider.api_format ∈ {openai, google, newapi}` 在供应商层决定调用协议。这隐含了「一个供应商 = 一种协议」的假设。
+Shotwise 的自定义供应商当前以 `CustomProvider.api_format ∈ {openai, google, newapi}` 在供应商层决定调用协议。这隐含了「一个供应商 = 一种协议」的假设。
 
 中转站生态的现实是：一个 NewAPI/OneAPI 实例同时暴露多种协议——文本走 Chat Completions，图片走 Images API，视频走 NewAPI 统一视频端点或 OpenAI/Gemini 原生，Claude 模型走 Anthropic Messages。**用户的同一个 API key 能访问所有这些协议，差别只在每个 model id 该走哪条路。**
 
@@ -272,7 +272,7 @@ def infer_endpoint(model_id: str, discovery_format: str) -> str:
 ### 向后兼容
 
 - API 形态 breaking：`CreateProviderRequest` / `FullUpdateProviderRequest` / `ProviderResponse` / discover & test 请求体字段名变更
-- 仅内置前端调用，按 ArcReel 风格不留 backwards-compat shim
+- 仅内置前端调用，按 Shotwise 风格不留 backwards-compat shim
 - `project.json` 的 `video_backend` / `default_video_backend` / `text_backend_*` 等保持 `provider_id/model_id` 格式不变
 
 ## §5 实施次序（提示给 writing-plans 阶段）

@@ -1641,7 +1641,7 @@ git commit -m "chore: remove deprecated streaming module"
 **Step 1: 运行后端测试**
 
 ```bash
-cd /Users/pollochen/Documents/ArcReel/.worktrees/sdk-client-migration
+cd /Users/pollochen/Documents/Shotwise/.worktrees/sdk-client-migration
 python -m pytest tests/ -v
 ```
 

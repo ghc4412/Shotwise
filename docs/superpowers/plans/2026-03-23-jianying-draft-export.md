@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将 ArcReel 单集已生成的视频片段导出为剪映草稿 ZIP，用户解压到本地剪映草稿目录后直接在剪映中打开编辑。
+**Goal:** 将 Shotwise 单集已生成的视频片段导出为剪映草稿 ZIP，用户解压到本地剪映草稿目录后直接在剪映中打开编辑。
 
 **Architecture:** 后端新增 `JianyingDraftService` 服务层，调用 pyjianyingdraft 库生成草稿文件 + ZIP 打包。复用现有 download token 签发机制，新增一个 GET 端点返回 ZIP 流。前端改造 `ExportScopeDialog`，新增剪映草稿选项（含集数下拉 + 草稿目录输入框）。
 
@@ -183,7 +183,7 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'server.services.jianyi
 ```python
 """剪映草稿导出服务
 
-将 ArcReel 单集已生成的视频片段导出为剪映草稿 ZIP。
+将 Shotwise 单集已生成的视频片段导出为剪映草稿 ZIP。
 使用 pyJianYingDraft 库生成 draft_content.json，
 后处理路径替换使草稿指向用户本地剪映目录。
 """
@@ -407,8 +407,8 @@ class TestReplacePaths:
         data = {
             "materials": {
                 "videos": [
-                    {"path": "/tmp/arcreel_jy_abc/草稿/assets/s1.mp4"},
-                    {"path": "/tmp/arcreel_jy_abc/草稿/assets/s2.mp4"},
+                    {"path": "/tmp/shotwise_jy_abc/草稿/assets/s1.mp4"},
+                    {"path": "/tmp/shotwise_jy_abc/草稿/assets/s2.mp4"},
                 ]
             },
             "other": "no change",
@@ -418,7 +418,7 @@ class TestReplacePaths:
         svc = JianyingDraftService.__new__(JianyingDraftService)
         svc._replace_paths_in_draft(
             json_path=json_path,
-            tmp_prefix="/tmp/arcreel_jy_abc/草稿/assets",
+            tmp_prefix="/tmp/shotwise_jy_abc/草稿/assets",
             target_prefix="/Users/test/Movies/JianyingPro/草稿/assets",
         )
 
@@ -733,7 +733,7 @@ Expected: FAIL — `AttributeError: 'JianyingDraftService' object has no attribu
         # 4. 创建临时目录 + 复制素材
         title = project.get("title", project_name)
         draft_name = f"{title}_第{episode}集"
-        tmp_dir = Path(tempfile.mkdtemp(prefix="arcreel_jy_"))
+        tmp_dir = Path(tempfile.mkdtemp(prefix="shotwise_jy_"))
         draft_dir = tmp_dir / draft_name
         assets_dir = draft_dir / "assets"
         assets_dir.mkdir(parents=True)
@@ -1181,7 +1181,7 @@ interface ExportScopeDialogProps {
 关键实现细节：
 
 - **集数下拉**：`<select>` 遍历 `episodes`，仅一集时隐藏
-- **草稿目录输入**：`<input type="text">`，`onChange` 时同步写 `localStorage.setItem("arcreel_jianying_draft_path", value)`
+- **草稿目录输入**：`<input type="text">`，`onChange` 时同步写 `localStorage.setItem("shotwise_jianying_draft_path", value)`
 - **OS placeholder**：`navigator.platform.includes("Win")` 区分 Windows/macOS 路径示例
 - **导出按钮**：`jianyingExporting` 时禁用，显示"导出中..."
 - **返回按钮**：表单模式左上角 ← 回到选择模式

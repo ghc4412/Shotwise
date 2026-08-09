@@ -9,7 +9,7 @@
 
 ## 1. 背景与目标
 
-ArcReel 当前 `ALLOWED_EXTENSIONS["source"]` 声明支持 `.txt / .md / .doc / .docx`，但下游所有消费者（`ProjectManager._read_source_files`、agent skill `normalize_drama_script.py` / `split_episode.py` / `peek_split_point.py`、`analyze-characters-clues` agent）均通过硬编码 `encoding="utf-8"` 读取，且 `_read_source_files` 用 `try/except Exception` 静默跳过失败文件。三类直接故障：
+Shotwise 当前 `ALLOWED_EXTENSIONS["source"]` 声明支持 `.txt / .md / .doc / .docx`，但下游所有消费者（`ProjectManager._read_source_files`、agent skill `normalize_drama_script.py` / `split_episode.py` / `peek_split_point.py`、`analyze-characters-clues` agent）均通过硬编码 `encoding="utf-8"` 读取，且 `_read_source_files` 用 `try/except Exception` 静默跳过失败文件。三类直接故障：
 
 1. **非 UTF-8 编码 `.txt` 触发"源目录为空"误导性错误**：中文小说常见的 GBK / GB18030 / Big5 / UTF-16 编码读取时抛 `UnicodeDecodeError` 被静默吞掉，`source_content` 最终为空字符串，`generate_overview()` 抛"source 目录为空"——文件明明在，用户根本无法定位真实原因。
 2. **`.docx` 上传成功但解析必定失败**：`ALLOWED_EXTENSIONS` 接收 `.docx`，但 `_read_source_files` 的 `glob` 过滤器只取 `.txt/.md`，且没有任何转换逻辑。
@@ -257,7 +257,7 @@ async def _migrate_source_encoding_on_startup():
     for project_dir in projects_root.iterdir():
         if not project_dir.is_dir():
             continue
-        marker = project_dir / ".arcreel" / "source_encoding_migrated"
+        marker = project_dir / ".shotwise" / "source_encoding_migrated"
         if marker.exists():
             continue
         try:
@@ -269,7 +269,7 @@ async def _migrate_source_encoding_on_startup():
                 "源文件编码迁移失败 project=%s，已跳过，server 继续启动",
                 project_dir.name,
             )
-            # 失败明细写 project_dir / ".arcreel" / "migration_errors.log"
+            # 失败明细写 project_dir / ".shotwise" / "migration_errors.log"
 ```
 
 `_migrate_project_source_encoding(project_dir)`：

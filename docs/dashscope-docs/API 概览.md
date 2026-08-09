@@ -11,7 +11,7 @@
 | 美国(弗吉尼亚) | `https://dashscope-us.aliyuncs.com/api/v1` |
 | 德国(法兰克福) | `https://{WorkspaceId}.eu-central-1.maas.aliyuncs.com/api/v1` |
 
-ArcReel 集成默认以**北京**为起点,后续按需扩充。
+Shotwise 集成默认以**北京**为起点,后续按需扩充。
 
 ## OpenAI 兼容模式 Base URL（文本)
 

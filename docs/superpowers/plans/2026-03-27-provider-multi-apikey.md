@@ -353,7 +353,7 @@ git commit -m "feat: 新增 ProviderCredential ORM 模型"
 
 - [ ] **Step 4: 验证表结构**
 
-运行: `uv run python -c "import sqlite3; conn = sqlite3.connect('projects/.arcreel.db'); print([r[1] for r in conn.execute('PRAGMA table_info(provider_credential)').fetchall()])"`
+运行: `uv run python -c "import sqlite3; conn = sqlite3.connect('projects/.shotwise.db'); print([r[1] for r in conn.execute('PRAGMA table_info(provider_credential)').fetchall()])"`
 预期: 输出列名列表，包含 `provider`, `name`, `api_key`, `credentials_path`, `base_url`, `is_active`, `created_at`, `updated_at`
 
 - [ ] **Step 5: 提交**

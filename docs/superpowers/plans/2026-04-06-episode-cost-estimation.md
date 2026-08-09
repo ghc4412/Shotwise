@@ -60,7 +60,7 @@
 
 - [ ] **Step 3: 生成 Alembic migration**
 
-Run: `cd /Users/pollochen/MyProjects/ArcReel/.worktrees/feature/episode-cost-estimation && uv run alembic revision --autogenerate -m "add segment_id to api_calls"`
+Run: `cd /Users/pollochen/MyProjects/Shotwise/.worktrees/feature/episode-cost-estimation && uv run alembic revision --autogenerate -m "add segment_id to api_calls"`
 Expected: 生成新的 migration 文件
 
 - [ ] **Step 4: 应用 migration**

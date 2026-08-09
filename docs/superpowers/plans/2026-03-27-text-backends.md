@@ -2257,7 +2257,7 @@ async function getConfigIssues(): Promise<ConfigIssue[]> {
     issues.push({
       key: "anthropic",
       tab: "agent",
-      label: "ArcReel 智能体 API Key（Anthropic）未配置",
+      label: "Shotwise 智能体 API Key（Anthropic）未配置",
     });
   }
 

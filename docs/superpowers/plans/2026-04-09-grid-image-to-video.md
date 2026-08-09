@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add grid-based storyboard generation mode to ArcReel, where multiple scenes in a segment group are generated as a single grid image, split into chained first/last frames, and fed into video generation with first_last mode support.
+**Goal:** Add grid-based storyboard generation mode to Shotwise, where multiple scenes in a segment group are generated as a single grid image, split into chained first/last frames, and fed into video generation with first_last mode support.
 
 **Architecture:** Four-phase implementation: (1) Core library — pure-logic grid calculator, splitter, prompt builder; (2) Backend integration — task executor, API router, video backend extension; (3) Frontend — project settings, timeline grid groups, SegmentCard grid mode, grid preview; (4) Agent skills — generate-grid skill and workflow updates.
 

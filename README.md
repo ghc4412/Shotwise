@@ -330,7 +330,7 @@ uv run pre-commit install
 本项目采用 [GNU Affero 通用公共许可证 v3.0 (AGPL-3.0)](./LICENSE) 授权，
 附加条款见 [NOTICE](./NOTICE)。
 
-Copyright © 2026 Pollo3470, ArcReel contributors, and Shotwise contributors
+Copyright © 2026 Pollo3470, Shotwise contributors, and Shotwise contributors
 
 如果您所在组织的政策不允许使用 AGPL-3.0 许可的软件，或您希望在不承担
 AGPL-3.0 开源义务的前提下商用本项目，请联系：[support@arc-reel.com](mailto:support@arc-reel.com)

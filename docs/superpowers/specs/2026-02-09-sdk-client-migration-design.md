@@ -61,7 +61,7 @@
 
 > 实现差异：落地未采用 `projects/.agent_data/` 下的独立 SQLite + transcript JSON 文件方案。
 > 改为 SDK transcript 入库镜像：会话元数据 + transcript 写入统一的 SQLAlchemy ORM
-> （模型 `AgentSession`），由 `ARCREEL_SDK_SESSION_STORE` 控制（`db`/`off`，off 时回退到 SDK
+> （模型 `AgentSession`），由 `SHOTWISE_SDK_SESSION_STORE` 控制（`db`/`off`，off 时回退到 SDK
 > 自带的 jsonl 路径）。下文目录树仅示意初版构想。
 
 ```

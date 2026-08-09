@@ -93,7 +93,7 @@ git commit -m "chore(deps): bump claude-agent-sdk to 0.1.73 for session_store_fl
 
 Create `tests/agent_session_store/test_flush_mode.py`:
 ```python
-"""ARCREEL_SDK_SESSION_STORE_FLUSH env parser."""
+"""SHOTWISE_SDK_SESSION_STORE_FLUSH env parser."""
 
 from __future__ import annotations
 
@@ -103,36 +103,36 @@ from lib.agent_session_store import session_store_flush_mode
 
 
 def test_default_is_eager(monkeypatch):
-    monkeypatch.delenv("ARCREEL_SDK_SESSION_STORE_FLUSH", raising=False)
+    monkeypatch.delenv("SHOTWISE_SDK_SESSION_STORE_FLUSH", raising=False)
     assert session_store_flush_mode() == "eager"
 
 
 def test_explicit_batched(monkeypatch):
-    monkeypatch.setenv("ARCREEL_SDK_SESSION_STORE_FLUSH", "batched")
+    monkeypatch.setenv("SHOTWISE_SDK_SESSION_STORE_FLUSH", "batched")
     assert session_store_flush_mode() == "batched"
 
 
 def test_case_insensitive(monkeypatch):
-    monkeypatch.setenv("ARCREEL_SDK_SESSION_STORE_FLUSH", "Batched")
+    monkeypatch.setenv("SHOTWISE_SDK_SESSION_STORE_FLUSH", "Batched")
     assert session_store_flush_mode() == "batched"
 
 
 def test_unknown_falls_back_to_eager_with_warning(monkeypatch, caplog):
-    monkeypatch.setenv("ARCREEL_SDK_SESSION_STORE_FLUSH", "weird")
-    with caplog.at_level(logging.WARNING, logger="arcreel.session_store"):
+    monkeypatch.setenv("SHOTWISE_SDK_SESSION_STORE_FLUSH", "weird")
+    with caplog.at_level(logging.WARNING, logger="shotwise.session_store"):
         assert session_store_flush_mode() == "eager"
     assert any(
-        "ARCREEL_SDK_SESSION_STORE_FLUSH" in rec.message for rec in caplog.records
+        "SHOTWISE_SDK_SESSION_STORE_FLUSH" in rec.message for rec in caplog.records
     )
 
 
 def test_empty_treated_as_eager(monkeypatch):
-    monkeypatch.setenv("ARCREEL_SDK_SESSION_STORE_FLUSH", "")
+    monkeypatch.setenv("SHOTWISE_SDK_SESSION_STORE_FLUSH", "")
     assert session_store_flush_mode() == "eager"
 
 
 def test_eager_explicit(monkeypatch):
-    monkeypatch.setenv("ARCREEL_SDK_SESSION_STORE_FLUSH", "eager")
+    monkeypatch.setenv("SHOTWISE_SDK_SESSION_STORE_FLUSH", "eager")
     assert session_store_flush_mode() == "eager"
 ```
 
@@ -149,9 +149,9 @@ Edit `lib/agent_session_store/__init__.py`：
 1. 紧接现有 `_VALID_MODES = frozenset({"db", "off", ""})` 之后添加：
 
 ```python
-logger = logging.getLogger("arcreel.session_store")
+logger = logging.getLogger("shotwise.session_store")
 
-_FLUSH_ENV_VAR = "ARCREEL_SDK_SESSION_STORE_FLUSH"
+_FLUSH_ENV_VAR = "SHOTWISE_SDK_SESSION_STORE_FLUSH"
 _VALID_FLUSH_MODES = frozenset({"eager", "batched"})
 ```
 
@@ -163,7 +163,7 @@ def session_store_flush_mode() -> str:
 
     Defaults to "eager" so transcript writes are durable across crashes
     and visible mid-turn for reconnect snapshots. Set
-    ARCREEL_SDK_SESSION_STORE_FLUSH=batched for the legacy end-of-turn
+    SHOTWISE_SDK_SESSION_STORE_FLUSH=batched for the legacy end-of-turn
     flush behavior (rollback path).
     """
     raw = os.getenv(_FLUSH_ENV_VAR, "").strip().lower()
@@ -223,7 +223,7 @@ git commit -m "feat(session-store): add session_store_flush_mode env parser"
 ```python
 def test_flush_mode_passed_to_options_default(monkeypatch, tmp_path):
     """No env → ClaudeAgentOptions.session_store_flush == 'eager'."""
-    monkeypatch.delenv("ARCREEL_SDK_SESSION_STORE_FLUSH", raising=False)
+    monkeypatch.delenv("SHOTWISE_SDK_SESSION_STORE_FLUSH", raising=False)
     sm = _build_sm(tmp_path)
 
     project_cwd = tmp_path / "projects" / "demo"
@@ -235,7 +235,7 @@ def test_flush_mode_passed_to_options_default(monkeypatch, tmp_path):
 
 def test_flush_mode_passed_to_options_batched(monkeypatch, tmp_path):
     """env=batched → options.session_store_flush == 'batched'."""
-    monkeypatch.setenv("ARCREEL_SDK_SESSION_STORE_FLUSH", "batched")
+    monkeypatch.setenv("SHOTWISE_SDK_SESSION_STORE_FLUSH", "batched")
     sm = _build_sm(tmp_path)
     project_cwd = tmp_path / "projects" / "demo"
     project_cwd.mkdir(parents=True)
@@ -250,8 +250,8 @@ def test_flush_mode_passed_to_options_when_store_off(monkeypatch, tmp_path):
     锁住回滚组合：禁用 DB store 不应阻断 options 构造，且 flush 模式仍透传
     （SDK 0.1.73 不要求 store 必须存在）。
     """
-    monkeypatch.setenv("ARCREEL_SDK_SESSION_STORE", "off")
-    monkeypatch.delenv("ARCREEL_SDK_SESSION_STORE_FLUSH", raising=False)
+    monkeypatch.setenv("SHOTWISE_SDK_SESSION_STORE", "off")
+    monkeypatch.delenv("SHOTWISE_SDK_SESSION_STORE_FLUSH", raising=False)
     sm = _build_sm(tmp_path)
 
     project_cwd = tmp_path / "projects" / "demo"
@@ -957,7 +957,7 @@ Expected:
 - [ ] **Step 5: 手动验收 3 - batched 回退路径**
 
 ```bash
-ARCREEL_SDK_SESSION_STORE_FLUSH=batched uv run uvicorn server.app:app --reload-dir server --reload-dir lib --port 1241
+SHOTWISE_SDK_SESSION_STORE_FLUSH=batched uv run uvicorn server.app:app --reload-dir server --reload-dir lib --port 1241
 ```
 
 操作：正常发送几条消息。

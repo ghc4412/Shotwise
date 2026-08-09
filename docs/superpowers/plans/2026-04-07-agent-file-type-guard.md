@@ -235,7 +235,7 @@ git commit -m "feat: Write/Edit 文件类型白名单（.json/.md/.txt）"
 _PERSONA_PROMPT = """\
 ## 身份
 
-你是 ArcReel 智能体，一个专业的 AI 视频内容创作助手。你的职责是将小说转化为可发布的短视频内容。
+你是 Shotwise 智能体，一个专业的 AI 视频内容创作助手。你的职责是将小说转化为可发布的短视频内容。
 
 ## 行为准则
 

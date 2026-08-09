@@ -2038,7 +2038,7 @@ Expected: 通过。若有相关测试（api.test.ts）因缺字段 error，补�
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/pollochen/MyProjects/ArcReel/.worktrees/feat/resolution-param-refactor
+cd /Users/pollochen/MyProjects/Shotwise/.worktrees/feat/resolution-param-refactor
 git add frontend/src/types/provider.ts frontend/src/types/custom-provider.ts frontend/src/types/project.ts frontend/src/api.ts
 git commit -m "feat(frontend-types): 补充 resolutions / resolution / model_settings 字段"
 ```
@@ -2202,7 +2202,7 @@ cd frontend && pnpm test -- ResolutionPicker
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/pollochen/MyProjects/ArcReel/.worktrees/feat/resolution-param-refactor
+cd /Users/pollochen/MyProjects/Shotwise/.worktrees/feat/resolution-param-refactor
 git add frontend/src/components/shared/ResolutionPicker.tsx frontend/src/components/shared/ResolutionPicker.test.tsx
 git commit -m "feat(frontend): 新建 ResolutionPicker 组件（select / combobox 双模）"
 ```
@@ -2291,7 +2291,7 @@ const VIDEO_RESOLUTIONS = ["480p", "720p", "1080p", "4K"];
 - [ ] **Step 4: 运行 typecheck + i18n test**
 
 ```bash
-cd /Users/pollochen/MyProjects/ArcReel/.worktrees/feat/resolution-param-refactor
+cd /Users/pollochen/MyProjects/Shotwise/.worktrees/feat/resolution-param-refactor
 cd frontend && pnpm typecheck && cd ..
 uv run python -m pytest tests/lib/i18n/test_i18n_consistency.py -v
 ```
@@ -2413,7 +2413,7 @@ cd frontend && pnpm typecheck && pnpm test -- WizardStep2Models ModelConfigSecti
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/pollochen/MyProjects/ArcReel/.worktrees/feat/resolution-param-refactor
+cd /Users/pollochen/MyProjects/Shotwise/.worktrees/feat/resolution-param-refactor
 git add frontend/src/components/shared/ModelConfigSection.tsx frontend/src/components/pages/CreateProjectModal.tsx frontend/src/utils/provider-models.ts
 git commit -m "feat(wizard): Step2 模型卡片新增分辨率选择"
 ```
@@ -2491,7 +2491,7 @@ cd frontend && pnpm test -- ProjectSettingsPage
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /Users/pollochen/MyProjects/ArcReel/.worktrees/feat/resolution-param-refactor
+cd /Users/pollochen/MyProjects/Shotwise/.worktrees/feat/resolution-param-refactor
 git add frontend/src/components/pages/ProjectSettingsPage.tsx
 git commit -m "feat(project-settings): 图片/视频 backend 新增分辨率选择并持久化 model_settings"
 ```
@@ -2573,7 +2573,7 @@ if (mode === "select") {
 
 ```bash
 cd frontend && pnpm check
-cd /Users/pollochen/MyProjects/ArcReel/.worktrees/feat/resolution-param-refactor
+cd /Users/pollochen/MyProjects/Shotwise/.worktrees/feat/resolution-param-refactor
 uv run python -m pytest -q 2>&1 | tail -10
 ```
 
@@ -2618,7 +2618,7 @@ Expected: typecheck + 测试 + 构建全绿。
 ```bash
 uv run ruff check . && uv run ruff format .
 cd frontend && pnpm lint --fix 2>/dev/null || true
-cd /Users/pollochen/MyProjects/ArcReel/.worktrees/feat/resolution-param-refactor
+cd /Users/pollochen/MyProjects/Shotwise/.worktrees/feat/resolution-param-refactor
 git status
 ```
 

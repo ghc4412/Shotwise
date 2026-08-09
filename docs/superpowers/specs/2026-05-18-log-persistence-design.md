@@ -37,15 +37,15 @@
 应用代码 logger.info(...)
    │
    ├─ StreamHandler → stdout（既有，不变）
-   └─ TimedRotatingFileHandler → PROJECT_ROOT/logs/arcreel.log
+   └─ TimedRotatingFileHandler → PROJECT_ROOT/logs/shotwise.log
             │
-            └─ 每日 midnight 切到 arcreel.log.YYYY-MM-DD，最多 7 份
+            └─ 每日 midnight 切到 shotwise.log.YYYY-MM-DD，最多 7 份
 
 用户在 Settings 点「下载诊断日志」
    │
    GET /api/v1/system/logs/download
    │
-   └─ ZipFile 流式打包 logs/arcreel.log* + diagnostics.txt
+   └─ ZipFile 流式打包 logs/shotwise.log* + diagnostics.txt
       → 返回 application/zip
 ```
 
@@ -74,12 +74,12 @@
 - 复用现有 formatter（与 stdout 完全一致）
 - 标记 `_HANDLER_ATTR = True` 保证幂等
 - 日志目录由新增函数 `resolve_log_dir()` 决定：
-  1. `ARCREEL_LOG_DIR` env（绝对路径或相对 `PROJECT_ROOT`）
+  1. `SHOTWISE_LOG_DIR` env（绝对路径或相对 `PROJECT_ROOT`）
   2. 默认 `PROJECT_ROOT / "logs"`
 - 不放在 `app_data_dir()` 下：那一层同时是 `projects_root`，目录被枚举为视频项目列表，无前缀的兄弟目录会被错认为项目（容器部署用 `./logs:/app/logs` 单独挂出来）
 - 升级路径：`lib.logging_config.migrate_legacy_log_dir()` 在 `setup_logging()` 之前调用，把旧 `app_data_dir()/logs` 平移到新位置；新旧并存时告警保留
 - 首次启动 `mkdir(parents=True, exist_ok=True)`
-- 逃生口：`ARCREEL_LOG_FILE_DISABLED` 取值 `1` / `true` / `yes`（大小写不敏感）时跳过 file handler 注册
+- 逃生口：`SHOTWISE_LOG_FILE_DISABLED` 取值 `1` / `true` / `yes`（大小写不敏感）时跳过 file handler 注册
 - **容错**：mkdir 或 FileHandler 构造异常时 catch + `logging.getLogger(__name__).warning("file logging disabled: %s", exc)`，stdout 继续工作 — 日志辅助逻辑不阻塞主流程
 
 ### 2. `server/services/diagnostics.py` — 新文件
@@ -113,13 +113,13 @@ def collect_diagnostics() -> str:
 实现：
 
 1. 用 `tempfile.SpooledTemporaryFile(max_size=50 * 1024 * 1024)` 作为 zip 缓冲：< 50 MB 时全在内存；超出自动溢出到磁盘临时文件，避免极端情况下 8 × 100 MB ≈ 800 MB 全在堆里
-2. 遍历 `resolve_log_dir()` 下所有 `arcreel.log*` 文件
+2. 遍历 `resolve_log_dir()` 下所有 `shotwise.log*` 文件
    - **跳过符号链接**（`path.is_symlink()`）—— 防止有人在 logs/ 下放 symlink 指向目录外敏感文件经诊断包外泄
    - 单文件 > 100 MB 跳过，把 `[skipped: too large: <name> ({size} bytes)]` 追加进诊断文本
 3. 调用 `collect_diagnostics()` 写入 `diagnostics.txt`
-4. zip 写完后 `seek(0)`，包装成 `StreamingResponse(spooled_file, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="arcreel-diagnostics-{ts}.zip"'})`；StreamingResponse 消费完后 SpooledTemporaryFile 自动关闭并删除磁盘 backing file
+4. zip 写完后 `seek(0)`，包装成 `StreamingResponse(spooled_file, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="shotwise-diagnostics-{ts}.zip"'})`；StreamingResponse 消费完后 SpooledTemporaryFile 自动关闭并删除磁盘 backing file
 
-文件名格式：`arcreel-diagnostics-YYYY-MM-DD-HHMM.zip`（本地时区即可）。
+文件名格式：`shotwise-diagnostics-YYYY-MM-DD-HHMM.zip`（本地时区即可）。
 
 注册：`server/app.py` 中 `app.include_router(system.router, prefix="/api/v1", tags=["系统"])`。
 
@@ -170,11 +170,11 @@ async function downloadDiagnostics() {
 # stray sibling directory would surface as a fake project in the UI.
 # 日志文件目录（默认 $PROJECT_ROOT/logs），相对路径基于 PROJECT_ROOT。
 # 刻意不放在项目根下：项目根会被枚举为视频项目列表，旁系目录会被错认为项目。
-# ARCREEL_LOG_DIR=
+# SHOTWISE_LOG_DIR=
 
 # Disable file logging (default: false). When set to 1/true/yes, logs go only to stdout.
 # 关闭文件日志（默认 false）。设为 1/true/yes 时日志仅输出到 stdout。
-# ARCREEL_LOG_FILE_DISABLED=
+# SHOTWISE_LOG_FILE_DISABLED=
 ```
 
 ## 错误处理
@@ -201,10 +201,10 @@ async function downloadDiagnostics() {
 | 用例 | 覆盖 |
 |-----|-----|
 | `test_file_handler_registered_by_default` | `setup_logging()` 后 root.handlers 含 `TimedRotatingFileHandler` |
-| `test_file_handler_disabled_by_env` | `ARCREEL_LOG_FILE_DISABLED=1` 时不注册 |
+| `test_file_handler_disabled_by_env` | `SHOTWISE_LOG_FILE_DISABLED=1` 时不注册 |
 | `test_logs_written_to_file` | `logger.info("hello")` 后日志文件包含 `hello` |
 | `test_mkdir_failure_graceful` | monkeypatch `Path.mkdir` 抛 PermissionError，`setup_logging()` 不抛、stdout handler 仍存在 |
-| `test_custom_log_dir` | `ARCREEL_LOG_DIR=tmp_path/foo` 生效 |
+| `test_custom_log_dir` | `SHOTWISE_LOG_DIR=tmp_path/foo` 生效 |
 | `test_idempotent` | 多次调用 `setup_logging()` 不重复挂 handler |
 
 ### `tests/test_system_logs_router.py`
@@ -236,5 +236,5 @@ async function downloadDiagnostics() {
 | 日志文件意外写满磁盘 | `backupCount=7` 严格上限；INFO 级别下日常 < 50 MB/天 |
 | 日志文件含敏感信息（用户 prompt、provider key） | 现有 `lib/logging_utils.py` 已截断 + 脱敏；新代码继续走 `format_kwargs_for_log` |
 | 下载端点被恶意爬取 | 沿用 auth dependency；单用户模型 = admin-only |
-| 老用户磁盘空间不足 | 提供 `ARCREEL_LOG_FILE_DISABLED=1` 逃生口 |
+| 老用户磁盘空间不足 | 提供 `SHOTWISE_LOG_FILE_DISABLED=1` 逃生口 |
 | 多 worker 部署日志互写 | 文档明确「目前支持 worker=1」；未来若多 worker，再换 `concurrent-log-handler` |

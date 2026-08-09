@@ -10,7 +10,7 @@
 ## Goals / Non-Goals
 
 **Goals:**
-- 将顶栏 Tab 从 `[config, api-keys]` 扩展为 `[ArcReel 智能体配置, AI 生图/生视频配置, 高级配置, API Keys]`，每个配置 Tab 承载对应分类的字段
+- 将顶栏 Tab 从 `[config, api-keys]` 扩展为 `[Shotwise 智能体配置, AI 生图/生视频配置, 高级配置, API Keys]`，每个配置 Tab 承载对应分类的字段
 - 每个配置 Tab 有独立保存按钮；Tab 内有未保存变更时，保存页脚以 sticky 方式固定在视口底部
 - 为所有可选字段统一添加清除（×）按钮
 - 使用 `/frontend-design` 技能进行 UI 设计，使用 `/vercel-react-best-practices` 技能进行开发
@@ -28,7 +28,7 @@
 
 | Tab | 内容 |
 |-----|------|
-| ArcReel 智能体配置 | Anthropic API Key、Base URL、各模型选择 |
+| Shotwise 智能体配置 | Anthropic API Key、Base URL、各模型选择 |
 | AI 生图/生视频配置 | Gemini API Key、Base URL、后端选择、模型选择、Vertex 凭证 |
 | 高级配置 | 速率限制（RPM）、请求间隔、最大并发 Worker 数 |
 | API Keys | 现有 ApiKeysTab 组件，不变 |
@@ -99,7 +99,7 @@ SystemConfigPage
 
 **必填项定义**：以下三项均需满足，系统才能正常运行：
 
-1. **ArcReel 智能体 API Key**：`anthropic_api_key.is_set === true`
+1. **Shotwise 智能体 API Key**：`anthropic_api_key.is_set === true`
 2. **AI 生图后端凭证**：取决于 `image_backend` 的值：
    - `"aistudio"` → `gemini_api_key.is_set === true`
    - `"vertex"` → `vertex_credentials.is_set === true`
@@ -121,7 +121,7 @@ function checkBackendCredential(backend: SystemBackend, config: SystemConfigView
 function getConfigIssues(config: SystemConfigView): ConfigIssue[] {
   const issues: ConfigIssue[] = []
   if (!config.anthropic_api_key.is_set)
-    issues.push({ key: "anthropic", tab: "agent", label: "ArcReel 智能体 API Key（Anthropic）未配置" })
+    issues.push({ key: "anthropic", tab: "agent", label: "Shotwise 智能体 API Key（Anthropic）未配置" })
   if (!checkBackendCredential(config.image_backend, config))
     issues.push({ key: "image", tab: "media",
       label: config.image_backend === "aistudio"

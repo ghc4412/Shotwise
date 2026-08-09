@@ -99,7 +99,7 @@ Expected: 输出 `v9.39.4`（或更高 patch）。
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /Users/pollochen/MyProjects/ArcReel/.worktrees/fix/a11y-focus-visible-219
+cd /Users/pollochen/MyProjects/Shotwise/.worktrees/fix/a11y-focus-visible-219
 git add frontend/package.json frontend/pnpm-lock.yaml
 git commit -m "chore(frontend): add ESLint + jsx-a11y dev dependencies
 
@@ -234,7 +234,7 @@ Expected: 输出 `exit=1`（因为有 error，正常现象）；`/tmp/eslint-rep
 Run:
 
 ```bash
-cd /Users/pollochen/MyProjects/ArcReel/.worktrees/fix/a11y-focus-visible-219/frontend
+cd /Users/pollochen/MyProjects/Shotwise/.worktrees/fix/a11y-focus-visible-219/frontend
 node -e '
   const data = JSON.parse(require("fs").readFileSync("/tmp/eslint-report.json", "utf8"));
   const errorRules = new Set();
@@ -291,7 +291,7 @@ Expected: `exit=0`；输出结尾有形如 `✖ N problems (0 errors, N warnings
 Run:
 
 ```bash
-cd /Users/pollochen/MyProjects/ArcReel/.worktrees/fix/a11y-focus-visible-219/frontend
+cd /Users/pollochen/MyProjects/Shotwise/.worktrees/fix/a11y-focus-visible-219/frontend
 pnpm exec eslint . --max-warnings=9999 --no-error-on-unmatched-pattern 2>&1 \
   | tail -5
 ```
@@ -301,7 +301,7 @@ pnpm exec eslint . --max-warnings=9999 --no-error-on-unmatched-pattern 2>&1 \
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/pollochen/MyProjects/ArcReel/.worktrees/fix/a11y-focus-visible-219
+cd /Users/pollochen/MyProjects/Shotwise/.worktrees/fix/a11y-focus-visible-219
 git add frontend/eslint.config.js
 git commit -m "chore(frontend): populate MIGRATION_WARN_RULES migration window
 
@@ -372,7 +372,7 @@ Expected: `exit=0`；依次看到 typecheck → lint → vitest 三段输出，�
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /Users/pollochen/MyProjects/ArcReel/.worktrees/fix/a11y-focus-visible-219
+cd /Users/pollochen/MyProjects/Shotwise/.worktrees/fix/a11y-focus-visible-219
 git add frontend/package.json
 git commit -m "chore(frontend): add lint/lint:fix scripts with baseline N=<N>
 
@@ -575,7 +575,7 @@ frontend/pnpm-lock.yaml
 - [ ] **Step 4: push 到远程并跑 CI**
 
 ```bash
-cd /Users/pollochen/MyProjects/ArcReel/.worktrees/fix/a11y-focus-visible-219
+cd /Users/pollochen/MyProjects/Shotwise/.worktrees/fix/a11y-focus-visible-219
 git push -u origin fix/a11y-focus-visible-219
 ```
 
@@ -583,7 +583,7 @@ Expected: 推送成功；GitHub Actions 触发 `frontend-tests` 和 `backend-tes
 
 - [ ] **Step 5: 监控 CI 结果**
 
-Run: `gh run watch --repo ArcReel/ArcReel` （或 `gh pr checks <pr-number>` 若已创建 PR）
+Run: `gh run watch --repo Shotwise/Shotwise` （或 `gh pr checks <pr-number>` 若已创建 PR）
 
 Expected: `frontend-tests` job 全绿，`Lint` step 可见且通过（耗时 15-40s）。
 

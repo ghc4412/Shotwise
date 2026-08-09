@@ -2,11 +2,11 @@
 
 ### Requirement: 侧栏分区结构
 
-系统配置页（`SystemConfigPage`，路由 `/app/settings`，分区由 `?section=` query 控制）SHALL 以左侧栏导航在以下分区间切换：**供应商**（providers）、**ArcReel 智能体配置**（agent）、**AI 生图/生视频配置**（media）、**用量统计**（usage）、**API Keys**（api-keys）、**关于**（about）。
+系统配置页（`SystemConfigPage`，路由 `/app/settings`，分区由 `?section=` query 控制）SHALL 以左侧栏导航在以下分区间切换：**供应商**（providers）、**Shotwise 智能体配置**（agent）、**AI 生图/生视频配置**（media）、**用量统计**（usage）、**API Keys**（api-keys）、**关于**（about）。
 
 各分区承载内容：
 - **供应商**：预置 / 自定义供应商配置管理
-- **ArcReel 智能体配置**：Anthropic API Key、Base URL、各模型选择字段，以及速率限制 / 并发 Worker 等高级运行调优（advanced settings 折叠在本分区内，无独立分区）
+- **Shotwise 智能体配置**：Anthropic API Key、Base URL、各模型选择字段，以及速率限制 / 并发 Worker 等高级运行调优（advanced settings 折叠在本分区内，无独立分区）
 - **AI 生图/生视频配置**：Gemini API Key、Base URL、后端选择、模型选择、Vertex 凭证等
 - **用量统计**：API 用量与费用汇总
 - **API Keys**：API Key 管理功能
@@ -89,7 +89,7 @@
 当系统必填配置未完整设置时，所有通往设置页的入口 SHALL 以红色圆点徽标标记，提醒用户进入设置完成配置。
 
 **必填配置定义**：以下三项均需满足，系统才能正常运行：
-1. ArcReel 智能体 API Key（`anthropic_api_key.is_set`）
+1. Shotwise 智能体 API Key（`anthropic_api_key.is_set`）
 2. AI 生图后端凭证：若 `image_backend = "aistudio"` 则 `gemini_api_key.is_set`；若 `"vertex"` 则 `vertex_credentials.is_set`
 3. AI 生视频后端凭证：若 `video_backend = "aistudio"` 则 `gemini_api_key.is_set`；若 `"vertex"` 则 `vertex_credentials.is_set`
 
@@ -117,7 +117,7 @@
 
 #### Scenario: Anthropic API Key 未配置
 - **WHEN** 用户进入设置页，且 `anthropic_api_key.is_set === false`
-- **THEN** 警告横幅 SHALL 包含一条"ArcReel 智能体 API Key（Anthropic）未配置"，并链接到"ArcReel 智能体配置" Tab
+- **THEN** 警告横幅 SHALL 包含一条"Shotwise 智能体 API Key（Anthropic）未配置"，并链接到"Shotwise 智能体配置" Tab
 
 #### Scenario: AI 生图后端凭证未配置（AI Studio）
 - **WHEN** `image_backend = "aistudio"` 且 `gemini_api_key.is_set === false`

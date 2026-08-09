@@ -1,6 +1,6 @@
 # 供应商管理页设计
 
-> Issue: [#102](https://github.com/ArcReel/ArcReel/issues/102)（属于 [#98](https://github.com/ArcReel/ArcReel/issues/98) 子任务）
+> Issue: [#102](https://github.com/Shotwise/Shotwise/issues/102)（属于 [#98](https://github.com/Shotwise/Shotwise/issues/98) 子任务）
 > 日期: 2026-03-18
 
 ## 概述

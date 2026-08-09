@@ -29,7 +29,7 @@
 
 ## 5. Skill 定义文件与动态渲染
 
-- [x] 5.1 创建 `public/skill.md.template`，参考 Zopia 格式编写 ArcReel Skill 定义，API URL 使用 `{{BASE_URL}}` 占位符
+- [x] 5.1 创建 `public/skill.md.template`，参考 Zopia 格式编写 Shotwise Skill 定义，API URL 使用 `{{BASE_URL}}` 占位符
 - [x] 5.2 创建 `GET /skill.md` 路由（无需认证），从请求 Host/scheme 推断 base URL，替换占位符后返回
 - [x] 5.3 验证不同部署地址下 `GET /skill.md` 返回正确的动态 URL
 

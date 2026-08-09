@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 为 ArcReel 新增 OpenAI 为第五个预置供应商，支持文本（GPT-5.4）、图片（GPT Image 1.5）、视频（Sora 2）三种媒体类型。
+**Goal:** 为 Shotwise 新增 OpenAI 为第五个预置供应商，支持文本（GPT-5.4）、图片（GPT Image 1.5）、视频（Sora 2）三种媒体类型。
 
 **Architecture:** 新增 `lib/openai_shared.py` 共享客户端工厂，三个独立 Backend（`OpenAITextBackend`、`OpenAIImageBackend`、`OpenAIVideoBackend`）各自实现对应 Protocol，通过现有 Registry 模式注册。费用计算、连接测试、工厂集成均为最小侵入式修改。
 

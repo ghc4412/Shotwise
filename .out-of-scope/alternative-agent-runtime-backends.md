@@ -1,6 +1,6 @@
 # Alternative Agent Runtime Backends
 
-ArcReel 的内嵌智能体不提供「更换智能体运行时后端」的选项——不支持把 Claude Agent SDK 替换为 Codex、其他 agent 框架或任何非 Anthropic 协议的运行时。
+Shotwise 的内嵌智能体不提供「更换智能体运行时后端」的选项——不支持把 Claude Agent SDK 替换为 Codex、其他 agent 框架或任何非 Anthropic 协议的运行时。
 
 ## Why this is out of scope
 

@@ -40,15 +40,15 @@
 - **THEN** 裁剪后的 `versions/versions.json` 中当前版本记录的 `prompt` 字段被保留
 
 ### Requirement: 导出清单标记 scope
-`arcreel-export.json` 清单文件 SHALL 包含 `scope` 字段，值为 `"full"` 或 `"current"`，反映实际导出范围。
+`shotwise-export.json` 清单文件 SHALL 包含 `scope` 字段，值为 `"full"` 或 `"current"`，反映实际导出范围。
 
 #### Scenario: full 导出清单 scope 为 full
 - **WHEN** 以 `scope=full` 导出
-- **THEN** `arcreel-export.json` 中 `scope` 字段值为 `"full"`
+- **THEN** `shotwise-export.json` 中 `scope` 字段值为 `"full"`
 
 #### Scenario: current 导出清单 scope 为 current
 - **WHEN** 以 `scope=current` 导出
-- **THEN** `arcreel-export.json` 中 `scope` 字段值为 `"current"`
+- **THEN** `shotwise-export.json` 中 `scope` 字段值为 `"current"`
 
 ### Requirement: 前端导出交互支持范围选择
 前端 SHALL 在用户点击导出按钮后显示选择弹窗，提供两个导出选项：

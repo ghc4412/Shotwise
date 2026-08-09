@@ -29,7 +29,7 @@
 | 本地 jsonl 副本 | P：保留默认路径，由 SDK `cleanupPeriodDays` 自动清理 |
 | 历史数据迁移 | 启动钩子（FastAPI lifespan）一次性导入，幂等 |
 | 数据库方言 | 不绑死 PG，走 `lib/db/engine.py`，dev SQLite / prod PG 同一份代码 |
-| 启用方式 | 默认开启，环境变量 `ARCREEL_SDK_SESSION_STORE=off` 可回滚 |
+| 启用方式 | 默认开启，环境变量 `SHOTWISE_SDK_SESSION_STORE=off` 可回滚 |
 | 旧路径清理 | 留 1–2 个版本兜底，稳定后删除 `_internal._read_session_file` 依赖 |
 
 ## §1 总体架构
@@ -278,7 +278,7 @@ def make_project_key(project_cwd: Path | str) -> str:
 在构造调用 `*_from_store` helper 时统一用它（避免 SDK 这个 API 的 import 散落）。
 
 **多用户隔离不靠 project_key**：
-- ArcReel 当前每个项目独立 cwd（`projects/<project_name>/`），项目间天然隔离
+- Shotwise 当前每个项目独立 cwd（`projects/<project_name>/`），项目间天然隔离
 - `user_id` 字段保留在 `agent_session_entries` / `agent_session_summaries` 表里，作用
   是 FK CASCADE 删账户级联；不参与 SessionKey
 - 若未来需要「同项目跨用户独立会话」，按用户分 cwd（如 `projects/<user_id>/<project_name>/`）
@@ -312,12 +312,12 @@ tag_session(sid, tag)             ──▶ 保持原 API（SDK 内部写一条 
 
 ### 4.3 回滚开关
 
-新增环境变量：`ARCREEL_SDK_SESSION_STORE`（默认 `"db"`，可设 `"off"`）
+新增环境变量：`SHOTWISE_SDK_SESSION_STORE`（默认 `"db"`，可设 `"off"`）
 
 ```python
 # session_manager._build_options
 def _build_session_store(self) -> SessionStore | None:
-    mode = os.getenv("ARCREEL_SDK_SESSION_STORE", "db")
+    mode = os.getenv("SHOTWISE_SDK_SESSION_STORE", "db")
     if mode == "off":
         return None  # 退化到 SDK 默认行为（读写本地 jsonl）
     return DbSessionStore(get_async_session_factory(), user_id=self._user_id)
@@ -348,7 +348,7 @@ class SdkTranscriptAdapter:
 
 | 阶段 | 默认值 | 验证 |
 |---|---|---|
-| 首发 | `ARCREEL_SDK_SESSION_STORE=db` 默认开 | 全量回归测试 + 1–2 周生产观察 |
+| 首发 | `SHOTWISE_SDK_SESSION_STORE=db` 默认开 | 全量回归测试 + 1–2 周生产观察 |
 | 稳定后（下下个版本） | 删除环境变量与 `_read_via_local_jsonl` 兜底；移除 `_internal._read_session_file` import | 一次性清理 PR |
 
 ## §5 历史数据迁移（启动钩子）
@@ -428,7 +428,7 @@ migrate_local_transcripts_to_store(store, projects_root)
 ### 5.4 关键决策
 
 1. **零路径硬编码** — `~/.claude/projects/` 还是 `CLAUDE_CONFIG_DIR/projects/` 还是
-   docker 挂载点完全由 SDK 决定，迁移代码只传 ArcReel 的项目 cwd 给 SDK。
+   docker 挂载点完全由 SDK 决定，迁移代码只传 Shotwise 的项目 cwd 给 SDK。
 2. **零文件名假设** — 不 `glob("*.jsonl")`、不 `.stem`、不假定 subagent 子目录结构。
    `import_session_to_store` 自己处理（含 subagent transcripts + `.meta.json` sidecar）。
 3. **Marker 放 `data_dir/.session_store_migration_done`** — 与 `agent_runtime` 数据
@@ -483,7 +483,7 @@ def _is_mirror_error(event: dict) -> bool:
 
 ### 6.3 日志规范
 
-`lib/agent_session_store/store.py` 用 `logger = logging.getLogger("arcreel.session_store")`：
+`lib/agent_session_store/store.py` 用 `logger = logging.getLogger("shotwise.session_store")`：
 
 ```
 INFO  append: session=<id> entries=<n> seq_start=<seq>
@@ -585,7 +585,7 @@ matrix:
 | 4 | 删除 `data_dir/.session_store_migration_done` + 重启 → 已迁的会话不重复入库 |
 | 5 | `sdk_transcript_adapter.py` 不再 import `claude_agent_sdk._internal.sessions._read_session_file`（store 路径） |
 | 6 | 模拟 DB 写入失败 → 前端能收到 `mirror_error` 告警 turn |
-| 7 | 设 `ARCREEL_SDK_SESSION_STORE=off` 重启 → 退化到旧 jsonl 路径仍可用 |
+| 7 | 设 `SHOTWISE_SDK_SESSION_STORE=off` 重启 → 退化到旧 jsonl 路径仍可用 |
 | 8 | grep 整个仓库无 `_internal.sessions` 引用（清理阶段验收，本期不强制） |
 
 ## 非目标

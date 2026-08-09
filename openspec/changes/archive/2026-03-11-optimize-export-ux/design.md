@@ -45,7 +45,7 @@
 - `scope=current`：
   - 跳过 `versions/` 目录下的历史文件（`versions/storyboards/`、`versions/videos/` 等）
   - 保留 `versions/versions.json`，但裁剪为仅包含 current version 条目
-  - 清单文件 `arcreel-export.json` 的 `scope` 字段设为 `"current"`
+  - 清单文件 `shotwise-export.json` 的 `scope` 字段设为 `"current"`
 
 ### 3. versions.json 裁剪策略
 

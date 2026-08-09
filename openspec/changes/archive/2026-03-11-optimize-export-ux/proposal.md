@@ -11,7 +11,7 @@
 - **下载 URL 安全认证**：引入短时效一次性下载 token 机制，避免将长期 JWT 暴露在 URL query string 中。
 - **导出范围选项**：在导出交互中新增选择——"导出全部" 与 "仅当前版本"：
   - **导出全部**：行为与现有逻辑一致，打包整个项目目录（含 `versions/`）。
-  - **仅当前版本**：跳过 `versions/` 目录下的历史文件，仅保留当前使用的资源。同时在 `arcreel-export.json` 清单中记录 `scope: "current"` 标记，并在 `versions.json` 中仅保留 current version 条目作为元数据（保留 prompt 等生成信息），以便导入时恢复上下文。
+  - **仅当前版本**：跳过 `versions/` 目录下的历史文件，仅保留当前使用的资源。同时在 `shotwise-export.json` 清单中记录 `scope: "current"` 标记，并在 `versions.json` 中仅保留 current version 条目作为元数据（保留 prompt 等生成信息），以便导入时恢复上下文。
 
 ## Capabilities
 

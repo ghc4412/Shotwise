@@ -1329,7 +1329,7 @@ git commit -m "docs(agent): manga-workflow branches on generation_mode (PR6)"
 ```markdown
 # 生成模式参考
 
-ArcReel 支持三种**生成模式**（`generation_mode`）× 两种**内容模式**（`content_mode`），共五种可行路径（参考生视频不区分 narration/drama）。字段含义参见 Spec §4.1。
+Shotwise 支持三种**生成模式**（`generation_mode`）× 两种**内容模式**（`content_mode`），共五种可行路径（参考生视频不区分 narration/drama）。字段含义参见 Spec §4.1。
 
 ## 模式矩阵
 

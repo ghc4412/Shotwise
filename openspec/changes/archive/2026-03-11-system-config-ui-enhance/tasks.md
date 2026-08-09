@@ -12,7 +12,7 @@
 
 ## 3. 配置 Tab 组件
 
-- [x] 3.1 创建 `AgentConfigTab` 组件（ArcReel 智能体配置），内部维护 Anthropic 相关字段的草稿状态，底部嵌入 `TabSaveFooter`
+- [x] 3.1 创建 `AgentConfigTab` 组件（Shotwise 智能体配置），内部维护 Anthropic 相关字段的草稿状态，底部嵌入 `TabSaveFooter`
 - [x] 3.2 创建 `MediaConfigTab` 组件（AI 生图/生视频配置），内部维护 Gemini/Vertex 相关字段的草稿状态，底部嵌入 `TabSaveFooter`
 - [x] 3.3 创建 `AdvancedConfigTab` 组件（高级配置），内部维护限速/并发字段的草稿状态，底部嵌入 `TabSaveFooter`
 - [x] 3.4 每个配置 Tab 组件实现 `isDirty` 检测（`deepEqual` 比较草稿与已保存值的 `useRef`）

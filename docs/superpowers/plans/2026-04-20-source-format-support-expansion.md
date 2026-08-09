@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在 ArcReel 上传入口增加 `.txt / .md / .docx / .epub / .pdf` 多格式支持并一次性规范化为 UTF-8 文本，下游消费者零改动；新增前端冲突协商弹窗、首次上传自动触发分析、原始格式下载入口；启动时幂等迁移历史项目编码。
+**Goal:** 在 Shotwise 上传入口增加 `.txt / .md / .docx / .epub / .pdf` 多格式支持并一次性规范化为 UTF-8 文本，下游消费者零改动；新增前端冲突协商弹窗、首次上传自动触发分析、原始格式下载入口；启动时幂等迁移历史项目编码。
 
 **Architecture:** 新增 `lib/source_loader/` 包（`FormatExtractor` 协议 + 5 种实现 + `SourceLoader` 编排），上传路由集成；`lib/project_manager.py:_read_source_files` 移除 `try/except` 静默跳过；`server/app.py` lifespan 增加幂等启动迁移；前端新增 `ConflictModal` 与 `WelcomeCanvas` 自动分析行为。
 
@@ -2120,7 +2120,7 @@ def test_startup_migration_creates_marker_after_run(tmp_path: Path):
 
     summary = asyncio.run(_migrate_source_encoding_on_startup(tmp_path))
 
-    marker = project / ".arcreel" / "source_encoding_migrated"
+    marker = project / ".shotwise" / "source_encoding_migrated"
     assert marker.exists()
     assert "p1" in summary  # 返回每项目的简报
 
@@ -2130,7 +2130,7 @@ def test_startup_migration_skips_already_marked(tmp_path: Path):
     (project / "source").mkdir(parents=True)
     bad = project / "source" / "n.txt"
     bad.write_bytes(("第一章\n" * 30).encode("gbk"))
-    marker_dir = project / ".arcreel"
+    marker_dir = project / ".shotwise"
     marker_dir.mkdir()
     (marker_dir / "source_encoding_migrated").touch()
 
@@ -2150,9 +2150,9 @@ def test_startup_migration_isolates_project_failures(tmp_path: Path, monkeypatch
 
     # 即使 bad 项目内文件解码失败，迁移函数本身不应抛错（只记录到 errors.log）
     summary = asyncio.run(_migrate_source_encoding_on_startup(tmp_path))
-    assert (good / ".arcreel" / "source_encoding_migrated").exists()
-    assert (bad / ".arcreel" / "source_encoding_migrated").exists()
-    assert (bad / ".arcreel" / "migration_errors.log").exists()
+    assert (good / ".shotwise" / "source_encoding_migrated").exists()
+    assert (bad / ".shotwise" / "source_encoding_migrated").exists()
+    assert (bad / ".shotwise" / "migration_errors.log").exists()
 ```
 
 - [ ] **Step 2: 运行确认失败**
@@ -2181,7 +2181,7 @@ async def _migrate_source_encoding_on_startup(projects_root: Path) -> dict[str, 
         return summary
 
     def _run_one(project_dir: Path) -> dict:
-        marker_dir = project_dir / ".arcreel"
+        marker_dir = project_dir / ".shotwise"
         marker = marker_dir / "source_encoding_migrated"
         if marker.exists():
             return {"skipped": True}
@@ -3100,7 +3100,7 @@ kill $SERVER_PID
 - EPUB 自动注入 `# 章节标题` 标记，便于人工切分
 - 同名文件冲突时弹窗协商（保留两者 / 替换 / 取消）
 - 首次上传自动触发分析
-- 启动时一次性迁移历史项目源文件编码（幂等，失败不阻塞启动；明细见 projects/<name>/.arcreel/migration_errors.log）
+- 启动时一次性迁移历史项目源文件编码（幂等，失败不阻塞启动；明细见 projects/<name>/.shotwise/migration_errors.log）
 ```
 
 - [ ] **Step 6: 最终提交**

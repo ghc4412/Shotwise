@@ -5,7 +5,7 @@
 
 #### Scenario: 访问 skill.md
 - **WHEN** 任何客户端请求 `GET /skill.md`
-- **THEN** 系统返回渲染后的 Skill 定义文件，其中所有 `{{BASE_URL}}` 已被替换为实际的服务地址（如 `https://my-arcreel.example.com`）
+- **THEN** 系统返回渲染后的 Skill 定义文件，其中所有 `{{BASE_URL}}` 已被替换为实际的服务地址（如 `https://my-shotwise.example.com`）
 
 #### Scenario: 不同部署地址
 - **WHEN** 用户自部署在 `http://192.168.1.100:1241` 并访问 `/skill.md`
@@ -31,7 +31,7 @@ skill.md SHALL 定义以下核心工具及其 API 端点、请求/响应格式�
 - **THEN** 每个工具 SHALL 包含端点路径、HTTP 方法、请求参数说明、响应格式示例
 
 ### Requirement: 认证说明
-skill.md SHALL 说明认证方式：用户从 ArcReel 设置页面获取 API Key（`arc-` 前缀），通过 `Authorization: Bearer <API_KEY>` 传递。
+skill.md SHALL 说明认证方式：用户从 Shotwise 设置页面获取 API Key（`arc-` 前缀），通过 `Authorization: Bearer <API_KEY>` 传递。
 
 #### Scenario: 用户按说明配置认证
 - **WHEN** 用户按 skill.md 中的认证说明操作

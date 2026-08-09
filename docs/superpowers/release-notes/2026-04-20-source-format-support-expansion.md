@@ -10,7 +10,7 @@
 - EPUB 自动注入 `# 章节标题` 标记，便于人工切分与识别结构
 - 同名文件冲突时前端弹窗协商（保留两者 / 替换 / 取消）
 - 首次上传自动触发分析（减少"有文件但没点击开始"的 UX 摩擦）
-- 启动时一次性迁移历史项目源文件编码（幂等，失败不阻塞启动；明细见 `projects/<name>/.arcreel/migration_errors.log`）
+- 启动时一次性迁移历史项目源文件编码（幂等，失败不阻塞启动；明细见 `projects/<name>/.shotwise/migration_errors.log`）
 
 ## 架构
 
@@ -23,8 +23,8 @@
 ## 升级注意
 
 - 首次启动会对 `projects/` 下所有现存项目执行一次性编码规范化迁移
-- 失败项目不阻塞 server，明细写入该项目的 `.arcreel/migration_errors.log`
-- 如需重跑某项目的迁移，删除其 `.arcreel/source_encoding_migrated` 标记文件后重启 server
+- 失败项目不阻塞 server，明细写入该项目的 `.shotwise/migration_errors.log`
+- 如需重跑某项目的迁移，删除其 `.shotwise/source_encoding_migrated` 标记文件后重启 server
 
 ## 已知限制
 

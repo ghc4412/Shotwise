@@ -1,4 +1,4 @@
-# ArcReel
+# Shotwise
 
 AI 视频生成平台：将小说转化为短视频。本文件是领域术语表（ubiquitous language），只定义概念，不含实现细节。
 
@@ -15,7 +15,7 @@ _Avoid_: vendor、channel。
 _Avoid_: client（太泛）、adapter（另有架构含义）。
 
 **内置 provider（built-in provider）**：
-ArcReel 启动时在 `PROVIDER_REGISTRY` 静态注册的供应商（如 `gemini-aistudio` / `gemini-vertex` / `ark` / `openai` / `grok` / `vidu`）。用户填凭证 + 选 model 即可使用；凭证字段可按供应商定制（如 Vertex AI 用 service account JSON 文件路径、Kling 用 JWT access_key + secret_key）。
+Shotwise 启动时在 `PROVIDER_REGISTRY` 静态注册的供应商（如 `gemini-aistudio` / `gemini-vertex` / `ark` / `openai` / `grok` / `vidu`）。用户填凭证 + 选 model 即可使用；凭证字段可按供应商定制（如 Vertex AI 用 service account JSON 文件路径、Kling 用 JWT access_key + secret_key）。
 _Avoid_: preset（易与 model preset 混淆）、official（误读为"获 vendor 官方授权"）。
 
 **自定义 provider（custom provider）**：
@@ -77,7 +77,7 @@ worker 内承载 slot 的两个独立数据结构（`lib/generation_worker.py`�
 占用台账是 **worker 内存状态**，与 DB 中的 `status='running'` 必须配对维护——cancel 触发时 worker 经 `find_by_task` 找到 asyncio.Task 后 `cancel()`，finally 收尾时 `release` 并把 DB 从 `cancelling` 转 `cancelled`（见 `docs/adr/0006`）。两者都以 `media_type` 为键维度为 audio lane 铺路：SlotTable 已能按 `(provider, "audio")` 记账、CapacityTable 容量装载收口在 `_lane_limits` 一处；但真正接入 audio 还需把 claim 循环（当前硬编码 `("image","video")`）与 `_extract_provider` 的 provider 解析纳入 audio lane（本次有意未做，见 `docs/adr/0010`）。
 
 **worker（GenerationWorker）**：
-ArcReel 中始终与 server 主进程**捆绑在同一个 uvicorn 进程内**的 background asyncio task，**不是**独立进程，**不是**集群成员。代码里的 `lease` / `heartbeat` / `requeue_running` 是早期遗留的"多 worker 协调"脚手架，从未被多进程使用。涉及 worker 的设计按"单进程 in-process 协调"思路。
+Shotwise 中始终与 server 主进程**捆绑在同一个 uvicorn 进程内**的 background asyncio task，**不是**独立进程，**不是**集群成员。代码里的 `lease` / `heartbeat` / `requeue_running` 是早期遗留的"多 worker 协调"脚手架，从未被多进程使用。涉及 worker 的设计按"单进程 in-process 协调"思路。
 
 **孤儿任务（orphan task）**：
 DB 中状态为 `running` 但 worker 内存里没有对应 asyncio.Task 的任务。唯一现实成因是**服务重启**（部署 / 崩溃恢复）。处理原则：**不重新触发生成**（避免重复扣费），有 `provider_job_id` 的提交-轮询型任务理论上可恢复轮询，否则标 failed。
@@ -241,7 +241,7 @@ _Avoid_: 把 `reference_images` 交给 agent 改写——系统级字段不在 a
 _Avoid_: 把 style 理解为短标签（旧值 Photographic/Anime/3D 已废，仅作 legacy 别名懒迁移）；与风格参考图（`style_image`，用户上传的画风参考）叠加——二者互斥，写入一方即清除另一方。
 
 **线索（clue）— legacy 资产术语**：
-ArcReel 早期对「场景 + 道具」的统称（按 type 区分 location/prop）；现已拆为独立的 scene 与 prop 两类资产，clue 及其 `importance` 字段不再是当前数据模型的概念。
+Shotwise 早期对「场景 + 道具」的统称（按 type 区分 location/prop）；现已拆为独立的 scene 与 prop 两类资产，clue 及其 `importance` 字段不再是当前数据模型的概念。
 _Avoid_: 在新代码/文档里用 clue/线索 指代场景或道具——规范词是 scene 与 prop；仅在读历史 project.json、迁移代码与归档设计稿时会遇到 clue。
 
 ### 剧本与分镜
@@ -267,7 +267,7 @@ _Avoid_: 把它并进 generation_mode 当第三个取值；交给 agent 改—�
 _Avoid_: 与宫格产出字段 `storyboard_last_image`（运行时产出，已不再作尾帧消费）混为一谈；把整集剧本重生成后字段丢失当 bug——与 note/transition_to_next 同口径，「重生成沿用」仅指视频重生成；用它做全自动场景衔接（正常成片切镜是合理且应该的）。
 
 **广告/短片模式（ad）**：
-content_mode 第三值，产出单个约 `target_duration` 秒的短视频而非多集系列。剧本骨架为平铺 `shots[]`（`shot_id` 格式 E1S{n}），每镜头携带 `section`（带货框架段落标签，八值引导不硬枚举）与一等口播文案 `voiceover_text`；项目恒单集（episodes 恒为第 1 集单条），项目级新字段 `target_duration`（正整数秒）与 `brief`（创作诉求短文本，不走 source_loader），不持有 `default_duration`；两条生成路线都可选，但不支持宫格（`grid_storyboard` 恒拒置真，见 `docs/adr/0033`）。剧本一键生成不走 step1 中间文件：prompt 直接来自 brief + 产品信息（含 selling_points）+ 审定的带货八段框架配比表（15/30/60/90 取最近档位，依据见 `docs/research/arcreel-ad-section-timing-research.md`），products 为空自动分流通用短片 prompt；镜头时长约束随生成路线切换——storyboard 为 supported_durations 硬枚举、reference_video 为 1-15 秒自由整数；剧本总时长偏离 `target_duration` 超阈值仅 warn 不阻塞。
+content_mode 第三值，产出单个约 `target_duration` 秒的短视频而非多集系列。剧本骨架为平铺 `shots[]`（`shot_id` 格式 E1S{n}），每镜头携带 `section`（带货框架段落标签，八值引导不硬枚举）与一等口播文案 `voiceover_text`；项目恒单集（episodes 恒为第 1 集单条），项目级新字段 `target_duration`（正整数秒）与 `brief`（创作诉求短文本，不走 source_loader），不持有 `default_duration`；两条生成路线都可选，但不支持宫格（`grid_storyboard` 恒拒置真，见 `docs/adr/0033`）。剧本一键生成不走 step1 中间文件：prompt 直接来自 brief + 产品信息（含 selling_points）+ 审定的带货八段框架配比表（15/30/60/90 取最近档位，依据见 `docs/research/shotwise-ad-section-timing-research.md`），products 为空自动分流通用短片 prompt；镜头时长约束随生成路线切换——storyboard 为 supported_durations 硬枚举、reference_video 为 1-15 秒自由整数；剧本总时长偏离 `target_duration` 超阈值仅 warn 不阻塞。
 _Avoid_: 让 ad 落入「非 narration 即 drama」的二值兜底——所有按 content_mode 分派的机制必须显式处理第三值；把 AdShot 与 video_unit 内的 shot（参考生视频子镜头）混为一谈——前者是剧本骨架的平铺镜头、后者是 unit 内时间编排；把 ad 未接入 step1→step2 审核 gate 当作待补缺口——单发生成、无 step1 中间态是有意契约，重访条件见 `.out-of-scope/ad-step1-step2-review-gate.md`。
 
 **video_unit / shot（参考生视频单元）**：
@@ -343,11 +343,11 @@ Agent 已成功启动后，某一轮未完成的故障终态；它是系统故�
 _Avoid_: 把 SDK 合成的错误消息作为普通助手回答；与 Agent 启动失败混为一谈。
 
 **故障观测（failure observation）**：
-ArcReel 在一次 Agent 启动失败或轮次失败中实际获得的上下文与原始故障事实；它是帮助排障和反馈问题的证据，不是根因结论，除可用于冒用身份或产生扣费的秘密值外保持原貌。
+Shotwise 在一次 Agent 启动失败或轮次失败中实际获得的上下文与原始故障事实；它是帮助排障和反馈问题的证据，不是根因结论，除可用于冒用身份或产生扣费的秘密值外保持原貌。
 _Avoid_: 预设穷举上游错误分类；把未识别事实归一成“未知错误”；从错误文案推断根因；扩张为完整会话快照或独立的故障记录实体。
 
 **SDK transcript（agent 记忆）**：
-SDK 按自身协议写入的会话记录（DB 镜像或 jsonl），唯一职责是供 SDK resume 重建 agent 上下文——它是 **agent 的记忆**，格式与写入时机均由 SDK 决定，ArcReel 无权改造、不得混入 UI 专有条目（会被 resume 喂回 agent 造成污染）。
+SDK 按自身协议写入的会话记录（DB 镜像或 jsonl），唯一职责是供 SDK resume 重建 agent 上下文——它是 **agent 的记忆**，格式与写入时机均由 SDK 决定，Shotwise 无权改造、不得混入 UI 专有条目（会被 resume 喂回 agent 造成污染）。
 _Avoid_: 把 transcript 当 UI 对话时间线的数据源——UI 唯一读源是会话事件日志；向 transcript 写入服务端合成事件。
 
 **会话事件日志（session event log）**：
@@ -389,7 +389,7 @@ _Avoid_: 把开场白生产塞进组件——缓冲回放与扫描快照无一�
 _Avoid_: 与长效会话 JWT、API Key 混为一谈；把登录 JWT 放进下载 URL。
 
 **浏览器直发请求（browser-initiated request）**：
-由浏览器自身发起、无法携带 `Authorization` header 的请求——`<img>` / `<video>` 的 src 加载、`EventSource` 订阅、原生下载导航。ArcReel 对这三处各有各的答案：SSE 用 query param 传长效会话 JWT，导出用下载 token，静态媒体不设防。
+由浏览器自身发起、无法携带 `Authorization` header 的请求——`<img>` / `<video>` 的 src 加载、`EventSource` 订阅、原生下载导航。Shotwise 对这三处各有各的答案：SSE 用 query param 传长效会话 JWT，导出用下载 token，静态媒体不设防。
 _Avoid_: 按"哪个端点"给这类请求分类——分类依据是**谁发起的请求**；把三种现状当作有意的分级设计。
 
 **自带认证端点（self-authenticated endpoint）**：

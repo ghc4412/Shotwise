@@ -1,6 +1,6 @@
 # 文本生成费用计算与使用记录
 
-> GitHub Issue: ArcReel/ArcReel#169
+> GitHub Issue: Shotwise/Shotwise#169
 > 日期: 2026-03-28
 
 ## 背景

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在不动 schema 前提下，把分集节奏铁则、动态视觉规则、资产防崩与资产布局四类 prompt 增强通过新建 `lib/prompt_rules/` 模块分层注入到 `prompt_builders_script.py`、`generate_asset.py` 与 step1 subagent，让 ArcReel script 阶段输出对齐小云雀 V2.1 / Seedance 爆款 prompt 水平。
+**Goal:** 在不动 schema 前提下，把分集节奏铁则、动态视觉规则、资产防崩与资产布局四类 prompt 增强通过新建 `lib/prompt_rules/` 模块分层注入到 `prompt_builders_script.py`、`generate_asset.py` 与 step1 subagent，让 Shotwise script 阶段输出对齐小云雀 V2.1 / Seedance 爆款 prompt 水平。
 
-**Architecture:** 新建 `lib/prompt_rules/` 作为规则单一真相源；Python 端通过 `ARCREEL_PROMPT_RULES_V2` 灰度开关控制注入；subagent .md 静态贴文本，靠 substring 锚点测试防漂移；不改下游 generate-storyboard / generate-video，下游零改动自动受益。
+**Architecture:** 新建 `lib/prompt_rules/` 作为规则单一真相源；Python 端通过 `SHOTWISE_PROMPT_RULES_V2` 灰度开关控制注入；subagent .md 静态贴文本，靠 substring 锚点测试防漂移；不改下游 generate-storyboard / generate-video，下游零改动自动受益。
 
 **Tech Stack:** Python 3 + Pydantic + pytest（asyncio_mode=auto）+ ruff（line-length 120）+ uv 包管理
 
@@ -66,22 +66,22 @@ from lib.prompt_rules import is_v2_enabled
 
 
 def test_default_is_on(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("ARCREEL_PROMPT_RULES_V2", raising=False)
+    monkeypatch.delenv("SHOTWISE_PROMPT_RULES_V2", raising=False)
     assert is_v2_enabled() is True
 
 
 def test_explicit_off(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARCREEL_PROMPT_RULES_V2", "off")
+    monkeypatch.setenv("SHOTWISE_PROMPT_RULES_V2", "off")
     assert is_v2_enabled() is False
 
 
 def test_off_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARCREEL_PROMPT_RULES_V2", "OFF")
+    monkeypatch.setenv("SHOTWISE_PROMPT_RULES_V2", "OFF")
     assert is_v2_enabled() is False
 
 
 def test_other_value_treated_as_on(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARCREEL_PROMPT_RULES_V2", "true")
+    monkeypatch.setenv("SHOTWISE_PROMPT_RULES_V2", "true")
     assert is_v2_enabled() is True
 ```
 
@@ -102,14 +102,14 @@ Expected: ImportError / ModuleNotFoundError on `lib.prompt_rules`.
 
 各规则模块（episode_pacing / visual_dynamic / asset_anti_break / asset_layout）
 分别导出常量与 helper，由 prompt_builders_script.py 与 generate_asset.py 按需消费。
-所有 Python 端注入受 `ARCREEL_PROMPT_RULES_V2` 环境变量控制（默认 on）。
+所有 Python 端注入受 `SHOTWISE_PROMPT_RULES_V2` 环境变量控制（默认 on）。
 """
 
 import os
 
 
 def is_v2_enabled() -> bool:
-    return os.environ.get("ARCREEL_PROMPT_RULES_V2", "on").lower() != "off"
+    return os.environ.get("SHOTWISE_PROMPT_RULES_V2", "on").lower() != "off"
 
 
 __all__ = ["is_v2_enabled"]
@@ -128,7 +128,7 @@ Expected: 4 passed; ruff clean.
 
 ```bash
 git add lib/prompt_rules/__init__.py tests/prompt_rules/__init__.py tests/prompt_rules/test_v2_switch.py
-git commit -m "feat(prompt_rules): bootstrap 包 + ARCREEL_PROMPT_RULES_V2 灰度开关"
+git commit -m "feat(prompt_rules): bootstrap 包 + SHOTWISE_PROMPT_RULES_V2 灰度开关"
 ```
 
 ---
@@ -591,7 +591,7 @@ def _kwargs() -> dict:
 
 
 def test_drama_v2_on_injects_all(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARCREEL_PROMPT_RULES_V2", "on")
+    monkeypatch.setenv("SHOTWISE_PROMPT_RULES_V2", "on")
     text = build_drama_prompt(scenes_md="| E1S01 | xxx | 4 | 剧情 | 是 |", **_kwargs())
     assert DRAMA_PACING_RULES in text
     assert IMAGE_DYNAMIC_PATCH in text
@@ -599,7 +599,7 @@ def test_drama_v2_on_injects_all(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_drama_v2_off_omits_all(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARCREEL_PROMPT_RULES_V2", "off")
+    monkeypatch.setenv("SHOTWISE_PROMPT_RULES_V2", "off")
     text = build_drama_prompt(scenes_md="| E1S01 | xxx | 4 | 剧情 | 是 |", **_kwargs())
     assert DRAMA_PACING_RULES not in text
     assert IMAGE_DYNAMIC_PATCH not in text
@@ -607,7 +607,7 @@ def test_drama_v2_off_omits_all(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_narration_v2_on_injects_all(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARCREEL_PROMPT_RULES_V2", "on")
+    monkeypatch.setenv("SHOTWISE_PROMPT_RULES_V2", "on")
     text = build_narration_prompt(segments_md="| G01 | xxx | 25 | 4s | 否 | - |", **_kwargs())
     assert NARRATION_PACING_RULES in text
     assert IMAGE_DYNAMIC_PATCH in text
@@ -615,7 +615,7 @@ def test_narration_v2_on_injects_all(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_narration_v2_off_omits_all(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARCREEL_PROMPT_RULES_V2", "off")
+    monkeypatch.setenv("SHOTWISE_PROMPT_RULES_V2", "off")
     text = build_narration_prompt(segments_md="| G01 | xxx | 25 | 4s | 否 | - |", **_kwargs())
     assert NARRATION_PACING_RULES not in text
     assert IMAGE_DYNAMIC_PATCH not in text
@@ -624,16 +624,16 @@ def test_narration_v2_off_omits_all(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_drama_v2_on_keeps_camera_motion_constraint(monkeypatch: pytest.MonkeyPatch) -> None:
     """Spec §4.6: 保留'每个片段仅选择一种镜头运动'约束不动。"""
-    monkeypatch.setenv("ARCREEL_PROMPT_RULES_V2", "on")
+    monkeypatch.setenv("SHOTWISE_PROMPT_RULES_V2", "on")
     text = build_drama_prompt(scenes_md="| E1S01 | xxx | 4 | 剧情 | 是 |", **_kwargs())
     assert "每个片段仅选择一种镜头运动" in text
 
 
 def test_drama_v2_on_length_within_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     """新版 prompt 不应膨胀超过旧版 + 3000 字符。"""
-    monkeypatch.setenv("ARCREEL_PROMPT_RULES_V2", "off")
+    monkeypatch.setenv("SHOTWISE_PROMPT_RULES_V2", "off")
     old = build_drama_prompt(scenes_md="| E1S01 | xxx | 4 | 剧情 | 是 |", **_kwargs())
-    monkeypatch.setenv("ARCREEL_PROMPT_RULES_V2", "on")
+    monkeypatch.setenv("SHOTWISE_PROMPT_RULES_V2", "on")
     new = build_drama_prompt(scenes_md="| E1S01 | xxx | 4 | 剧情 | 是 |", **_kwargs())
     assert len(new) - len(old) < 3000
 ```
@@ -815,7 +815,7 @@ generate_asset = importlib.import_module("generate_asset")
 
 
 def test_wrap_v2_on_appends_layout_and_positive(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARCREEL_PROMPT_RULES_V2", "on")
+    monkeypatch.setenv("SHOTWISE_PROMPT_RULES_V2", "on")
     prompt, neg = generate_asset._wrap_prompt("character", "二十岁青年，杏眼柳眉")
     assert "二十岁青年" in prompt
     assert "正面" in prompt  # layout
@@ -825,14 +825,14 @@ def test_wrap_v2_on_appends_layout_and_positive(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_wrap_v2_off_returns_raw(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARCREEL_PROMPT_RULES_V2", "off")
+    monkeypatch.setenv("SHOTWISE_PROMPT_RULES_V2", "off")
     prompt, neg = generate_asset._wrap_prompt("character", "原始描述")
     assert prompt == "原始描述"
     assert neg is None
 
 
 def test_wrap_each_type_distinct(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARCREEL_PROMPT_RULES_V2", "on")
+    monkeypatch.setenv("SHOTWISE_PROMPT_RULES_V2", "on")
     char_p, _ = generate_asset._wrap_prompt("character", "X")
     scene_p, _ = generate_asset._wrap_prompt("scene", "X")
     prop_p, _ = generate_asset._wrap_prompt("prop", "X")
@@ -864,7 +864,7 @@ from lib.prompt_rules.asset_layout import layout_for
 def _wrap_prompt(asset_type: str, description: str) -> tuple[str, str | None]:
     """按 asset_type 给 description 追加 layout + 防崩短语；返回 (prompt, negative_prompt or None)。
 
-    ARCREEL_PROMPT_RULES_V2=off 时退回原始 description（与 negative_prompt=None）。
+    SHOTWISE_PROMPT_RULES_V2=off 时退回原始 description（与 negative_prompt=None）。
     """
     if not is_v2_enabled():
         return description, None
@@ -1110,7 +1110,7 @@ ls projects/ | head -5
 
 ```bash
 cd projects/$PROJ
-ARCREEL_PROMPT_RULES_V2=off uv run python ../../agent_runtime_profile/.claude/skills/generate-script/scripts/generate_script.py --episode 1 --dry-run > /tmp/prompt_old.txt
+SHOTWISE_PROMPT_RULES_V2=off uv run python ../../agent_runtime_profile/.claude/skills/generate-script/scripts/generate_script.py --episode 1 --dry-run > /tmp/prompt_old.txt
 cd ../..
 ```
 
@@ -1118,7 +1118,7 @@ cd ../..
 
 ```bash
 cd projects/$PROJ
-ARCREEL_PROMPT_RULES_V2=on uv run python ../../agent_runtime_profile/.claude/skills/generate-script/scripts/generate_script.py --episode 1 --dry-run > /tmp/prompt_new.txt
+SHOTWISE_PROMPT_RULES_V2=on uv run python ../../agent_runtime_profile/.claude/skills/generate-script/scripts/generate_script.py --episode 1 --dry-run > /tmp/prompt_new.txt
 cd ../..
 ```
 
@@ -1141,7 +1141,7 @@ diff /tmp/prompt_old.txt /tmp/prompt_new.txt
 
 ```bash
 cd projects/$PROJ
-ARCREEL_PROMPT_RULES_V2=on uv run python ../../agent_runtime_profile/.claude/skills/generate-script/scripts/generate_script.py --episode 1
+SHOTWISE_PROMPT_RULES_V2=on uv run python ../../agent_runtime_profile/.claude/skills/generate-script/scripts/generate_script.py --episode 1
 ```
 
 读 `scripts/episode_1.json`，人工抽查 3 个分镜：
@@ -1155,7 +1155,7 @@ ARCREEL_PROMPT_RULES_V2=on uv run python ../../agent_runtime_profile/.claude/ski
 
 ```bash
 cd projects/$PROJ
-ARCREEL_PROMPT_RULES_V2=on uv run python ../../agent_runtime_profile/.claude/skills/generate-assets/scripts/generate_asset.py --type character --name <一个待生成角色>
+SHOTWISE_PROMPT_RULES_V2=on uv run python ../../agent_runtime_profile/.claude/skills/generate-assets/scripts/generate_asset.py --type character --name <一个待生成角色>
 ```
 
 人工看生成的 `character_sheet`：

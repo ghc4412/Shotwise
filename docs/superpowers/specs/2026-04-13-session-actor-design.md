@@ -1,6 +1,6 @@
 # Session Actor 重构设计
 
-- **Issue**：[#159](https://github.com/Pollo3470/ArcReel/issues/159) refactor: SessionManager 引入 Actor 模式，解决 SDK cancel scope 跨 task 问题
+- **Issue**：[#159](https://github.com/Pollo3470/Shotwise/issues/159) refactor: SessionManager 引入 Actor 模式，解决 SDK cancel scope 跨 task 问题
 - **分支**：`refactor/session-actor-159`
 - **日期**：2026-04-13
 

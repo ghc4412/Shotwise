@@ -9,9 +9,9 @@
 
 ## 1. 背景与目标
 
-ArcReel 现有 prompt 体系（`lib/prompt_builders_script.py` 的 `build_drama_prompt` / `build_narration_prompt`、step1 拆分 subagent、`generate_asset.py` 资产生图）相比小云雀 V2.1 与 Seedance Excel 的爆款 prompt 模板存在以下系统性缺口：
+Shotwise 现有 prompt 体系（`lib/prompt_builders_script.py` 的 `build_drama_prompt` / `build_narration_prompt`、step1 拆分 subagent、`generate_asset.py` 资产生图）相比小云雀 V2.1 与 Seedance Excel 的爆款 prompt 模板存在以下系统性缺口：
 
-| 维度 | 小云雀 / Seedance | ArcReel 现状 | gap |
+| 维度 | 小云雀 / Seedance | Shotwise 现状 | gap |
 |---|---|---|---|
 | 爆款节奏铁则 | 强制开篇钩子 / 15 秒冲突节点 / 结尾留坑 | step1 仅按朗读节奏拆分，无爆款规则 | 空白 |
 | 防崩指令 | 正向（五官对称、五指完整）+ 负面（畸形/断指/乱码）双控 | 只有 negative_prompt 排 BGM；资产 prompt 无防崩 | 空白 |
@@ -19,7 +19,7 @@ ArcReel 现有 prompt 体系（`lib/prompt_builders_script.py` 的 `build_drama_
 | 分集结尾留坑 | 单集末镜定格卡点 | 无指引，Gemini 平铺收尾 | 空白 |
 | 资产生图模板 | 三视图 / 主图+细节 / 多视角布局 | SKILL.md 写了模板但代码未消费——`generate_asset.py` 直接把 `description` 当作完整 prompt 提交 | 模板未落地 |
 
-**目标**：在**不动 schema**的前提下，把上述能力补齐，让 ArcReel 输出的 `image_prompt.scene` / `video_prompt.action` 文本和资产生图 prompt 直接对齐爆款博主水平。
+**目标**：在**不动 schema**的前提下，把上述能力补齐，让 Shotwise 输出的 `image_prompt.scene` / `video_prompt.action` 文本和资产生图 prompt 直接对齐爆款博主水平。
 
 **非目标**：
 - 不动 `NarrationSegment` / `DramaScene` / `DramaEpisodeScript` Pydantic schema
@@ -70,7 +70,7 @@ lib/prompt_rules/
 
 ```python
 def is_v2_enabled() -> bool:
-    return os.environ.get("ARCREEL_PROMPT_RULES_V2", "on").lower() != "off"
+    return os.environ.get("SHOTWISE_PROMPT_RULES_V2", "on").lower() != "off"
 ```
 
 Python 端所有接入点拼接前判断；关闭即退回旧文本。subagent .md 是静态文件不受开关控制（agent runtime 不读环境变量），漂移防御靠测试约束。
@@ -192,7 +192,7 @@ prompt = f"""你的任务是为剧集动画生成分镜剧本。请仔细遵循�
 
 `video_prompt.action` 同样追加 `VIDEO_DYNAMIC_PATCH`。
 
-> 现有约束「每个片段仅选择一种镜头运动」（`camera_motion` 字段说明）保留不动——这是 ArcReel 为视频生成稳定性的主动保守，与"动态优先"指向画面 / 动作内容不冲突。
+> 现有约束「每个片段仅选择一种镜头运动」（`camera_motion` 字段说明）保留不动——这是 Shotwise 为视频生成稳定性的主动保守，与"动态优先"指向画面 / 动作内容不冲突。
 
 ### 4.7 subagent .md 同步
 
@@ -242,7 +242,7 @@ Stage D: 下游不变
 ## 6. 错误处理与回滚
 
 ### 6.1 灰度开关
-`ARCREEL_PROMPT_RULES_V2=off` 重启 server → Python 端全部退回旧文本。subagent .md 回滚靠 git revert。
+`SHOTWISE_PROMPT_RULES_V2=off` 重启 server → Python 端全部退回旧文本。subagent .md 回滚靠 git revert。
 
 ### 6.2 negative_prompt 通道未知
 实现第一步必须 grep `lib/image_backends/` 各 provider，分类支持 / 不支持 / 部分支持，记录在实现 plan 里。`generate_asset.py` 始终下发 `negative_prompt`，由各 backend 自行决定是否消费——避免调用方分叉判断。如某 backend 不支持，先在 spec 里标记为已知差异，待二期补上。
@@ -259,7 +259,7 @@ Stage D: 下游不变
 观察 `result.usage.output_tokens` 是否接近 `SCRIPT_MAX_OUTPUT_TOKENS = 32000`，必要时调高。
 
 ### 6.6 一键回滚预案
-1. `ARCREEL_PROMPT_RULES_V2=off` 重启
+1. `SHOTWISE_PROMPT_RULES_V2=off` 重启
 2. `git revert` agent_runtime_profile 改动并重新部署
 3. 已生成的 `scripts/episode_N.json` 不会自动回退；删除后重跑 `/manga-workflow`
 
@@ -288,7 +288,7 @@ Stage D: 下游不变
 
 `tests/prompt_rules/test_v2_switch.py`
 - 默认 `is_v2_enabled() == True`
-- `ARCREEL_PROMPT_RULES_V2=off` → False，大小写不敏感
+- `SHOTWISE_PROMPT_RULES_V2=off` → False，大小写不敏感
 
 ### 7.2 同步校验测试
 
@@ -317,8 +317,8 @@ Stage D: 下游不变
 ### 7.5 端到端 dry-run 比对（验收，非 CI）
 
 ```bash
-ARCREEL_PROMPT_RULES_V2=off uv run python .../generate_script.py --episode 1 --dry-run > /tmp/prompt_old.txt
-ARCREEL_PROMPT_RULES_V2=on  uv run python .../generate_script.py --episode 1 --dry-run > /tmp/prompt_new.txt
+SHOTWISE_PROMPT_RULES_V2=off uv run python .../generate_script.py --episode 1 --dry-run > /tmp/prompt_old.txt
+SHOTWISE_PROMPT_RULES_V2=on  uv run python .../generate_script.py --episode 1 --dry-run > /tmp/prompt_new.txt
 diff /tmp/prompt_old.txt /tmp/prompt_new.txt
 ```
 

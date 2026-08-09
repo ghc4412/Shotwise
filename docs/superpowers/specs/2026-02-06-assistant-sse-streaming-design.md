@@ -3,7 +3,7 @@
 ## 1. 背景
 
 当前助手会话链路已经具备：
-- 会话与消息落库（Claude Agent SDK transcript 入库镜像，受 `ARCREEL_SDK_SESSION_STORE` 控制）
+- 会话与消息落库（Claude Agent SDK transcript 入库镜像，受 `SHOTWISE_SDK_SESSION_STORE` 控制）
 - Claude Agent SDK 接入
 - 前端会话工作台（React）
 

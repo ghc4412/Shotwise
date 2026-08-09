@@ -202,17 +202,17 @@ GET /api/v1/tasks/{task_id}
 
 > 注意:`duration` 包含输入视频时长。如果传了 5 秒的 `reference_video` 并要求生成 10 秒输出,**计费 duration = 15 秒**。
 
-## ArcReel 集成要点
+## Shotwise 集成要点
 
 - **R2V 单镜头参考素材上限 = 5**(`max_reference_images: 5`,含 `reference_image + reference_video`)
 - **resolutions**:`["720P", "1080P"]`
 - **supported_durations**:
   - 含 `reference_video`:`[2, 3, ..., 10]`
   - 不含 `reference_video`:`[2, 3, ..., 15]`
-  - ArcReel 默认按不含视频上限取 `[2, ..., 15]`
+  - Shotwise 默认按不含视频上限取 `[2, ..., 15]`
 - **capabilities**:`["reference_images", "first_frame", "generate_audio"]`(音频恒开)
 - **水印**:`watermark=false` 是默认值,无需特别处理
-- **prompt_extend**:默认 `true`,会增加耗时;ArcReel 是否关闭由项目决定 — 建议**项目级开关**而非硬编 false
+- **prompt_extend**:默认 `true`,会增加耗时;Shotwise 是否关闭由项目决定 — 建议**项目级开关**而非硬编 false
 - **计费 duration**:含输入视频时长,前端预估时需要把参考视频时长加进去
 
 ## 与 wan2.6 差异
@@ -226,7 +226,7 @@ GET /api/v1/tasks/{task_id}
 | 音频开关 | 显式 `audio` 参数 | **默认有声**,无需设置 |
 | SDK 最低版本 | — | Python `1.25.16+` / Java `2.22.14+` |
 
-ArcReel 集成只规划 wan2.7 系列,不接 wan2.6。
+Shotwise 集成只规划 wan2.7 系列,不接 wan2.6。
 
 ## 同系列模型(待官方扩充)
 

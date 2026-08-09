@@ -188,7 +188,7 @@ uv run uvicorn server.app:app --reload --reload-dir server --reload-dir lib --po
 
 打开任意项目，让 agent 跑：
 - `Bash("cat /app/.env")` → 期望被 sandbox 拒（注意：此 PoC 需 spec deny rules 已部分接入；如尚未接入，记录 sandbox 默认行为）
-- `Bash("cat /app/projects/.arcreel.db")` → 同上
+- `Bash("cat /app/projects/.shotwise.db")` → 同上
 
 记录 actual 输出。
 
@@ -367,7 +367,7 @@ PROVIDER_SECRET_KEYS: frozenset[str] = frozenset(
 )
 
 # —— `_load_project_env` 白名单：load_dotenv 后只保留这些前缀/精确名 ——
-AUTH_ALLOWED_PREFIXES: tuple[str, ...] = ("AUTH_", "ASSISTANT_", "ARCREEL_")
+AUTH_ALLOWED_PREFIXES: tuple[str, ...] = ("AUTH_", "ASSISTANT_", "SHOTWISE_")
 AUTH_ALLOWED_KEYS: frozenset[str] = frozenset(
     {"DATABASE_URL", "LOG_LEVEL", "AI_ANIME_PROJECTS"}
 )
@@ -568,7 +568,7 @@ def check_sandbox_available() -> None:
             raise RuntimeError(
                 "SANDBOX_UNAVAILABLE on macOS\n"
                 "  sandbox-exec: not found in PATH (should be system-installed)\n"
-                "Required for ArcReel agent runtime."
+                "Required for Shotwise agent runtime."
             )
         return
     if system == "Linux":
@@ -576,7 +576,7 @@ def check_sandbox_available() -> None:
             raise RuntimeError(
                 "SANDBOX_UNAVAILABLE on linux\n"
                 "  bwrap: not found in PATH\n"
-                "Required for ArcReel agent runtime. Install bubblewrap:\n"
+                "Required for Shotwise agent runtime. Install bubblewrap:\n"
                 "  Ubuntu/Debian: sudo apt install bubblewrap\n"
                 "  Arch:          sudo pacman -S bubblewrap"
             )
@@ -1061,7 +1061,7 @@ Expected: 第一个测试 FAIL（provider keys 还在 environ）
             os.environ.pop(key, None)
 ```
 
-注意：这条策略 **激进**（删除所有非白名单 env）。如果项目有其他业务 env（如 `OPENAI_API_KEY` 给某个非 ArcReel 代码用），会被误删。如不放心，可以改为只删 `OTHER_PROVIDER_ENV_KEYS + ANTHROPIC_ENV_KEYS` 的精确名单：
+注意：这条策略 **激进**（删除所有非白名单 env）。如果项目有其他业务 env（如 `OPENAI_API_KEY` 给某个非 Shotwise 代码用），会被误删。如不放心，可以改为只删 `OTHER_PROVIDER_ENV_KEYS + ANTHROPIC_ENV_KEYS` 的精确名单：
 
 ```python
 # 保守版替代：只删已知 provider keys
@@ -2167,16 +2167,16 @@ cp agent_runtime_profile/.claude/settings.json /tmp/settings.before.json
       "Read(//app/.env)",
       "Read(//app/.env.*)",
       "Read(//app/vertex_keys/**)",
-      "Read(//app/projects/.arcreel.db)",
-      "Read(//app/projects/.arcreel.db-*)",
+      "Read(//app/projects/.shotwise.db)",
+      "Read(//app/projects/.shotwise.db-*)",
       "Read(//app/projects/.system_config.json)",
       "Read(//app/projects/.system_config.json.bak)",
       "Read(//app/agent_runtime_profile/.claude/settings.json)",
       "Edit(//app/.env)",
       "Edit(//app/.env.*)",
       "Edit(//app/vertex_keys/**)",
-      "Edit(//app/projects/.arcreel.db)",
-      "Edit(//app/projects/.arcreel.db-*)",
+      "Edit(//app/projects/.shotwise.db)",
+      "Edit(//app/projects/.shotwise.db-*)",
       "Edit(//app/projects/.system_config.json)",
       "Edit(//app/projects/.system_config.json.bak)"
     ]
@@ -2274,8 +2274,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 - [ ] **Step 3: 本地构建验证**
 
 ```bash
-docker build -t arcreel:sandbox-test .
-docker run --rm arcreel:sandbox-test which bwrap
+docker build -t shotwise:sandbox-test .
+docker run --rm shotwise:sandbox-test which bwrap
 ```
 Expected: 输出 `/usr/bin/bwrap`
 
@@ -2304,7 +2304,7 @@ Run: `find docs/ -name "*.md" | xargs grep -l "部署\|Deploy\|Docker" 2>/dev/nu
 ```markdown
 ## Agent 沙箱依赖
 
-ArcReel 启动会进行严格的安全检查 — sandbox 工具缺失即拒绝启动。
+Shotwise 启动会进行严格的安全检查 — sandbox 工具缺失即拒绝启动。
 
 | 环境 | 工具 | 安装 |
 |---|---|---|
@@ -2445,10 +2445,10 @@ Create `docs/superpowers/specs/2026-05-12-agent-sandbox-design.acceptance.md`：
 
 ## 已知豁免（风险接受）
 
-- [ ] `.arcreel.db` 当前可读，未纳入 denyRead
+- [ ] `.shotwise.db` 当前可读，未纳入 denyRead
   - 原因：skill 入队脚本（generation_queue_client）需要 sqlite 直读；JSON 剧本生成脚本也走 db
   - 缓解：db 内 provider 密钥不会进入 Bash env（env scrub hook 已 unset）；双层防线之一被关闭，另一层仍生效
-  - 解除条件：issue #519 完成 skill 脚本→SDK 原生 tool 重构后，将 `.arcreel.db` 加回 denyRead 并反向断言
+  - 解除条件：issue #519 完成 skill 脚本→SDK 原生 tool 重构后，将 `.shotwise.db` 加回 denyRead 并反向断言
 
 ## 功能验收
 
@@ -2457,7 +2457,7 @@ Create `docs/superpowers/specs/2026-05-12-agent-sandbox-design.acceptance.md`：
   - 临时加一个 echo skill，调用不报权限错
 - [ ] agent 可访问白名单内的域名
   - 默认白名单：anthropic.com / googleapis.com / volces.com / x.ai 等内置 provider 域
-  - 扩展：`ARCREEL_SANDBOX_EXTRA_ALLOWED_DOMAINS=custom.io,*.internal.corp uv run uvicorn ...` 逗号分隔追加
+  - 扩展：`SHOTWISE_SANDBOX_EXTRA_ALLOWED_DOMAINS=custom.io,*.internal.corp uv run uvicorn ...` 逗号分隔追加
 - [ ] 切换 Anthropic 配置后新 session 生效
   - 旧 session 仍用旧值；新建 session 用新值
 

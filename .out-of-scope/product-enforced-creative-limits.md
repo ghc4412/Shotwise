@@ -1,6 +1,6 @@
 # Product-Enforced Creative Limits
 
-ArcReel 不在产品层面对剧本的**创作维度**施加硬性限制——例如强制限制单个分镜/宫格里允许出现的人物数量。
+Shotwise 不在产品层面对剧本的**创作维度**施加硬性限制——例如强制限制单个分镜/宫格里允许出现的人物数量。
 
 ## Why this is out of scope
 

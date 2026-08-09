@@ -11,7 +11,7 @@ OpenAI 图像 API 包含两条路径：
 - `/v1/images/generations` — 文生图（T2I）
 - `/v1/images/edits` — 图生图（I2I），需要 `image` 字段
 
-ArcReel 当前 `OpenAIImageBackend` 用 `if request.reference_images:` 在两条路径之间自动派发，
+Shotwise 当前 `OpenAIImageBackend` 用 `if request.reference_images:` 在两条路径之间自动派发，
 ENDPOINT_REGISTRY 只暴露一条 `openai-images` 通配 endpoint
 （`request_path_template="/v1/images/{generations,edits}"` 用 brace 同时表达两条）。
 

@@ -5,7 +5,7 @@
 ## 前置条件
 
 - 已安装 Docker 和 Docker Compose
-- Shotwise 当前使用 SQLite 运行（兼容数据库文件位于 `projects/.arcreel.db`）
+- Shotwise 当前使用 SQLite 运行（兼容数据库文件位于 `projects/.shotwise.db`）
 
 ## 迁移步骤
 
@@ -21,7 +21,7 @@ docker compose down
 ### 2. 备份 SQLite 数据库
 
 ```bash
-cp projects/.arcreel.db projects/.arcreel.db.bak
+cp projects/.shotwise.db projects/.shotwise.db.bak
 ```
 
 ### 3. 配置环境变量
@@ -55,8 +55,8 @@ docker compose ps  # 确认 postgres 状态为 healthy
 ```bash
 docker compose run --rm shotwise-app bash -c "
   apt-get update && apt-get install -y --no-install-recommends pgloader &&
-  pgloader sqlite:///app/projects/.arcreel.db \
-           postgresql://arcreel:\${POSTGRES_PASSWORD}@postgres:5432/arcreel
+  pgloader sqlite:///app/projects/.shotwise.db \
+           postgresql://shotwise:\${POSTGRES_PASSWORD}@postgres:5432/shotwise
 "
 ```
 
@@ -66,7 +66,7 @@ docker compose run --rm shotwise-app bash -c "
 ### 6. 验证数据
 
 ```bash
-docker compose exec postgres psql -U arcreel -d arcreel -c "
+docker compose exec postgres psql -U shotwise -d shotwise -c "
   SELECT 'tasks' AS tbl, COUNT(*) FROM tasks
   UNION ALL
   SELECT 'api_calls', COUNT(*) FROM api_calls
@@ -80,7 +80,7 @@ docker compose exec postgres psql -U arcreel -d arcreel -c "
 对比 SQLite 中的记录数：
 
 ```bash
-sqlite3 projects/.arcreel.db "
+sqlite3 projects/.shotwise.db "
   SELECT 'tasks', COUNT(*) FROM tasks
   UNION ALL
   SELECT 'api_calls', COUNT(*) FROM api_calls
@@ -106,5 +106,5 @@ docker compose up -d
 如果需要回退：
 
 1. 停止服务：`docker compose down`
-2. 恢复备份：`cp projects/.arcreel.db.bak projects/.arcreel.db`
+2. 恢复备份：`cp projects/.shotwise.db.bak projects/.shotwise.db`
 3. 移除 `.env` 中的 `POSTGRES_PASSWORD`，不使用 `docker-compose.yml` 中的 PostgreSQL 配置启动

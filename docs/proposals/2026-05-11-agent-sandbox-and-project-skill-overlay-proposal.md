@@ -8,14 +8,14 @@
 
 ## 目标
 
-提升 ArcReel 智能体的自由度,同时不扩大 secrets 外泄面。具体两件事:
+提升 Shotwise 智能体的自由度,同时不扩大 secrets 外泄面。具体两件事:
 
 1. **接入 Claude Agent SDK 原生 sandbox**,让 Bash 工具从「精确路径白名单」解放为「沙箱内自由放行」,消除当前 agent 频繁调 Bash 被拒的体验问题
 2. **支持视频项目级 skill / agent / CLAUDE.md 覆盖**,让用户可以为单个视频项目添加专属配置,而不污染其他项目
 
 ## 现状
 
-ArcReel 已经做了大半基础工作:
+Shotwise 已经做了大半基础工作:
 
 - ✅ `agent_runtime_profile/` 双向隔离(智能体配置与开发态 `.claude/` 物理分离,Docker 部署零泄漏)
 - ✅ `setting_sources=["project"]` 显式控制,屏蔽 `~/.claude/` 全局污染
@@ -35,7 +35,7 @@ ArcReel 已经做了大半基础工作:
 
 沙箱内 Bash 在 cwd 范围自动放行,新增 skill 脚本不再需要改权限配置。
 
-SDK 0.1.80 的 `SandboxSettings` 只管命令执行行为,不管文件和网络。文件/网络限制走 `permissions.deny`,扩展到当前漏掉的敏感文件(`projects/.arcreel.db`、`projects/.system_config.json.bak`、`agent_runtime_profile/.claude/settings.json` 等)。
+SDK 0.1.80 的 `SandboxSettings` 只管命令执行行为,不管文件和网络。文件/网络限制走 `permissions.deny`,扩展到当前漏掉的敏感文件(`projects/.shotwise.db`、`projects/.system_config.json.bak`、`agent_runtime_profile/.claude/settings.json` 等)。
 
 macOS 自动用 Seatbelt,Linux 自动用 bubblewrap,启动开销 <50ms。
 
@@ -80,7 +80,7 @@ Anthropic 认证如何让 SDK 子进程拿到、同时让 Bash 子进程不可�
 下列指标不可绕过,实施方案如不能同时满足全部红线,需求不成立。
 
 - **Bash 子进程不可见任何 provider 密钥与认证密钥**(包括 Anthropic 自身)
-- **agent 不能读取**`.env` / `projects/.arcreel.db` / `projects/.system_config.json.bak` / `vertex_keys/**` / `agent_runtime_profile/.claude/settings.json` 等敏感文件
+- **agent 不能读取**`.env` / `projects/.shotwise.db` / `projects/.system_config.json.bak` / `vertex_keys/**` / `agent_runtime_profile/.claude/settings.json` 等敏感文件
 - **agent 不能写项目目录外**
 - **父进程 `os.environ` 不含 provider 密钥**
 
@@ -97,7 +97,7 @@ Anthropic 认证如何让 SDK 子进程拿到、同时让 Bash 子进程不可�
 
 ### 非目标
 
-- 写前 Checkpoint / rewind(SDK 0.1.80 的 `enable_file_checkpointing` 与 ArcReel 0.13.0 起用的 DB session store 互斥,需要单独评估技术路径后立项)
+- 写前 Checkpoint / rewind(SDK 0.1.80 的 `enable_file_checkpointing` 与 Shotwise 0.13.0 起用的 DB session store 互斥,需要单独评估技术路径后立项)
 - 模板变量插值 / 三向合并 / 模板版本号 / sync API
 - 外部 skill marketplace / 签名机制
 - 全量目录快照 / shadow git
@@ -140,7 +140,7 @@ Anthropic 认证如何让 SDK 子进程拿到、同时让 Bash 子进程不可�
 
 1. **Docker `enableWeakerNestedSandbox` 安全降级**:Anthropic 文档警告"considerably weakens security"。容器边界 + 权限 deny + 环境隔离构成三层兜底,综合可控。
 2. **`os.environ` 残留 secrets**:`sync_anthropic_env`、`SystemConfig` 兼容层、`_load_project_env` 等多处历史写入点,遗漏会导致密钥被子进程继承。决策 4 的防御性空值覆盖兜底,但实施阶段需要全量审计。
-3. **沙箱不兼容的 Bash 命令**(`docker`、`watchman` 等):ArcReel 用不到,影响小。如未来引入需走 `excludedCommands`。
+3. **沙箱不兼容的 Bash 命令**(`docker`、`watchman` 等):Shotwise 用不到,影响小。如未来引入需走 `excludedCommands`。
 4. **macOS Seatbelt 已 deprecated**:Anthropic 官方承认,短期无替代,跟随 Anthropic。
 
 ## 后续工作(明确推迟)

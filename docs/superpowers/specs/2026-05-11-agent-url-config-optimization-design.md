@@ -9,7 +9,7 @@
 
 ### 1.1 现有架构
 
-ArcReel 中 Anthropic 配置的来源与消费链路：
+Shotwise 中 Anthropic 配置的来源与消费链路：
 
 ```
 AgentConfigTab (UI) → PATCH /api/v1/system/config

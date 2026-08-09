@@ -6,9 +6,9 @@
 
 ## 背景
 
-ArcReel 现有 `lib/custom_provider/` 支持两种 `api_format`：`openai` 和 `google`，分别复用 `OpenAI*Backend` / `Gemini*Backend` 作为 delegate。
+Shotwise 现有 `lib/custom_provider/` 支持两种 `api_format`：`openai` 和 `google`，分别复用 `OpenAI*Backend` / `Gemini*Backend` 作为 delegate。
 
-用户希望新增 **NewAPI**（`https://docs.newapi.pro/`）作为第三种协议格式。NewAPI 是一个 AI 聚合网关，将 Sora、Kling、即梦、Wan、Veo 等多家视频模型通过**统一的 `/v1/video/generations` 端点**聚合，依靠 `model` 字段分发。这与 ArcReel "一个接口覆盖多模型" 的业务诉求天然契合，相比为每家模型写专用 backend 更有扩展性。
+用户希望新增 **NewAPI**（`https://docs.newapi.pro/`）作为第三种协议格式。NewAPI 是一个 AI 聚合网关，将 Sora、Kling、即梦、Wan、Veo 等多家视频模型通过**统一的 `/v1/video/generations` 端点**聚合，依靠 `model` 字段分发。这与 Shotwise "一个接口覆盖多模型" 的业务诉求天然契合，相比为每家模型写专用 backend 更有扩展性。
 
 文本和图片部分，NewAPI 原生是 OpenAI 兼容（`/v1/chat/completions` 和 `/v1/images/generations`），无需新写 backend。
 

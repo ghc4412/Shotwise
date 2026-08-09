@@ -109,7 +109,7 @@ if request.reference_images:
 
 ### 排查结论
 
-**ArcReel 代码传参链路完全正确**，`aspect_ratio="16:9"` 一路传递到 xAI SDK。
+**Shotwise 代码传参链路完全正确**，`aspect_ratio="16:9"` 一路传递到 xAI SDK。
 
 **根因确认**：Grok API 在单图编辑模式（`image_url` 单数参数）下会忽略 `aspect_ratio` 参数，使用参考图的原始比例。而多图编辑模式（`image_urls` 列表参数）下 `aspect_ratio` 正常生效。
 
