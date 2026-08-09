@@ -1,4 +1,4 @@
-﻿---
+---
 name: generate-storyboard
 description: 为剧本场景生成分镜图。当用户说"生成分镜"、"预览场景画面"、想重新生成某些分镜图、或剧本中有场景缺少分镜图时使用。自动保持角色和画面连续性。
 ---
@@ -17,9 +17,9 @@ description: 为剧本场景生成分镜图。当用户说"生成分镜"、"预�
 
 | 操作 | 工具 |
 |------|------|
-| 提交所有缺失分镜图 | `mcp__SHOTWISE__generate_storyboards({"script": "episode_1.json"})` |
-| 重新生成指定 ID | `mcp__SHOTWISE__generate_storyboards({"script": "episode_1.json", "segment_ids": ["E1S05"]})` |
-| 重新生成多个 ID | `mcp__SHOTWISE__generate_storyboards({"script": "episode_1.json", "segment_ids": ["E1S01", "E1S02"]})` |
+| 提交所有缺失分镜图 | `mcp__arcreel__generate_storyboards({"script": "episode_1.json"})` |
+| 重新生成指定 ID | `mcp__arcreel__generate_storyboards({"script": "episode_1.json", "segment_ids": ["E1S05"]})` |
+| 重新生成多个 ID | `mcp__arcreel__generate_storyboards({"script": "episode_1.json", "segment_ids": ["E1S01", "E1S02"]})` |
 
 > **选择规则**：`segment_ids` 兼容 narration 的 segment_id 与 drama 的 scene_id；未传则提交所有缺失项。
 >
@@ -35,7 +35,7 @@ description: 为剧本场景生成分镜图。当用户说"生成分镜"、"预�
 ## 审核检查点：编辑 vs 重新生成
 
 - **只想改局部**（如某个分镜的手部畸形、背景杂物、光线偏差），且构图/角色一致性满意 →
-  用 `mcp__SHOTWISE__edit_images({"resource_type": "storyboard", "script_file": "episode_1.json", "edits": [{"id": "E1S05", "instruction": "去掉背景里多余的路人"}]})`
+  用 `mcp__arcreel__edit_images({"resource_type": "storyboard", "script_file": "episode_1.json", "edits": [{"id": "E1S05", "instruction": "去掉背景里多余的路人"}]})`
   保底图微调，不影响 `image_prompt`，一次可批量下发多个分镜
 - **想推翻构图或角色/参考图关系**，或 `image_prompt` 本身要改 → 用
   `patch_episode_script` 改 `image_prompt` 后，紧接着调 `generate_storyboards` 重新生成
@@ -83,4 +83,4 @@ MCP 工具自动处理以下参考图传入，无需手动指定：
 - 单场景失败不影响批次，记录失败场景后继续
 - 生成结束后汇总报告所有失败场景和原因
 - 支持增量生成（跳过已存在的场景图）
-- 使用 `mcp__SHOTWISE__generate_storyboards({"script": "...", "segment_ids": [...]})` 重新生成失败场景
+- 使用 `mcp__arcreel__generate_storyboards({"script": "...", "segment_ids": [...]})` 重新生成失败场景

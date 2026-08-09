@@ -1,4 +1,4 @@
-﻿---
+---
 name: generate-video
 description: 为剧本场景生成视频片段。当用户说"生成视频"、"把分镜图变成视频"、想重新生成某个场景的视频、或视频生成中断需要续传时使用。支持整集批量、单场景、断点续传等模式。
 ---
@@ -45,12 +45,12 @@ ad 剧本骨架唯一（平铺 `shots[]`，不存在 `video_units`）。项目 `
 
 | 操作 | 工具 |
 |------|------|
-| 整集生成（默认） | `mcp__SHOTWISE__generate_video_episode({"script": "episode_1.json"})` |
-| 断点续传 | `mcp__SHOTWISE__generate_video_episode({"script": "episode_1.json", "resume": true})` |
-| 单场景 | `mcp__SHOTWISE__generate_video_scene({"script": "episode_1.json", "scene_id": "E1S01"})` |
-| 批量自选 | `mcp__SHOTWISE__generate_video_selected({"script": "episode_1.json", "scene_ids": ["E1S01", "E1S05", "E1S10"]})` |
-| 自选 + 续传 | `mcp__SHOTWISE__generate_video_selected({"script": "episode_1.json", "scene_ids": [...], "resume": true})` |
-| 全部待处理（独立模式） | `mcp__SHOTWISE__generate_video_all({"script": "episode_1.json"})` |
+| 整集生成（默认） | `mcp__arcreel__generate_video_episode({"script": "episode_1.json"})` |
+| 断点续传 | `mcp__arcreel__generate_video_episode({"script": "episode_1.json", "resume": true})` |
+| 单场景 | `mcp__arcreel__generate_video_scene({"script": "episode_1.json", "scene_id": "E1S01"})` |
+| 批量自选 | `mcp__arcreel__generate_video_selected({"script": "episode_1.json", "scene_ids": ["E1S01", "E1S05", "E1S10"]})` |
+| 自选 + 续传 | `mcp__arcreel__generate_video_selected({"script": "episode_1.json", "scene_ids": [...], "resume": true})` |
+| 全部待处理（独立模式） | `mcp__arcreel__generate_video_all({"script": "episode_1.json"})` |
 
 > 所有任务一次性提交到生成队列，由 Worker 按 per-provider 并发配置自动调度。
 > 集号从 script 顶层 `episode` 或文件名推导，无需手动传。
@@ -72,7 +72,7 @@ true` 重新调用同一工具完成入队；不带该参数的重复调用仍�
 成员、或模型能力当前不可解析时，单次调用直接入队，行为与不启用取档时一致。
 
 ```text
-mcp__SHOTWISE__generate_video_episode({"script": "episode_1.json", "confirm_duration": true})
+mcp__arcreel__generate_video_episode({"script": "episode_1.json", "confirm_duration": true})
 ```
 
 ## 工作流程

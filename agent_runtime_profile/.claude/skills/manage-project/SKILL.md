@@ -1,6 +1,6 @@
-﻿---
+---
 name: manage-project
-description: 项目管理工具集。使用场景：新增/修改角色/场景/道具到 project.json（经 patch_project 工具，按 table+name upsert）、写顶层 settings 字段、编辑项目概述 overview，以及查询视频模型能力（get_video_capabilities）。分集规划不在本 skill：走 mcp__SHOTWISE__plan_episodes / reset_episode_planning 服务端工具。
+description: 项目管理工具集。使用场景：新增/修改角色/场景/道具到 project.json（经 patch_project 工具，按 table+name upsert）、写顶层 settings 字段、编辑项目概述 overview，以及查询视频模型能力（get_video_capabilities）。分集规划不在本 skill：走 mcp__arcreel__plan_episodes / reset_episode_planning 服务端工具。
 user-invocable: false
 ---
 
@@ -12,25 +12,25 @@ user-invocable: false
 
 | 工具 | 功能 | 调用者 |
 |------|------|--------|
-| `mcp__SHOTWISE__patch_project`（SDK tool） | 新增/修改 project.json 的角色/场景/道具（按 table+name upsert）、顶层 settings 字段或项目概述（overview 分支） | subagent / 主 agent |
-| `mcp__SHOTWISE__get_video_capabilities`（SDK tool） | 查视频模型能力（model 粒度，按项目唯一 generation_mode 解析，全项目同一口径，无需指定剧集） | **subagent**（执行任务时自行查询） |
+| `mcp__arcreel__patch_project`（SDK tool） | 新增/修改 project.json 的角色/场景/道具（按 table+name upsert）、顶层 settings 字段或项目概述（overview 分支） | subagent / 主 agent |
+| `mcp__arcreel__get_video_capabilities`（SDK tool） | 查视频模型能力（model 粒度，按项目唯一 generation_mode 解析，全项目同一口径，无需指定剧集） | **subagent**（执行任务时自行查询） |
 
-> 分集规划（拆集/调整）由服务端工具 `mcp__SHOTWISE__plan_episodes` / `mcp__SHOTWISE__reset_episode_planning` 完成，调整已规划内容走「重置 + 重新规划」，流程见 manga-workflow 阶段 2。
+> 分集规划（拆集/调整）由服务端工具 `mcp__arcreel__plan_episodes` / `mcp__arcreel__reset_episode_planning` 完成，调整已规划内容走「重置 + 重新规划」，流程见 manga-workflow 阶段 2。
 
 ## 角色/场景/道具写入
 
-经 `mcp__SHOTWISE__patch_project` 工具写入（项目名由 session 绑定，无需传参）。按 table 分别调用，
+经 `mcp__arcreel__patch_project` 工具写入（项目名由 session 绑定，无需传参）。按 table 分别调用，
 每个 entry 以 name 为键 upsert：name 不存在则新增、存在则合并改字段。**修订已有资产描述需用户显式
 意图驱动**（避免静默覆盖人工编辑过的字段）;新增提取由 analyze-assets subagent 负责并默认 skip 已存在的。
 
 ```text
-mcp__SHOTWISE__patch_project({"table": "characters", "entries": {"角色名": {"description": "...", "voice_style": "..."}}})
-mcp__SHOTWISE__patch_project({"table": "scenes", "entries": {"场景名": {"description": "..."}}})
-mcp__SHOTWISE__patch_project({"table": "props", "entries": {"道具名": {"description": "..."}}})
-mcp__SHOTWISE__patch_project({"settings": {"episode_target_units": 1000}})
-mcp__SHOTWISE__patch_project({"settings": {"source_language": "en"}})
-mcp__SHOTWISE__patch_project({"settings": {"narration_voice": "Ethan", "narration_speed": 1.2}})
-mcp__SHOTWISE__patch_project({"overview": {"genre": "悬疑", "theme": "复仇与救赎"}})
+mcp__arcreel__patch_project({"table": "characters", "entries": {"角色名": {"description": "...", "voice_style": "..."}}})
+mcp__arcreel__patch_project({"table": "scenes", "entries": {"场景名": {"description": "..."}}})
+mcp__arcreel__patch_project({"table": "props", "entries": {"道具名": {"description": "..."}}})
+mcp__arcreel__patch_project({"settings": {"episode_target_units": 1000}})
+mcp__arcreel__patch_project({"settings": {"source_language": "en"}})
+mcp__arcreel__patch_project({"settings": {"narration_voice": "Ethan", "narration_speed": 1.2}})
+mcp__arcreel__patch_project({"overview": {"genre": "悬疑", "theme": "复仇与救赎"}})
 ```
 
 **三种调用形态三选一**：传 `{"table", "entries"}` 走资产 upsert，传 `{"settings"}` 走顶层字段写入，
@@ -59,7 +59,7 @@ description）时不落盘并返回 `is_error: true`。
 通过 MCP 工具查询（项目名由 session 绑定，无需传参）：
 
 ```text
-mcp__SHOTWISE__get_video_capabilities({})
+mcp__arcreel__get_video_capabilities({})
 ```
 
 生成路线由项目唯一决定，无集级覆盖，能力查询全项目同一口径，不接受 / 不需要 `episode` 参数。

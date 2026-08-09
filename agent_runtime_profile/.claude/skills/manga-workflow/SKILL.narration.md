@@ -1,4 +1,4 @@
-﻿---
+---
 name: manga-workflow
 description: 将小说转换为短视频的端到端工作流编排器。当用户提到做视频、创建项目、继续项目、查看进度时必须使用此 skill。触发场景包括但不限于："帮我把小说做成视频"、"开个新项目"、"继续"、"下一步"、"看看项目进度"、"从头开始"、"拆集"、"自动跑完流程"等。即使用户只说了简短的"继续"或"下一步"，只要当前上下文涉及视频项目，就应该触发。不要用于单个资产生成（如只重画某张分镜图或只重新生成某个角色设计图——那些有专门的 skill）。
 ---
@@ -103,13 +103,13 @@ description: 将小说转换为短视频的端到端工作流编排器。当用�
 分集规划由服务端工具完成：工具内部从 `planning_cursor` 起读一个源文窗口，调用项目配置的文本模型一次规划出窗口内所有剧情弧完整的集（标题/钩子/原文范围），在同一把项目锁内写账本、派生 `source/episode_{N}.txt` 并清理残留派生文件。**主 agent 只调一次工具、只收摘要**——不读小说原文、不自行选切分点：
 
 1. 规划前快速核对 `project.json`：
-   - `source_language` 是否与源文实际语言一致。优先级：**用户显式配置 > 自动推断**（正常路径由 overview 生成自动落盘）；发现不一致时**提醒用户（WARN）、说明后果并建议修正**（错误配置会使规划的体量度量与语言前提失真），用户未修正时按显式配置继续，不阻塞流程。字段缺失或经用户确认有误时，走 `mcp__SHOTWISE__patch_project({"settings": {"source_language": "en"|"vi"|"zh"}})` 写入
-   - `episode_target_units`（每集目标体量，按 `source_language` 解读为阅读单位）：已设置则直接沿用；缺失且用户在对话中明确给过字数 → 经 `mcp__SHOTWISE__patch_project({"settings": {"episode_target_units": N}})` 写入；都没有也可直接规划（工具会按短视频节奏自行把握体量），无需强制询问
-2. 调用 `mcp__SHOTWISE__plan_episodes({})`。窗口字数与每批集数上限为工具内部默认，项目设置 `planning_window_chars` / `planning_max_episodes` 可覆盖（经 patch_project settings 写入）。**用户在规划前给出常驻分集偏好时**（如"严格按章节切分，一章一集""每集在某处收尾"），把偏好原文经 `instructions` 传入：`mcp__SHOTWISE__plan_episodes({"instructions": "用户偏好原文"})`；规划器会以"必须全部落实"的强度对齐该偏好、优先于默认剧情弧完整性。长篇会分多批规划（每批一次工具调用），该偏好**不持久化**，须在规划完成前**每一批调用都重复带上同一 `instructions`**
+   - `source_language` 是否与源文实际语言一致。优先级：**用户显式配置 > 自动推断**（正常路径由 overview 生成自动落盘）；发现不一致时**提醒用户（WARN）、说明后果并建议修正**（错误配置会使规划的体量度量与语言前提失真），用户未修正时按显式配置继续，不阻塞流程。字段缺失或经用户确认有误时，走 `mcp__arcreel__patch_project({"settings": {"source_language": "en"|"vi"|"zh"}})` 写入
+   - `episode_target_units`（每集目标体量，按 `source_language` 解读为阅读单位）：已设置则直接沿用；缺失且用户在对话中明确给过字数 → 经 `mcp__arcreel__patch_project({"settings": {"episode_target_units": N}})` 写入；都没有也可直接规划（工具会按短视频节奏自行把握体量），无需强制询问
+2. 调用 `mcp__arcreel__plan_episodes({})`。窗口字数与每批集数上限为工具内部默认，项目设置 `planning_window_chars` / `planning_max_episodes` 可覆盖（经 patch_project settings 写入）。**用户在规划前给出常驻分集偏好时**（如"严格按章节切分，一章一集""每集在某处收尾"），把偏好原文经 `instructions` 传入：`mcp__arcreel__plan_episodes({"instructions": "用户偏好原文"})`；规划器会以"必须全部落实"的强度对齐该偏好、优先于默认剧情弧完整性。长篇会分多批规划（每批一次工具调用），该偏好**不持久化**，须在规划完成前**每一批调用都重复带上同一 `instructions`**
 3. **批级审阅**：把工具返回的账本摘要（每集标题+钩子+体量）展示给用户，征求意见
-4. 用户提出意见（一句话可同时包含任意多处意见，含全局偏好）→ 走「重置 + 重新规划」：先调用 `mcp__SHOTWISE__reset_episode_planning({"from_episode": N})`，`from_episode` 取意见中最早受影响的集，保留其前的集不受影响
+4. 用户提出意见（一句话可同时包含任意多处意见，含全局偏好）→ 走「重置 + 重新规划」：先调用 `mcp__arcreel__reset_episode_planning({"from_episode": N})`，`from_episode` 取意见中最早受影响的集，保留其前的集不受影响
 5. **已消费集警告确认**：重置会波及已消费集（已有 step1/剧本/媒体产物）时，工具会返回受影响集清单而不执行——把影响范围告知用户、获得明确确认后，追加 `"confirm_consumed": true` 重新调用；确认执行后这些集的账本条目被清除，产物本身不删除
-6. 重置完成后，全局性意见（如每集体量）先经 `mcp__SHOTWISE__patch_project({"settings": {"episode_target_units": N}})` 显式写入，再带调整后的 `instructions` 重新调用 `mcp__SHOTWISE__plan_episodes` 从 `from_episode` 起分批规划、结果再次展示审阅；若新提交的集号与原消费范围重叠，工具会自动标 stale（产物不删除，需重做下游产物），无需额外确认。**规划完毕后返回会附全局核对材料**（累计集数、体量最小几集、体量中位数、目标体量）：若用户给过总集数、按章节对齐等结构性偏好，须对照核对，有偏差须向用户明确说明（可引导用户重新走「重置 + 重新规划」修正）
+6. 重置完成后，全局性意见（如每集体量）先经 `mcp__arcreel__patch_project({"settings": {"episode_target_units": N}})` 显式写入，再带调整后的 `instructions` 重新调用 `mcp__arcreel__plan_episodes` 从 `from_episode` 起分批规划、结果再次展示审阅；若新提交的集号与原消费范围重叠，工具会自动标 stale（产物不删除，需重做下游产物），无需额外确认。**规划完毕后返回会附全局核对材料**（累计集数、体量最小几集、体量中位数、目标体量）：若用户给过总集数、按章节对齐等结构性偏好，须对照核对，有偏差须向用户明确说明（可引导用户重新走「重置 + 重新规划」修正）
 7. 用户对本批规划满意后进入阶段 3。**用户显式授权全自主时**（如"直接跑完整个流程不用逐步确认"），可跳过批级审阅直接继续
 
 ---
@@ -126,7 +126,7 @@ description: 将小说转换为短视频的端到端工作流编排器。当用�
 dispatch prompt 通用参数：项目名称、项目路径、集数、本集小说文件路径。
 
 （两个预处理 subagent 会自行读 project.json + 调用
-`mcp__SHOTWISE__get_video_capabilities({})`
+`mcp__arcreel__get_video_capabilities({})`
 拿到模型能力与用户偏好；主 agent 不需要预先注入角色/场景/道具列表或
 `supported_durations` / `max_duration` / `max_reference_images` / `default_duration` 等数据。）
 
@@ -140,7 +140,7 @@ dispatch prompt 通用参数：项目名称、项目路径、集数、本集小�
 - `scripts/episode_{N}.json` 不存在
 - 阶段 3 的中间文件在本次会话中被修改或重拆（此时即使 JSON 已存在也必须重生）
 
-**step1→step2 审核 gate（阻塞）**：阶段 3 的结构化 step1 中间态须经**显式确认**才放行本阶段（三种结构化 step1 变体——drama / narration / reference_video——一律适用；`reference_video` 的 `step1_reference_units.json` 同样须确认，不要跳过。ad 无 step1，不纳入 gate）。两条等价确认路径——用户在 Web 端审阅 / 编辑后确认，或在对话中明确同意进入视觉生成后由你调用 `mcp__SHOTWISE__confirm_script_review({"episode": N})`（全自主模式下按用户总体授权确认）。未确认（或确认后 step1 又被改）时 `generate_episode_script` 会被 gate 拒绝；**存量项目**（升级前已生成过本集剧本）已 grandfather 放行、无需再确认。
+**step1→step2 审核 gate（阻塞）**：阶段 3 的结构化 step1 中间态须经**显式确认**才放行本阶段（三种结构化 step1 变体——drama / narration / reference_video——一律适用；`reference_video` 的 `step1_reference_units.json` 同样须确认，不要跳过。ad 无 step1，不纳入 gate）。两条等价确认路径——用户在 Web 端审阅 / 编辑后确认，或在对话中明确同意进入视觉生成后由你调用 `mcp__arcreel__confirm_script_review({"episode": N})`（全自主模式下按用户总体授权确认）。未确认（或确认后 step1 又被改）时 `generate_episode_script` 会被 gate 拒绝；**存量项目**（升级前已生成过本集剧本）已 grandfather 放行、无需再确认。
 
 **dispatch `create-episode-script` subagent**：传入项目名称、项目路径、集数。
 
@@ -178,7 +178,7 @@ dispatch `generate-assets` subagent：
   项目名称：{project_name}
   待生成项：{缺失角色名列表}
   工具调用：
-    mcp__SHOTWISE__generate_assets({"type": "character"})
+    mcp__arcreel__generate_assets({"type": "character"})
   验证方式：重新读取 project.json，检查对应角色的 character_sheet 字段
 ```
 
@@ -192,7 +192,7 @@ dispatch `generate-assets` subagent：
   项目名称：{project_name}
   待生成项：{缺失场景名列表}
   工具调用：
-    mcp__SHOTWISE__generate_assets({"type": "scene"})
+    mcp__arcreel__generate_assets({"type": "scene"})
   验证方式：重新读取 project.json，检查对应场景的 scene_sheet 字段
 ```
 
@@ -206,7 +206,7 @@ dispatch `generate-assets` subagent：
   项目名称：{project_name}
   待生成项：{缺失道具名列表}
   工具调用：
-    mcp__SHOTWISE__generate_assets({"type": "prop"})
+    mcp__arcreel__generate_assets({"type": "prop"})
   验证方式：重新读取 project.json，检查对应道具的 prop_sheet 字段
 ```
 
@@ -218,11 +218,11 @@ dispatch `generate-assets` subagent：
 
 检查项目 `generation_mode` 与 `grid_storyboard`：
 
-- `generation_mode == "storyboard"` 且 `grid_storyboard` 为 false → dispatch `generate-assets`，调 `mcp__SHOTWISE__generate_storyboards`
-- `generation_mode == "storyboard"` 且 `grid_storyboard` 为 true → dispatch `generate-assets`，调 `mcp__SHOTWISE__generate_grid`
+- `generation_mode == "storyboard"` 且 `grid_storyboard` 为 false → dispatch `generate-assets`，调 `mcp__arcreel__generate_storyboards`
+- `generation_mode == "storyboard"` 且 `grid_storyboard` 为 true → dispatch `generate-assets`，调 `mcp__arcreel__generate_grid`
 - `generation_mode == "reference_video"` → 不触发，直接跳到阶段 7
 
-> **切换 `grid_storyboard` 后的重做**：本阶段的常规触发条件是「缺分镜图」，而用户在设置页切换该开关不会让已有分镜图失效，剧本里也不记录分镜图由哪种装配方式产出——单看缺图会把整集判成已完成。用户在已有分镜图的项目上切换开关后要求按新方式出图时，与其确认要重做的片段范围，再显式带 ID 重生：切到宫格用 `mcp__SHOTWISE__generate_grid({"script": "episode_{N}.json", "scene_ids": [...]})`，切回单图用 `mcp__SHOTWISE__generate_storyboards({"script": "episode_{N}.json", "segment_ids": [...]})`（`script` 必填；ID 列表省略时只补缺图，达不到重做效果）。已生成的视频同样不会自动失效，重出分镜图后需按新图重跑阶段 7 对应片段。
+> **切换 `grid_storyboard` 后的重做**：本阶段的常规触发条件是「缺分镜图」，而用户在设置页切换该开关不会让已有分镜图失效，剧本里也不记录分镜图由哪种装配方式产出——单看缺图会把整集判成已完成。用户在已有分镜图的项目上切换开关后要求按新方式出图时，与其确认要重做的片段范围，再显式带 ID 重生：切到宫格用 `mcp__arcreel__generate_grid({"script": "episode_{N}.json", "scene_ids": [...]})`，切回单图用 `mcp__arcreel__generate_storyboards({"script": "episode_{N}.json", "segment_ids": [...]})`（`script` 必填；ID 列表省略时只补缺图，达不到重做效果）。已生成的视频同样不会自动失效，重出分镜图后需按新图重跑阶段 7 对应片段。
 
 ### storyboard 模式（grid_storyboard=false）
 
@@ -233,7 +233,7 @@ dispatch `generate-assets` subagent：
   任务类型：storyboard
   项目名称：{project_name}
   工具调用：
-    mcp__SHOTWISE__generate_storyboards({"script": "episode_{N}.json"})
+    mcp__arcreel__generate_storyboards({"script": "episode_{N}.json"})
   验证方式：重新读取 scripts/episode_{N}.json，检查各场景的 storyboard_image 字段
 ```
 
@@ -246,7 +246,7 @@ dispatch `generate-assets` subagent：
   任务类型：storyboard
   项目名称：{project_name}
   工具调用：
-    mcp__SHOTWISE__generate_grid({"script": "episode_{N}.json"})
+    mcp__arcreel__generate_grid({"script": "episode_{N}.json"})
   验证方式：重新读取 scripts/episode_{N}.json，检查各场景的 storyboard_image 字段
 ```
 
@@ -263,7 +263,7 @@ dispatch `generate-assets` subagent：
   任务类型：video
   项目名称：{project_name}
   工具调用：
-    mcp__SHOTWISE__generate_video_episode({"script": "episode_{N}.json"})
+    mcp__arcreel__generate_video_episode({"script": "episode_{N}.json"})
   验证方式：重新读取 scripts/episode_{N}.json，检查各场景的 video_clip 字段
 ```
 
@@ -283,7 +283,7 @@ dispatch `generate-assets` subagent：
   任务类型：narration_audio
   项目名称：{project_name}
   工具调用：
-    mcp__SHOTWISE__generate_narration_audio({"script": "episode_{N}.json"})
+    mcp__arcreel__generate_narration_audio({"script": "episode_{N}.json"})
   验证方式：重新读取 scripts/episode_{N}.json，检查各段 generated_assets.narration_audio 字段
 ```
 

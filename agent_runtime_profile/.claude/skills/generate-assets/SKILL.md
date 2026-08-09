@@ -1,4 +1,4 @@
-﻿---
+---
 name: generate-assets
 description: "统一资产生成 skill：接受 `--type=character|scene|prop`，或不传自动扫所有 pending（缺 sheet）资源并按类型分发。当用户说"生成角色图"/"生成场景图"/"生成道具图"、想为新资产创建参考图、或有资产缺少 *_sheet 时使用。"
 ---
@@ -77,11 +77,11 @@ description: "统一资产生成 skill：接受 `--type=character|scene|prop`，
 
 | 操作 | 工具 |
 |------|------|
-| 列出所有/某类 pending | `mcp__SHOTWISE__list_pending_assets({"type": "character"})`（type 可省略） |
-| 生成所有 pending（三类各一轮） | `mcp__SHOTWISE__generate_assets({})` |
-| 生成某类全部 pending | `mcp__SHOTWISE__generate_assets({"type": "character"})` |
-| 生成指定多个 | `mcp__SHOTWISE__generate_assets({"type": "prop", "names": ["玉佩", "密信"]})` |
-| 生成单个 | `mcp__SHOTWISE__generate_assets({"type": "scene", "names": ["村口老槐树"]})` |
+| 列出所有/某类 pending | `mcp__arcreel__list_pending_assets({"type": "character"})`（type 可省略） |
+| 生成所有 pending（三类各一轮） | `mcp__arcreel__generate_assets({})` |
+| 生成某类全部 pending | `mcp__arcreel__generate_assets({"type": "character"})` |
+| 生成指定多个 | `mcp__arcreel__generate_assets({"type": "prop", "names": ["玉佩", "密信"]})` |
+| 生成单个 | `mcp__arcreel__generate_assets({"type": "scene", "names": ["村口老槐树"]})` |
 
 返回 `is_error: true` 时，文本里包含失败明细，按需重试或反馈给开发者。
 
@@ -97,7 +97,7 @@ description: "统一资产生成 skill：接受 `--type=character|scene|prop`，
 用户对设计图提意见时先判断诉求类型，选错路径会推翻已满意的部分或丢掉预期外的改动：
 
 - **只想改局部**（换发色、去掉杂物、调整光线氛围等），且构图和整体设计满意 → 用
-  `mcp__SHOTWISE__edit_images({"resource_type": "character", "edits": [{"id": "张三", "instruction": "把头发改成红色"}]})`
+  `mcp__arcreel__edit_images({"resource_type": "character", "edits": [{"id": "张三", "instruction": "把头发改成红色"}]})`
   保底图微调，一次可对同类型多个资产批量下发
 - **想推翻构图/整体设计重来**，或本来就要改 description（进而改变后续按 description
   重新生成的结果）→ 用 `generate_assets` 按更新后的 description 重新生成整图
