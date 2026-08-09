@@ -1,4 +1,4 @@
----
+﻿---
 name: generate-script
 description: 调用项目配置的文本模型生成 JSON 剧本（同时产出每个分镜的 image_prompt 与 video_prompt）。由 create-episode-script subagent 调用。读取 step1 中间文件和 project.json，输出符合 Pydantic schema 的剧本。
 user-invocable: false
@@ -9,7 +9,7 @@ user-invocable: false
 调用项目配置的文本生成模型（Gemini / Ark / OpenAI / 自定义供应商，由 project.json 决定），
 基于 Step 1 中间文件产出最终的 JSON 剧本。剧本里的 `image_prompt` / `video_prompt`
 是后续图像 / 视频生成的"种子"，**Prompt 质量基本决定了画面质量**——所以本 skill 是
-ArcReel 整条 pipeline 中最值得重点优化的一环。
+SHOTWISE 整条 pipeline 中最值得重点优化的一环。
 
 ## 前置条件
 
@@ -21,16 +21,16 @@ ArcReel 整条 pipeline 中最值得重点优化的一环。
    - **ad（广告/短片）例外**：不需要任何 step1 中间文件——创作输入是 `project.json` 的
      `brief` + `products`（含 selling_points）+ `target_duration`，prompt 由后端按审定的
      带货八段框架配比表构建（`products` 为空自动分流通用短片 prompt）
-3. **有 step1 的骨架（drama / narration / reference_video）须先经 web 审核 gate 确认**：step1 结构化中间态在 Web 端审阅、可手动 / agent 编辑，**显式确认后**本工具才生成 step2 视觉层。确认有两条等价路径：用户在 Web 端点击确认，或在对话中明确同意后由主 agent 调用 `mcp__arcreel__confirm_script_review({"episode": N})`。未确认（或确认后内容又被改）时本工具拒绝；存量项目（已生成过本集剧本）已 grandfather 放行。reference_video 同样纳入该 gate（其 step1 是 `step1_reference_units.json`），只有 ad（无 step1）不适用。其中 reference_video 的正式 step1 **agent 不可用 Write/Edit 直改**（与 Web 端保存共享一把文件锁，agent 的文件工具取不到）：改动经 `mcp__arcreel__open_reference_step1_for_edit` 取回隔离草稿、改完由 `mcp__arcreel__validate_and_promote_reference_draft` 晋升回正式文件，详见 `split-reference-video-units` subagent。
-4. **reference_video 的违约产物走隔离草稿，不丢弃重抽**：step1 拆分或 step2 视觉展开的产出违反书写层约束时，正式文件不写，产出连同逐条违约报告落到 `drafts/episode_N/step1_reference_units.invalid.json` / `step2_reference_script.invalid.json`。隔离草稿在场期间本工具拒绝生成。处置方式是 Read 草稿 → 按 `violations[]` 的 unit 定位与违约类 Edit `content.units[i]` → 调 `mcp__arcreel__validate_and_promote_reference_draft({"episode": N})` 晋升，仍违约则继续改再晋升，无轮次上限。
+3. **有 step1 的骨架（drama / narration / reference_video）须先经 web 审核 gate 确认**：step1 结构化中间态在 Web 端审阅、可手动 / agent 编辑，**显式确认后**本工具才生成 step2 视觉层。确认有两条等价路径：用户在 Web 端点击确认，或在对话中明确同意后由主 agent 调用 `mcp__SHOTWISE__confirm_script_review({"episode": N})`。未确认（或确认后内容又被改）时本工具拒绝；存量项目（已生成过本集剧本）已 grandfather 放行。reference_video 同样纳入该 gate（其 step1 是 `step1_reference_units.json`），只有 ad（无 step1）不适用。其中 reference_video 的正式 step1 **agent 不可用 Write/Edit 直改**（与 Web 端保存共享一把文件锁，agent 的文件工具取不到）：改动经 `mcp__SHOTWISE__open_reference_step1_for_edit` 取回隔离草稿、改完由 `mcp__SHOTWISE__validate_and_promote_reference_draft` 晋升回正式文件，详见 `split-reference-video-units` subagent。
+4. **reference_video 的违约产物走隔离草稿，不丢弃重抽**：step1 拆分或 step2 视觉展开的产出违反书写层约束时，正式文件不写，产出连同逐条违约报告落到 `drafts/episode_N/step1_reference_units.invalid.json` / `step2_reference_script.invalid.json`。隔离草稿在场期间本工具拒绝生成。处置方式是 Read 草稿 → 按 `violations[]` 的 unit 定位与违约类 Edit `content.units[i]` → 调 `mcp__SHOTWISE__validate_and_promote_reference_draft({"episode": N})` 晋升，仍违约则继续改再晋升，无轮次上限。
 
 ## 用法
 
 通过 MCP 工具调用（项目名由 session 绑定，不需要传）：
 
 ```text
-mcp__arcreel__generate_episode_script({"episode": N})
-mcp__arcreel__generate_episode_script({"episode": N, "dry_run": true})   # 仅预览 prompt
+mcp__SHOTWISE__generate_episode_script({"episode": N})
+mcp__SHOTWISE__generate_episode_script({"episode": N, "dry_run": true})   # 仅预览 prompt
 ```
 
 输出路径由工具内部固定为 `{project}/scripts/episode_{N}.json`，不支持自定义；

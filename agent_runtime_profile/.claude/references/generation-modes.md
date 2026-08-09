@@ -1,6 +1,6 @@
-# 生成模式参考
+﻿# 生成模式参考
 
-ArcReel 把"做什么内容"和"怎么生成视频"拆成两条独立维度。`content_mode` 严格表达**内容类型**（narration / drama），`generation_mode` 表达**视频来源 / 生成路径**（storyboard / reference_video）。二者均由 `project.json` 顶层字段唯一决定，项目创建后不可更改，不存在集级覆盖。组合上可枚举如下；参考生视频路径下内容类型仅作画面比例 / 默认时长等次级决策。
+SHOTWISE 把"做什么内容"和"怎么生成视频"拆成两条独立维度。`content_mode` 严格表达**内容类型**（narration / drama），`generation_mode` 表达**视频来源 / 生成路径**（storyboard / reference_video）。二者均由 `project.json` 顶层字段唯一决定，项目创建后不可更改，不存在集级覆盖。组合上可枚举如下；参考生视频路径下内容类型仅作画面比例 / 默认时长等次级决策。
 
 宫格不是独立生成模式：`grid_storyboard` 是仅在 `generation_mode="storyboard"` 下生效的独立布尔开关（由用户在设置页开关，agent 无对应写入权限），决定 Step 6 走分镜图还是宫格图，不影响 Step 3/4/5/7/8 的分派。
 
@@ -40,13 +40,13 @@ Step 6 分镜图
 Step 7 视频（路由同样按项目 generation_mode，剧本骨架只作校验）
   storyboard          → dispatch generate-assets (video) → task_type="video"
   reference_video     → dispatch generate-assets (video) → task_type="reference_video"
-                        mcp__arcreel__generate_video_episode 读 project.json 定路线，再校验剧本骨架是否匹配；
+                        mcp__SHOTWISE__generate_video_episode 读 project.json 定路线，再校验剧本骨架是否匹配；
                         失配（如 storyboard 项目里残留 video_units[] 旧剧本）直接拒绝入队，
                         正解是按项目当前路线重跑 Step 3/4 重生剧本，而非指望旧剧本被执行
 
 Step 8 旁白配音（仅 narration 内容模式）
   storyboard          → dispatch generate-assets (narration_audio)
-                        mcp__arcreel__generate_narration_audio 按段以 novel_text 合成
+                        mcp__SHOTWISE__generate_narration_audio 按段以 novel_text 合成
   reference_video      → 跳过（无 segments）
 ```
 
@@ -54,7 +54,7 @@ Step 8 旁白配音（仅 narration 内容模式）
 
 - **分辨率**：图片 1K，视频 1080p
 - **单片段时长**（storyboard，含 grid_storyboard）：取值必须在模型 `supported_durations` 内；项目 `default_duration` 非 null 时作默认值（项目创建时按 content_mode 写入 project.json），为 null 时由预处理按内容节奏自行取值
-- **单 unit 时长**（reference_video）：unit 是一次生成调用的单元，一个 unit 一个时长——取值必须在该 unit **引用状态对应**的生效档位内（`get_video_capabilities` 返回的 `reference_unit_durations.with_references` / `.without_references`；部分型号对带参考图的生成另有时长限制），镜头不单独承载时长；内容装不下所选档位时重拆 unit，不违约时长。具体数值由 subagent 在执行时通过 `mcp__arcreel__get_video_capabilities` 工具查得，**不在本文档固化**
+- **单 unit 时长**（reference_video）：unit 是一次生成调用的单元，一个 unit 一个时长——取值必须在该 unit **引用状态对应**的生效档位内（`get_video_capabilities` 返回的 `reference_unit_durations.with_references` / `.without_references`；部分型号对带参考图的生成另有时长限制），镜头不单独承载时长；内容装不下所选档位时重拆 unit，不违约时长。具体数值由 subagent 在执行时通过 `mcp__SHOTWISE__get_video_capabilities` 工具查得，**不在本文档固化**
 - **拼接**：全部模式用 ffmpeg concat；Veo extend 仅用于**单片段延长**，不串联不同镜头
 - **BGM**：生成端已在视频 prompt 末尾自动追加"禁止出现：BGM、文字字幕、水印"，无需手动追加，prompt 里也不要描述 BGM / 配乐
 

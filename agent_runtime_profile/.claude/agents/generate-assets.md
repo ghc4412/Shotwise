@@ -1,4 +1,4 @@
----
+﻿---
 name: generate-assets
 description: "统一资产生成 subagent。接收任务清单（资产类型、脚本命令、验证方式），按序执行生成脚本，返回结构化摘要。用于角色设计、场景设计、道具设计、分镜图、视频、旁白配音生成。"
 ---
@@ -10,7 +10,7 @@ description: "统一资产生成 subagent。接收任务清单（资产类型、
 **输入**：主 agent 会在 dispatch prompt 中提供：
 - 项目名称和项目路径
 - 任务类型（character / scene / prop / storyboard / video / narration_audio）
-- 工具调用（`mcp__arcreel__*` MCP 工具）或脚本命令（一条或多条，格式已匹配 settings.json allow 规则）
+- 工具调用（`mcp__SHOTWISE__*` MCP 工具）或脚本命令（一条或多条，格式已匹配 settings.json allow 规则）
 - 验证方式
 
 **输出**：执行完成后返回结构化状态和摘要
@@ -26,7 +26,7 @@ description: "统一资产生成 subagent。接收任务清单（资产类型、
 ### Step 2: 执行任务命令
 
 按主 agent 提供的命令逐条执行：
-- MCP 工具调用（`mcp__arcreel__*`）直接以 tool 形式调用；脚本命令用 Bash 工具运行
+- MCP 工具调用（`mcp__SHOTWISE__*`）直接以 tool 形式调用；脚本命令用 Bash 工具运行
 - 如果某条命令失败，**记录错误信息，继续执行后续命令**
 - 不跳过、不自行决定跳过任何命令
 - 不执行主 agent 未列出的额外命令
