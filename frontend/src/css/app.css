@@ -269,3 +269,181 @@ html.theme-light .app-panel-strong {
         transform: scale(0.7);
     }
 }
+
+/* AI drama visual system: a restrained cinema surface shared by auth and lobby. */
+.auth-scene {
+    isolation: isolate;
+    background:
+        linear-gradient(115deg, color-mix(in oklab, var(--color-bg) 84%, #071b2b) 0%, var(--color-bg) 48%, color-mix(in oklab, var(--color-bg) 86%, #261022) 100%);
+}
+
+.auth-scene::before,
+.auth-scene::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.auth-scene::before {
+    z-index: -2;
+    opacity: 0.32;
+    background-image: url("/style-thumbnails/anim_arcane.png"), url("/style-thumbnails/anim_cyberpunk.png");
+    background-position: 92% 16%, 8% 86%;
+    background-size: 330px 220px, 280px 190px;
+    background-repeat: no-repeat;
+    filter: saturate(0.72) contrast(1.1);
+    mask-image: linear-gradient(90deg, #000, transparent 34%, transparent 66%, #000);
+}
+
+.auth-scene::after {
+    z-index: -1;
+    background:
+        linear-gradient(90deg, transparent, color-mix(in oklab, var(--color-accent) 12%, transparent) 50%, transparent),
+        repeating-linear-gradient(0deg, transparent 0 5px, oklch(1 0 0 / 0.015) 6px);
+    mix-blend-mode: screen;
+    opacity: 0.7;
+}
+
+.auth-sweep {
+    position: absolute;
+    inset: -25% -15%;
+    z-index: -1;
+    pointer-events: none;
+    background: linear-gradient(112deg, transparent 38%, color-mix(in oklab, var(--color-accent) 10%, transparent) 48%, transparent 58%);
+    transform: translateX(-18%);
+    animation: auth-sweep 12s ease-in-out infinite;
+}
+
+.auth-grid {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.2;
+    background-image:
+        linear-gradient(to right, oklch(1 0 0 / 0.06) 1px, transparent 1px),
+        linear-gradient(to bottom, oklch(1 0 0 / 0.06) 1px, transparent 1px);
+    background-size: 52px 52px;
+    mask-image: radial-gradient(ellipse at 50% 40%, #000 20%, transparent 80%);
+}
+
+.auth-film-track {
+    position: absolute;
+    z-index: 0;
+    width: 88px;
+    height: 70vh;
+    opacity: 0.18;
+    pointer-events: none;
+    background: repeating-linear-gradient(180deg, transparent 0 18px, var(--color-accent) 19px 22px, transparent 23px 42px);
+    mask-image: linear-gradient(180deg, transparent, #000 20%, #000 80%, transparent);
+}
+
+.auth-film-track-left { left: 2.5%; transform: rotate(10deg); }
+.auth-film-track-right { right: 2.5%; transform: rotate(-10deg); background-image: repeating-linear-gradient(180deg, transparent 0 18px, var(--color-pink) 19px 22px, transparent 23px 42px); }
+
+.auth-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--color-good);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-good) 15%, transparent), 0 0 12px var(--color-good);
+}
+
+.auth-kicker-line { width: 38px; height: 1px; background: linear-gradient(90deg, var(--color-accent), transparent); }
+
+.auth-title { text-shadow: 0 20px 46px oklch(0 0 0 / 0.45); }
+
+.auth-reel {
+    width: min(100%, 620px);
+    border: 1px solid var(--color-hairline);
+    background: color-mix(in oklab, var(--color-bg-grad-a) 72%, transparent);
+    box-shadow: 0 24px 70px -35px oklch(0 0 0 / 0.8), inset 0 1px 0 oklch(1 0 0 / 0.07);
+    backdrop-filter: blur(12px);
+}
+
+.auth-reel-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-bottom: 1px solid var(--color-hairline-soft); color: var(--color-text-2); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
+.auth-reel-stage { position: relative; height: 170px; overflow: hidden; background: #070910; }
+.auth-reel-stage::after { content: ""; position: absolute; inset: 0; background: linear-gradient(120deg, transparent 22%, oklch(1 0 0 / 0.12) 44%, transparent 66%); transform: translateX(-80%); animation: auth-reel-glint 7s ease-in-out infinite; }
+.auth-reel-frame { position: absolute; top: 18px; bottom: 18px; width: 44%; border: 1px solid oklch(1 0 0 / 0.25); background-position: center; background-size: cover; filter: saturate(0.86) contrast(1.08); box-shadow: 0 18px 34px -22px #000; }
+.auth-reel-frame-one { left: -3%; background-image: linear-gradient(180deg, transparent 42%, oklch(0.05 0 0 / 0.72)), url("/style-thumbnails/anim_arcane.png"); transform: rotate(-5deg); animation: auth-frame-one 9s ease-in-out infinite; }
+.auth-reel-frame-two { left: 28%; z-index: 1; background-image: linear-gradient(180deg, transparent 42%, oklch(0.05 0 0 / 0.64)), url("/style-thumbnails/anim_cyberpunk.png"); animation: auth-frame-two 9s ease-in-out infinite; }
+.auth-reel-frame-three { right: -5%; background-image: linear-gradient(180deg, transparent 42%, oklch(0.05 0 0 / 0.72)), url("/style-thumbnails/anim_bloodborne.png"); transform: rotate(5deg); animation: auth-frame-three 9s ease-in-out infinite; }
+.auth-reel-copy { position: absolute; z-index: 2; left: 16px; bottom: 13px; display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.16em; color: var(--color-text); }
+.auth-reel-play { position: absolute; z-index: 3; inset: 0; display: grid; place-items: center; }
+.auth-reel-play span { width: 38px; height: 38px; border: 1px solid color-mix(in oklab, var(--color-accent) 60%, transparent); border-radius: 999px; background: color-mix(in oklab, var(--color-bg) 42%, transparent); box-shadow: 0 0 26px -8px var(--color-accent-glow); }
+.auth-reel-play span::after { content: ""; display: block; margin: 11px 0 0 15px; width: 0; height: 0; border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-left: 11px solid var(--color-accent-2); }
+.auth-reel-progress { height: 3px; background: var(--color-hairline-soft); }
+.auth-reel-progress span { display: block; width: 38%; height: 100%; background: linear-gradient(90deg, var(--color-pink), var(--color-accent)); animation: auth-progress 5s ease-in-out infinite; }
+
+.auth-metric { padding: 0 18px; border-left: 1px solid var(--color-hairline); }
+.auth-metric:first-child { padding-left: 0; border-left: 0; }
+
+.auth-panel { overflow: hidden; border: 1px solid var(--color-hairline-strong); background: color-mix(in oklab, var(--color-bg-grad-a) 88%, transparent); box-shadow: 0 34px 90px -46px oklch(0 0 0 / 0.9), inset 0 1px 0 oklch(1 0 0 / 0.08); backdrop-filter: blur(20px) saturate(1.25); }
+.auth-panel-topline { position: absolute; inset: 0 14% auto; height: 1px; background: linear-gradient(90deg, transparent, var(--color-accent), var(--color-pink), transparent); box-shadow: 0 0 18px var(--color-accent-glow); }
+.auth-input { min-height: 46px; border-radius: 4px; background: color-mix(in oklab, var(--color-bg) 74%, transparent); }
+.auth-password-toggle { position: absolute; right: 12px; top: 50%; display: grid; transform: translateY(-50%); color: var(--color-text-3); cursor: pointer; }
+.auth-password-toggle:hover { color: var(--color-accent-2); }
+.auth-submit { min-height: 48px; border-radius: 4px; }
+.auth-divider { display: flex; align-items: center; gap: 10px; margin: 24px 0 16px; color: var(--color-text-4); font-family: var(--font-mono); font-size: 9px; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; }
+.auth-divider::before, .auth-divider::after { content: ""; height: 1px; flex: 1; background: var(--color-hairline); }
+.auth-request-button { display: inline-flex; align-items: center; gap: 6px; color: var(--color-text-2); font-size: 12px; text-decoration: none; transition: color 160ms ease; }
+.auth-request-button:hover { color: var(--color-accent-2); }
+.auth-error { border-left: 2px solid var(--color-warm); padding-left: 10px; }
+
+@keyframes auth-sweep { 0%, 100% { transform: translateX(-18%); opacity: 0.4; } 50% { transform: translateX(18%); opacity: 0.9; } }
+@keyframes auth-reel-glint { 0%, 30% { transform: translateX(-80%); } 64%, 100% { transform: translateX(120%); } }
+@keyframes auth-frame-one { 0%, 100% { transform: translate(-1%, -1%) rotate(-5deg); } 50% { transform: translate(3%, 2%) rotate(-3deg); } }
+@keyframes auth-frame-two { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+@keyframes auth-frame-three { 0%, 100% { transform: translate(1%, 1%) rotate(5deg); } 50% { transform: translate(-3%, -2%) rotate(3deg); } }
+@keyframes auth-progress { 0%, 100% { width: 28%; } 50% { width: 70%; } }
+
+html.theme-light .auth-scene { background: linear-gradient(115deg, #edf5f7 0%, #f7fafb 52%, #f6eef4 100%); }
+html.theme-light .auth-scene::before { opacity: 0.2; }
+html.theme-light .auth-scene::after { mix-blend-mode: multiply; opacity: 0.24; }
+html.theme-light .auth-panel { background: oklch(0.99 0.006 230 / 0.87); box-shadow: 0 34px 90px -46px oklch(0.25 0.04 240 / 0.28), inset 0 1px 0 #fff; }
+html.theme-light .auth-reel-stage { background: #dce9ef; }
+
+@media (max-width: 900px) {
+    .auth-layout { padding-top: 2rem; }
+    .auth-showcase { max-width: 680px; }
+    .auth-panel { max-width: none; justify-self: stretch; }
+    .auth-reel { margin-top: 2rem; }
+}
+
+@media (max-width: 560px) {
+    .auth-topbar { padding-inline: 1rem; }
+    .auth-layout { gap: 2.75rem; padding-inline: 1rem; }
+    .auth-title { font-size: clamp(3rem, 16vw, 4.6rem); }
+    .auth-reel-stage { height: 138px; }
+    .auth-film-track { display: none; }
+    .auth-panel .p-7 { padding: 1.35rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .auth-sweep, .auth-reel-stage::after, .auth-reel-frame, .auth-reel-progress span { animation: none; }
+}
+
+.lobby-shell { isolation: isolate; }
+.lobby-shell::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0.18; background-image: linear-gradient(to right, oklch(1 0 0 / 0.045) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 0.045) 1px, transparent 1px); background-size: 64px 64px; mask-image: linear-gradient(180deg, #000, transparent 88%); }
+.lobby-hero-strip { position: relative; }
+.lobby-hero-strip::after { content: ""; position: absolute; left: 24px; right: 24px; bottom: 0; height: 1px; background: linear-gradient(90deg, var(--color-accent), var(--color-pink), transparent 78%); opacity: 0.55; }
+.lobby-signal { display: flex; align-items: center; gap: 12px; min-height: 24px; color: var(--color-text-4); font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; }
+.lobby-signal-label { white-space: nowrap; }
+.lobby-signal-line { display: inline-flex; align-items: center; gap: 3px; height: 16px; }
+.lobby-signal-line i { display: block; width: 3px; height: 5px; background: var(--color-accent); opacity: 0.45; animation: lobby-signal 1.6s ease-in-out infinite; }
+.lobby-signal-line i:nth-child(2), .lobby-signal-line i:nth-child(7) { animation-delay: 120ms; }
+.lobby-signal-line i:nth-child(3), .lobby-signal-line i:nth-child(6) { animation-delay: 240ms; }
+.lobby-signal-line i:nth-child(4), .lobby-signal-line i:nth-child(5) { animation-delay: 360ms; }
+.lobby-topbar button[data-icon-button="sparkles"] > span[aria-hidden] { display: none; }
+@keyframes lobby-signal { 0%, 100% { height: 5px; opacity: 0.4; } 50% { height: 15px; opacity: 1; background: var(--color-pink); } }
+
+@media (max-width: 760px) {
+    .lobby-hero-strip { flex-direction: column; gap: 1rem; }
+    .lobby-hero-strip > div:last-child { align-items: flex-start; }
+    .lobby-signal { order: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .lobby-signal-line i { animation: none; }
+}

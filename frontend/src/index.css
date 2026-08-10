@@ -4,10 +4,10 @@
 
 @theme {
     /* 工作台基础色 — oklch 系 */
-    --color-bg: oklch(0.168 0.009 265);
-    --color-bg-grad-a: oklch(0.182 0.011 270);
-    --color-bg-grad-b: oklch(0.148 0.009 260);
-    --color-surface-2: oklch(0.250 0.012 265);
+    --color-bg: oklch(0.135 0.025 255);
+    --color-bg-grad-a: oklch(0.17 0.032 258);
+    --color-bg-grad-b: oklch(0.105 0.022 250);
+    --color-surface-2: oklch(0.235 0.035 255);
 
     /* 描边 */
     --color-hairline: oklch(0.40 0.012 265 / 0.35);
@@ -21,11 +21,14 @@
     --color-text-4: oklch(0.490 0.010 265);
 
     /* Accent — 紫色 */
-    --color-accent: oklch(0.76 0.09 295);
-    --color-accent-2: oklch(0.88 0.05 295);
-    --color-accent-soft: oklch(0.76 0.09 295 / 0.22);
-    --color-accent-dim: oklch(0.76 0.09 295 / 0.12);
-    --color-accent-glow: oklch(0.76 0.09 295 / 0.35);
+    --color-accent: oklch(0.79 0.14 205);
+    --color-accent-2: oklch(0.94 0.07 200);
+    --color-accent-soft: oklch(0.79 0.14 205 / 0.22);
+    --color-accent-dim: oklch(0.79 0.14 205 / 0.12);
+    --color-accent-glow: oklch(0.79 0.14 205 / 0.35);
+    --color-pink: oklch(0.72 0.19 350);
+    --color-pink-soft: oklch(0.72 0.19 350 / 0.18);
+    --color-pink-glow: oklch(0.72 0.19 350 / 0.38);
 
     /* 状态色 */
     --color-good: oklch(0.78 0.10 155);
@@ -50,8 +53,8 @@
     --color-danger-glow: oklch(0.45 0.18 25 / 0.45);
 
     /* 字体 — 设计稿统一使用 Inter，display 仅在字号/字重上做区分 */
-    --font-sans: "Inter", "Noto Sans SC", system-ui, sans-serif;
-    --font-display: "Inter", "Noto Sans SC", system-ui, sans-serif;
+    --font-sans: "Fira Sans", "Inter", "Noto Sans SC", system-ui, sans-serif;
+    --font-display: "Fira Sans", "Inter", "Noto Sans SC", system-ui, sans-serif;
     --font-mono: "JetBrains Mono", "Fira Code", "Noto Sans Mono", ui-monospace, monospace;
     /* 衬线 — 仅项目大厅 (Darkroom) 用于编辑式电影感大标题 */
     --font-editorial: "Instrument Serif", "Songti SC", "Noto Serif SC", Georgia, serif;
@@ -65,9 +68,9 @@
     --color-ink-850: oklch(0.182 0.011 270);
     --color-ink-800: oklch(0.250 0.012 265);
     --color-ink-700: oklch(0.310 0.013 265);
-    --color-neon-500: oklch(0.76 0.09 295);
-    --color-neon-400: oklch(0.82 0.07 295);
-    --color-neon-300: oklch(0.88 0.05 295);
+    --color-neon-500: oklch(0.79 0.14 205);
+    --color-neon-400: oklch(0.84 0.11 205);
+    --color-neon-300: oklch(0.94 0.07 200);
     --color-amberx-500: oklch(0.78 0.13 70);
     --color-amberx-400: oklch(0.84 0.10 70);
     --color-amberx-300: oklch(0.90 0.08 75);
@@ -84,8 +87,8 @@
 html {
     color-scheme: dark;
     --color-header: oklch(0.19 0.012 265 / 0.86);
-    --color-bg-glow-a: oklch(0.32 0.05 295 / 0.28);
-    --color-bg-glow-b: oklch(0.26 0.04 260 / 0.25);
+    --color-bg-glow-a: oklch(0.32 0.08 205 / 0.30);
+    --color-bg-glow-b: oklch(0.28 0.10 350 / 0.22);
 }
 
 html.theme-light {
@@ -95,8 +98,8 @@ html.theme-light {
     --color-bg-grad-b: oklch(0.945 0.012 250);
     --color-surface-2: oklch(0.985 0.006 250);
     --color-header: oklch(0.995 0.004 250 / 0.9);
-    --color-bg-glow-a: oklch(0.84 0.05 220 / 0.2);
-    --color-bg-glow-b: oklch(0.88 0.05 165 / 0.16);
+    --color-bg-glow-a: oklch(0.84 0.07 205 / 0.2);
+    --color-bg-glow-b: oklch(0.88 0.08 350 / 0.14);
     --color-hairline: oklch(0.58 0.022 250 / 0.28);
     --color-hairline-strong: oklch(0.48 0.028 250 / 0.42);
     --color-hairline-soft: oklch(0.58 0.022 250 / 0.16);
@@ -109,6 +112,9 @@ html.theme-light {
     --color-accent-soft: oklch(0.54 0.14 240 / 0.22);
     --color-accent-dim: oklch(0.54 0.14 240 / 0.10);
     --color-accent-glow: oklch(0.54 0.14 240 / 0.25);
+    --color-pink: oklch(0.58 0.17 350);
+    --color-pink-soft: oklch(0.58 0.17 350 / 0.14);
+    --color-pink-glow: oklch(0.58 0.17 350 / 0.22);
     --color-good: oklch(0.58 0.13 155);
     --color-warn: oklch(0.67 0.14 75);
     --color-danger: oklch(0.60 0.16 25);

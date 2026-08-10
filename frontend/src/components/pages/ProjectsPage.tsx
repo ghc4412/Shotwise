@@ -10,7 +10,7 @@ import {
 import { errMsg, voidCall, voidPromise } from "@/utils/async";
 import { formatDate } from "@/utils/date-format";
 import { Link, useLocation } from "wouter";
-import { AlertTriangle, Library, Loader2, Plus, Search, Settings, Upload } from "lucide-react";
+import { AlertTriangle, Library, Loader2, Plus, Search, Settings, Sparkles, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { API } from "@/api";
@@ -485,8 +485,9 @@ function TopBar({
             className="rounded-md px-2 py-1.5 text-sm text-text-3 transition-colors hover:bg-bg-grad-a hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             title={t("dashboard:openclaw")}
             aria-label={t("dashboard:openclaw")}
+            data-icon-button="sparkles"
           >
-            <span aria-hidden>🦞</span>
+            <Sparkles className="h-4 w-4" aria-hidden />
           </button>
           <button
             type="button"
@@ -583,7 +584,7 @@ function HeroStrip({ totals, t }: HeroStripProps) {
   ];
 
   return (
-    <div className="mx-auto flex max-w-[1320px] items-stretch justify-between gap-6 px-6 pb-5 pt-6">
+    <div className="lobby-hero-strip mx-auto flex max-w-[1320px] items-stretch justify-between gap-6 px-6 pb-5 pt-6">
       <div className="min-w-0 flex-1">
         <h1
           className="font-editorial m-0"
@@ -615,6 +616,9 @@ function HeroStrip({ totals, t }: HeroStripProps) {
       <div className="flex flex-col items-end justify-between gap-2.5">
         <div className="mt-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-accent-2">
           {t("dashboard:lobby_hero_eyebrow")} — {dateLine}
+        </div>
+        <div className="lobby-signal" aria-hidden>
+          <span className="lobby-signal-line"><i /><i /><i /><i /><i /><i /><i /><i /></span>
         </div>
         <div
           className="flex items-stretch overflow-hidden rounded-[10px] border border-hairline-soft"
