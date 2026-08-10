@@ -1,4 +1,4 @@
-# SQLAlchemy Async ORM Migration — Implementation Plan
+﻿# SQLAlchemy Async ORM Migration — Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
@@ -70,7 +70,7 @@ class TestGetDatabaseUrl:
             os.environ.pop("DATABASE_URL", None)
             url = get_database_url()
             assert url.startswith("sqlite+aiosqlite:///")
-            assert ".arcreel.db" in url
+            assert ".SHOTWISE.db" in url
 
     def test_env_override(self):
         with patch.dict(os.environ, {"DATABASE_URL": "postgresql+asyncpg://localhost/test"}):
@@ -134,7 +134,7 @@ def get_database_url() -> str:
     if url:
         return url
     project_root = Path(__file__).parent.parent.parent
-    db_path = project_root / "projects" / ".arcreel.db"
+    db_path = project_root / "projects" / ".SHOTWISE.db"
     return f"sqlite+aiosqlite:///{db_path}"
 
 
@@ -229,9 +229,9 @@ Add the following block (after existing GEMINI config):
 
 ```
 # 数据库配置（默认使用 SQLite）
-# SQLite（开发/单机）: sqlite+aiosqlite:///./projects/.arcreel.db
-# PostgreSQL（生产）:  postgresql+asyncpg://user:pass@host:5432/arcreel
-# DATABASE_URL=sqlite+aiosqlite:///./projects/.arcreel.db
+# SQLite（开发/单机）: sqlite+aiosqlite:///./projects/.SHOTWISE.db
+# PostgreSQL（生产）:  postgresql+asyncpg://user:pass@host:5432/SHOTWISE
+# DATABASE_URL=sqlite+aiosqlite:///./projects/.SHOTWISE.db
 ```
 
 **Step 7: Run tests**
@@ -1481,7 +1481,7 @@ git commit -m "feat(db): add data migration script from old SQLite to new ORM"
 - Remove old `_init_db()` / `CREATE TABLE` code from `GenerationQueue`, `UsageTracker`, `SessionMetaStore`
 - Remove `_connect()` context managers
 - Remove `_ensure_task_columns()` migration code
-- Update `.gitignore` if needed (ignore `.arcreel.db`)
+- Update `.gitignore` if needed (ignore `.SHOTWISE.db`)
 
 **Step 1: Remove dead code**
 

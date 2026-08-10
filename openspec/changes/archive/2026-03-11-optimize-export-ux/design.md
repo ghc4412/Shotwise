@@ -1,4 +1,4 @@
-## Context
+﻿## Context
 
 当前导出流程：前端通过 `fetch` 调用 `GET /api/v1/projects/{name}/export`（携带 Bearer JWT），等待完整 ZIP 响应体加载到内存（Blob），再通过创建 `<a>` 标签触发浏览器保存。后端使用 FastAPI `FileResponse` 返回临时 ZIP 文件。
 
@@ -45,7 +45,7 @@
 - `scope=current`：
   - 跳过 `versions/` 目录下的历史文件（`versions/storyboards/`、`versions/videos/` 等）
   - 保留 `versions/versions.json`，但裁剪为仅包含 current version 条目
-  - 清单文件 `arcreel-export.json` 的 `scope` 字段设为 `"current"`
+  - 清单文件 `SHOTWISE-export.json` 的 `scope` 字段设为 `"current"`
 
 ### 3. versions.json 裁剪策略
 

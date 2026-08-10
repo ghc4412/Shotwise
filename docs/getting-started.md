@@ -1,6 +1,6 @@
-# 完整入门教程
+﻿# 完整入门教程
 
-本教程指导你从零开始，使用 Shotwise 将小说转换为短视频。
+本教程指导你从零开始，使用 SHOTWISE 将小说转换为短视频。
 
 ## 你将学到
 
@@ -16,7 +16,7 @@
 
 ## 费用预估
 
-Shotwise 支持多个供应商（Gemini、火山方舟、Grok、OpenAI、Vidu、阿里百炼、MiniMax、可灵及自定义供应商），以下以 Gemini 为例：
+SHOTWISE 支持多个供应商（Gemini、火山方舟、Grok、OpenAI、Vidu、阿里百炼、MiniMax、可灵 及自定义供应商），以下以 Gemini 为例：
 
 | 类型 | 模型 | 单价 | 说明 |
 |------|------|------|------|
@@ -31,7 +31,7 @@ Shotwise 支持多个供应商（Gemini、火山方舟、Grok、OpenAI、Vidu、
 > - 视频：80 秒 × $0.12（Fast 模式）= $9.60
 > - **总计约 $11**
 
-> 其他供应商费用请参考各自官方定价页面，Shotwise 在设置页提供实时费用追踪。
+> 其他供应商费用请参考各自官方定价页面，SHOTWISE 在设置页提供实时费用追踪。
 
 ---
 
@@ -39,7 +39,7 @@ Shotwise 支持多个供应商（Gemini、火山方舟、Grok、OpenAI、Vidu、
 
 ### 1.1 获取图片/视频生成供应商 API 密钥
 
-Shotwise 支持多个供应商，**至少配置一个**即可开始使用：
+SHOTWISE 支持多个供应商，**至少配置一个**即可开始使用：
 
 | 供应商 | 获取地址 | 说明 |
 |--------|---------|------|
@@ -58,7 +58,7 @@ Shotwise 支持多个供应商，**至少配置一个**即可开始使用：
 
 ### 1.2 获取 Anthropic API 密钥
 
-Shotwise 内置基于 Claude Agent SDK 的 AI 助手，负责剧本创作、智能对话引导等关键环节。
+SHOTWISE 内置基于 Claude Agent SDK 的 AI 助手，负责剧本创作、智能对话引导等关键环节。
 
 **方式 A：使用 Anthropic 官方 API**
 
@@ -74,15 +74,13 @@ Shotwise 内置基于 Claude Agent SDK 的 AI 助手，负责剧本创作、智�
 - **Model** — 指定使用的模型名称（如 `claude-sonnet-4-6`）
 - 还可分别配置 Haiku / Sonnet / Opus 的默认模型和 Subagent 模型
 
-### 1.3 准备运行环境
+### 1.3 准备服务器
 
 **服务器要求：**
 
 - 操作系统：推荐 Linux / macOS / WSL2 / Docker；Windows 原生可运行基础流程，但 Bash 沙箱等 POSIX-only 隔离机制会自动降级，生产建议 WSL2 或 Docker Desktop
 - 内存：建议 2GB+
 - 已安装 Docker 和 Docker Compose
-
-Windows 上需要完整 Agent 沙箱时，使用 WSL2 原生运行。依赖安装和启动命令见 [WSL2 完整功能运行](wsl2.md)。Docker Compose 继续用于单机或服务器部署。
 
 **安装 Docker（如未安装）：**
 
@@ -107,24 +105,24 @@ docker compose version
 ```bash
 # 1. 克隆项目
 git clone https://github.com/ghc4412/Shotwise.git
-cd Shotwise/deploy
+cd SHOTWISE/deploy
 
 # 2. 创建环境变量文件
 cp .env.example .env
 
 # 3. 启动服务
-docker compose up -d --build
+docker compose up -d
 ```
 
 #### 方式 B：生产部署（PostgreSQL，推荐正式使用）
 
 ```bash
-cd Shotwise/deploy/production
+cd SHOTWISE/deploy/production
 
 # 创建环境变量文件（需设置 POSTGRES_PASSWORD）
 cp .env.example .env
 
-docker compose up -d --build
+docker compose up -d
 ```
 
 等待容器启动完成后，在浏览器访问 **http://你的服务器IP:1241**

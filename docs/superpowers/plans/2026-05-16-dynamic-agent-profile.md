@@ -1,4 +1,4 @@
-# Dynamic Agent Profile 实施计划
+﻿# Dynamic Agent Profile 实施计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -1303,7 +1303,7 @@ cat agent_runtime_profile/CLAUDE.md
 ```
 - **单片段/场景时长**：由视频模型能力和项目 `default_duration` 配置决定
   - storyboard / grid 模式：由项目 `default_duration` 决定
-  - reference_video 模式：由所选视频模型的 `supported_durations` 决定；subagent 运行时通过 `mcp__arcreel__get_video_capabilities` 工具自查真值
+  - reference_video 模式：由所选视频模型的 `supported_durations` 决定；subagent 运行时通过 `mcp__SHOTWISE__get_video_capabilities` 工具自查真值
 ```
 
 4. "## 内容模式" 段替换为：
@@ -1430,7 +1430,7 @@ cat agent_runtime_profile/.claude/skills/manga-workflow/SKILL.md
 dispatch prompt 通用参数：项目名称、项目路径、集数、本集小说文件路径。
 
 （两个预处理 subagent 会自行读 project.json + 调用
-`mcp__arcreel__get_video_capabilities({})`
+`mcp__SHOTWISE__get_video_capabilities({})`
 拿到模型能力与用户偏好；主 agent 不需要预先注入角色/场景/道具列表或
 `supported_durations` / `max_duration` / `max_reference_images` / `default_duration` 等数据。）
 ```
@@ -1544,7 +1544,7 @@ ls projects/
 PROJ=$(ls projects/ | grep -v '^_' | grep -v '^\.' | head -1)
 echo "Inspecting: $PROJ"
 head -30 "projects/$PROJ/CLAUDE.md"
-cat "projects/$PROJ/.arcreel_profile_manifest.json" | python -c "import json,sys; d=json.load(sys.stdin); print('content_mode:', d.get('content_mode')); print('schema_version:', d.get('schema_version'))"
+cat "projects/$PROJ/.SHOTWISE_profile_manifest.json" | python -c "import json,sys; d=json.load(sys.stdin); print('content_mode:', d.get('content_mode')); print('schema_version:', d.get('schema_version'))"
 ```
 
 Expected：

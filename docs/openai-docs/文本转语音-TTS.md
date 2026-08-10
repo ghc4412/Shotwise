@@ -1,10 +1,10 @@
-# OpenAI 文本转语音（TTS）内置音色
+﻿# OpenAI 文本转语音（TTS）内置音色
 
 更新时间：2026-07-31（基于官方文档核实）
 
 来源：<https://developers.openai.com/api/docs/guides/text-to-speech>
 
-本文档为 ArcReel issue #1491「TTS 生成参考音频样本」收录 OpenAI audio backend 的音色枚举出处。
+本文档为 SHOTWISE issue #1491「TTS 生成参考音频样本」收录 OpenAI audio backend 的音色枚举出处。
 代码侧目录见 `lib/audio_backends/openai.py::_VOICE_CATALOG`，两处须保持一致。
 
 ## 内置音色

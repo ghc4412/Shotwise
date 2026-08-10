@@ -1,4 +1,4 @@
-# AI 视频生成工作空间
+﻿# AI 视频生成工作空间
 <!-- mode: ad -->
 
 ---
@@ -10,7 +10,7 @@
 ### 视频规格
 - **视频比例**：由项目 `aspect_ratio` 配置决定（广告/短片默认 9:16 竖屏），无需在 prompt 中指定
 - **单镜头时长**：广告/短片项目**没有** `default_duration` 偏好——镜头时长按项目 `target_duration`（目标总时长，秒）逐镜头规划
-  - storyboard 模式：单镜头时长必须取所选视频模型 `supported_durations` 中的值；subagent 运行时通过 `mcp__arcreel__get_video_capabilities` 工具自查真值
+  - storyboard 模式：单镜头时长必须取所选视频模型 `supported_durations` 中的值；subagent 运行时通过 `mcp__SHOTWISE__get_video_capabilities` 工具自查真值
   - reference_video 模式：单镜头时长为 1-15 秒自由整数，不受供应商 `supported_durations` 限制（短切节奏赖此成立）
 - **图片分辨率**：1K
 - **视频分辨率**：1080p
@@ -24,10 +24,10 @@
 
 ### 工具调用
 
-- **业务入队 / 文本生成 / 能力查询**：统一走 `mcp__arcreel__*` 系列 SDK in-process MCP tool（角色/场景/道具/分镜/视频/宫格/集脚本/规范化剧本/视频能力查询）。它们跑在 server 主进程，不受 sandbox 网络白名单约束，agent 直接以 tool 形式调用。
-- **编辑项目 JSON**：修改剧本（`scripts/*.json`）或角色/场景/道具（`project.json`）**一律走 `mcp__arcreel__*` 编辑工具**——剧本改字段用 `patch_episode_script`（batch-native：传 `{分镜id: {字段路径: 值}}` 映射，单次调用改多分镜 × 多字段，单条编辑写成长度 1 的 map；all-or-nothing 原子，任一编辑非法则整批不落盘、错误会指出出错的分镜 id 与字段（结构校验类错误按字段路径报告）；批量编辑前先 Read 该剧本确认现状），改分集标题用 `patch_episode_meta`，增/删/拆分镜用 `insert_segment` / `remove_segment` / `split_segment`，角色/场景/道具用 `patch_project`。**严禁**用 Write / Edit / Bash 直改这两类文件（已被 sandbox `denyWrite` 与 PreToolUse hook 双层拒绝）。**改 prompt 必重生**：用 `patch_episode_script` 改了某些分镜的 `image_prompt` / `video_prompt` 后，工具不会自动作废旧图/视频，必须紧接着调对应生成工具重新生成这些分镜，否则会留下「新 prompt + 旧画面」的陈旧。
+- **业务入队 / 文本生成 / 能力查询**：统一走 `mcp__SHOTWISE__*` 系列 SDK in-process MCP tool（角色/场景/道具/分镜/视频/宫格/集脚本/规范化剧本/视频能力查询）。它们跑在 server 主进程，不受 sandbox 网络白名单约束，agent 直接以 tool 形式调用。
+- **编辑项目 JSON**：修改剧本（`scripts/*.json`）或角色/场景/道具（`project.json`）**一律走 `mcp__SHOTWISE__*` 编辑工具**——剧本改字段用 `patch_episode_script`（batch-native：传 `{分镜id: {字段路径: 值}}` 映射，单次调用改多分镜 × 多字段，单条编辑写成长度 1 的 map；all-or-nothing 原子，任一编辑非法则整批不落盘、错误会指出出错的分镜 id 与字段（结构校验类错误按字段路径报告）；批量编辑前先 Read 该剧本确认现状），改分集标题用 `patch_episode_meta`，增/删/拆分镜用 `insert_segment` / `remove_segment` / `split_segment`，角色/场景/道具用 `patch_project`。**严禁**用 Write / Edit / Bash 直改这两类文件（已被 sandbox `denyWrite` 与 PreToolUse hook 双层拒绝）。**改 prompt 必重生**：用 `patch_episode_script` 改了某些分镜的 `image_prompt` / `video_prompt` 后，工具不会自动作废旧图/视频，必须紧接着调对应生成工具重新生成这些分镜，否则会留下「新 prompt + 旧画面」的陈旧。
 - **Bash 用途**：仅供通用排查与文件浏览（`ls / cat / jq / python / curl` 等），以及 `manage-project` / `compose-video` 这两个 skill 内还保留的 Python 脚本。
-- **敏感文件保护**：`.env` / `vertex_keys/` / `.system_config.json*` / `.arcreel.db*` / `.claude/settings.json` 由 sandbox profile（`filesystem.denyRead`）内核级拒绝读取，并由 PreToolUse 文件访问 hook 双重防御；代码文件（.py/.js/.ts/.tsx/.sh/.yaml/.yml/.toml）受运行时 hook 阻止写入。
+- **敏感文件保护**：`.env` / `vertex_keys/` / `.system_config.json*` / `.SHOTWISE.db*` / `.claude/settings.json` 由 sandbox profile（`filesystem.denyRead`）内核级拒绝读取，并由 PreToolUse 文件访问 hook 双重防御；代码文件（.py/.js/.ts/.tsx/.sh/.yaml/.yml/.toml）受运行时 hook 阻止写入。
 
 ### 路径规范
 
@@ -80,10 +80,10 @@ agent session 的当前工作目录（cwd）已绑定到当前项目根，**所�
 
 `/manga-workflow` 编排 skill 按以下阶段推进（每个阶段完成后与用户确认再继续）；用户提到做视频、继续项目、查看进度时使用该 skill。涉及尚未落地的环节时如实告知用户，不要用 narration/drama 的小说流程替代：
 
-1. **创作输入确认**：Read `project.json` 检查 `brief`、`products`、`target_duration`、`generation_mode`。带货项目产品未登记或缺原图时，引导用户在 WebUI 初始化页或产品资产页上传产品图（原图是产品保真的验收锚点，agent 不能代传图片；通用短片见下文，不索要产品）；用户勾选「生成标准产品参考图」时 product sheet 走任务队列生成。`brief` 为空时对话补齐创作诉求（产品/主题、目标人群、期望风格），经 `mcp__arcreel__patch_project` 写入。用户中途要求更改生成模式（storyboard ↔ reference_video）时明确告知路线创建后不可更改，无绕过方式；宫格装配对 ad 不开放
+1. **创作输入确认**：Read `project.json` 检查 `brief`、`products`、`target_duration`、`generation_mode`。带货项目产品未登记或缺原图时，引导用户在 WebUI 初始化页或产品资产页上传产品图（原图是产品保真的验收锚点，agent 不能代传图片；通用短片见下文，不索要产品）；用户勾选「生成标准产品参考图」时 product sheet 走任务队列生成。`brief` 为空时对话补齐创作诉求（产品/主题、目标人群、期望风格），经 `mcp__SHOTWISE__patch_project` 写入。用户中途要求更改生成模式（storyboard ↔ reference_video）时明确告知路线创建后不可更改，无绕过方式；宫格装配对 ad 不开放
 2. **卖点起草确认**：产品已登记但 `selling_points` 为空时，从 brief、产品描述与原图起草卖点列表，与用户确认后经 `patch_project` 写入 products 表——剧本生成会把卖点注入带货框架的 selling_point/demo 段
 3. **资产设计（可选）**：剧本会用到的角色/场景/道具先定义进 `project.json` 再 dispatch `generate-assets` subagent 出设计图；轻量短片可跳过，仅靠产品参考与项目 style
-4. **一键生成剧本**：`mcp__arcreel__generate_episode_script({"episode": 1})`，八段带货框架按 `target_duration` 选档配比；生成后向用户呈现镜头列表与口播文案，按需经 `patch_episode_script` 调整（镜头顺序调整引导用户到 WebUI 剧本页）
+4. **一键生成剧本**：`mcp__SHOTWISE__generate_episode_script({"episode": 1})`，八段带货框架按 `target_duration` 选档配比；生成后向用户呈现镜头列表与口播文案，按需经 `patch_episode_script` 调整（镜头顺序调整引导用户到 WebUI 剧本页）
 5. **product sheet 过目（软门禁）**：产品生成了 `product_sheet` 时，分镜开工前（参考直出路径为首次视频生成前）安排用户到产品资产页确认 sheet 与真品一致（见下文「产品保真」）；无 sheet（仅原图）直接进入下一步
 6. **分镜图生成**（仅 storyboard 路径；reference_video 跳过）：产品镜头自动注入产品参考；生成后引导用户审核产品形象保真度，不合格的重新生成——在产生视频费用前拦截
 7. **视频生成**：storyboard 路径逐镜头图生视频；reference_video 路径自动派生分组按 unit 直出
@@ -116,7 +116,7 @@ agent session 的当前工作目录（cwd）已绑定到当前项目根，**所�
 
 ## 职责边界
 
-- **禁止编写代码**：不得创建或修改任何代码文件（.py/.js/.sh 等），数据处理走 `mcp__arcreel__*` 工具或 `manage-project` / `compose-video` 的现有脚本
+- **禁止编写代码**：不得创建或修改任何代码文件（.py/.js/.sh 等），数据处理走 `mcp__SHOTWISE__*` 工具或 `manage-project` / `compose-video` 的现有脚本
 - **代码 bug 上报**：如果明确判断 MCP 工具或 skill 脚本出现的是代码 bug（而非参数或环境问题），向用户报告错误并建议反馈给开发者
 
 ## 项目目录结构

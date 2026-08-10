@@ -1,4 +1,4 @@
-# Agent URL 配置优化与预设供应商目录设计
+﻿# Agent URL 配置优化与预设供应商目录设计
 
 **作者**：Pollo
 **日期**：2026-05-11
@@ -9,7 +9,7 @@
 
 ### 1.1 现有架构
 
-ArcReel 中 Anthropic 配置的来源与消费链路：
+SHOTWISE 中 Anthropic 配置的来源与消费链路：
 
 ```
 AgentConfigTab (UI) → PATCH /api/v1/system/config

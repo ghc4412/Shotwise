@@ -1,6 +1,6 @@
-# ArcReel
+﻿# SHOTWISE
 
-ArcReel 是一个 AI 视频生成平台，将小说转化为短视频。三层架构：
+SHOTWISE 是一个 AI 视频生成平台，将小说转化为短视频。三层架构：
 
 ```
 frontend/ (React SPA)  →  server/ (FastAPI)  →  lib/ (核心库)
@@ -39,13 +39,13 @@ pnpm build       # 生产构建，含 typecheck
 - `characters.py` / `scenes.py` / `props.py` 路由由 `_asset_router_factory.build_asset_router()` 统一生成，按 `lib/asset_types.ASSET_SPECS` 驱动；新增资产类型时只需在 spec 注册
 - `resume_executor.py` 是 worker `_process_resume_task` 入口，不经由常规视频流水线，仅复用 finalize helpers 写回资产
 - 图片指令式编辑（`image_edit_tasks.py`）的设计见 `docs/adr/0050`
-- 数据库：开发 SQLite（`projects/.arcreel.db`），生产 PostgreSQL（`asyncpg`）
+- 数据库：开发 SQLite（`projects/.SHOTWISE.db`），生产 PostgreSQL（`asyncpg`）
 
 ### Agent Runtime（Claude Agent SDK 集成）
 
 `server/agent_runtime/` 封装 Claude Agent SDK：
 - `SessionActor` — 每会话一个专属 asyncio task，串行化所有 ClaudeSDKClient 调用（spec: `docs/superpowers/specs/2026-04-13-session-actor-design.md`）
-- `SessionStore` 的 transcript DB 镜像受 `ARCREEL_SDK_SESSION_STORE` 环境变量控制：`db`/`off`，off 时回退到 SDK 自带的 jsonl 路径
+- `SessionStore` 的 transcript DB 镜像受 `SHOTWISE_SDK_SESSION_STORE` 环境变量控制：`db`/`off`，off 时回退到 SDK 自带的 jsonl 路径
 - `sdk_tools/` 内的 SDK 进程内 MCP 工具由 agent profile manifest 注入，供 Skill 调用
 
 ## 关键设计模式
@@ -100,7 +100,7 @@ Windows 原生无 bwrap，会自动降级：
 
 ## 智能体运行环境
 
-ArcReel 内嵌基于 Claude Agent SDK 的智能体（Harness 即上文的 Agent Runtime），其专属配置的源目录是 `agent_runtime_profile/`，与开发态 `.claude/` 物理分离：
+SHOTWISE 内嵌基于 Claude Agent SDK 的智能体（Harness 即上文的 Agent Runtime），其专属配置的源目录是 `agent_runtime_profile/`，与开发态 `.claude/` 物理分离：
 
 - `agent_runtime_profile/.claude/skills/`、`agent_runtime_profile/.claude/agents/` — Skill 与 Subagent 定义
 - `agent_runtime_profile/CLAUDE.*.md` — 按 `content_mode` 拆分的系统 prompt 变体，运行时按项目内容模式动态注入
@@ -148,7 +148,7 @@ API Key、后端选择、模型配置等通过 WebUI 配置页（`/settings`）�
 
 ### Issue tracker
 
-议题（issue/Spec）追踪在 `ArcReel/ArcReel` 的 GitHub Issues，统一用 `gh` CLI 操作。Spec 用 `Spec` 标签 + `Spec:` 标题前缀；细分 issue 标题尾缀 `[Spec #N]` 并挂原生 sub-issue。详见 `docs/agents/issue-tracker.md`。
+议题（issue/Spec）追踪在 `ghc4412/Shotwise` 的 GitHub Issues，统一用 `gh` CLI 操作。Spec 用 `Spec` 标签 + `Spec:` 标题前缀；细分 issue 标题尾缀 `[Spec #N]` 并挂原生 sub-issue。详见 `docs/agents/issue-tracker.md`。
 
 ### Triage labels
 

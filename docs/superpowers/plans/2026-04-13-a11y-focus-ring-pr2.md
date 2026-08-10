@@ -1,4 +1,4 @@
-# a11y PR 2 Implementation Plan
+﻿# a11y PR 2 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -735,7 +735,7 @@ const noteId = useId();
 
 - [ ] **Step 8.2: i18n 一致性校验**
 
-Run: `cd /Users/pollochen/MyProjects/ArcReel/.worktrees/fix/a11y-focus-ring-292 && uv run pytest tests/test_i18n_consistency.py -v`
+Run: `cd /Users/pollochen/MyProjects/SHOTWISE/.worktrees/fix/a11y-focus-ring-292 && uv run pytest tests/test_i18n_consistency.py -v`
 Expected: PASS
 
 - [ ] **Step 8.3: typecheck + test**
@@ -862,7 +862,7 @@ Expected: 全过。
 
 - [ ] **Step 10.4: i18n 一致性**
 
-Run: `cd /Users/pollochen/MyProjects/ArcReel/.worktrees/fix/a11y-focus-ring-292 && uv run pytest tests/test_i18n_consistency.py -v`
+Run: `cd /Users/pollochen/MyProjects/SHOTWISE/.worktrees/fix/a11y-focus-ring-292 && uv run pytest tests/test_i18n_consistency.py -v`
 Expected: PASS
 
 - [ ] **Step 10.5: grep 校验 acceptance 标准**

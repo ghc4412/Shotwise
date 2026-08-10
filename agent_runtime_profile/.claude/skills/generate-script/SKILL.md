@@ -9,7 +9,7 @@ user-invocable: false
 调用项目配置的文本生成模型（Gemini / Ark / OpenAI / 自定义供应商，由 project.json 决定），
 基于 Step 1 中间文件产出最终的 JSON 剧本。剧本里的 `image_prompt` / `video_prompt`
 是后续图像 / 视频生成的"种子"，**Prompt 质量基本决定了画面质量**——所以本 skill 是
-ArcReel 整条 pipeline 中最值得重点优化的一环。
+SHOTWISE 整条 pipeline 中最值得重点优化的一环。
 
 ## 前置条件
 

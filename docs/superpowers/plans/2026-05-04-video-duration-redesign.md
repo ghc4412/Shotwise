@@ -1,4 +1,4 @@
-# 视频时长（supported_durations）系统性重设计 Implementation Plan
+﻿# 视频时长（supported_durations）系统性重设计 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -946,7 +946,7 @@ git commit -m "refactor(prompt): supported_durations 必填 + 连续整数集合
 - [ ] **Step 7.1: 检查现有测试**
 
 ```bash
-grep -n "_resolve_supported_durations\|or \[4, 8\]" /Users/pollochen/MyProjects/ArcReel/tests/test_script_generator.py 2>/dev/null
+grep -n "_resolve_supported_durations\|or \[4, 8\]" /Users/pollochen/MyProjects/SHOTWISE/tests/test_script_generator.py 2>/dev/null
 ```
 
 记下命中行，准备改 / 删。

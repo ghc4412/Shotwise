@@ -1,4 +1,4 @@
-## ADDED Requirements
+﻿## ADDED Requirements
 
 ### Requirement: manga-workflow 编排 skill 须具备项目状态检测能力
 
@@ -70,8 +70,8 @@ manga-workflow SHALL 支持从任意阶段开始执行，而非强制从头开�
 
 #### Scenario: 生成角色设计图
 - **WHEN** 编排进入角色设计阶段
-- **THEN** 主 agent dispatch `generate-assets` subagent，subagent 内部调用 `mcp__arcreel__generate_assets` 工具入队生成，返回生成结果摘要
+- **THEN** 主 agent dispatch `generate-assets` subagent，subagent 内部调用 `mcp__SHOTWISE__generate_assets` 工具入队生成，返回生成结果摘要
 
 #### Scenario: 批量生成分镜图
 - **WHEN** 编排进入分镜图生成阶段
-- **THEN** 主 agent dispatch subagent，subagent 内部调用 `mcp__arcreel__generate_storyboards` 工具，处理所有待生成的分镜图，返回成功/失败汇总摘要
+- **THEN** 主 agent dispatch subagent，subagent 内部调用 `mcp__SHOTWISE__generate_storyboards` 工具，处理所有待生成的分镜图，返回成功/失败汇总摘要

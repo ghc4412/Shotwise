@@ -1,15 +1,15 @@
-# 从 SQLite 迁移到 PostgreSQL
+﻿# 从 SQLite 迁移到 PostgreSQL
 
-本文档适用于已使用默认 SQLite 部署 Shotwise、希望切换到 PostgreSQL 的场景。
+本文档适用于已使用默认 SQLite 部署 SHOTWISE、希望切换到 PostgreSQL 的场景。
 
 ## 前置条件
 
 - 已安装 Docker 和 Docker Compose
-- Shotwise 当前使用 SQLite 运行（兼容数据库文件位于 `projects/.arcreel.db`）
+- SHOTWISE 当前使用 SQLite 运行（数据库文件位于 `projects/.SHOTWISE.db`）
 
 ## 迁移步骤
 
-### 1. 停止 Shotwise 服务
+### 1. 停止 SHOTWISE 服务
 
 ```bash
 # 如果通过 Docker 运行
@@ -21,7 +21,7 @@ docker compose down
 ### 2. 备份 SQLite 数据库
 
 ```bash
-cp projects/.arcreel.db projects/.arcreel.db.bak
+cp projects/.SHOTWISE.db projects/.SHOTWISE.db.bak
 ```
 
 ### 3. 配置环境变量
@@ -50,13 +50,13 @@ docker compose ps  # 确认 postgres 状态为 healthy
 
 ### 5. 迁移数据
 
-在 Shotwise 容器内使用 pgloader 将 SQLite 数据直接迁移到 PostgreSQL：
+在 SHOTWISE 容器内使用 pgloader 将 SQLite 数据直接迁移到 PostgreSQL：
 
 ```bash
-docker compose run --rm shotwise-app bash -c "
+docker compose run --rm SHOTWISE bash -c "
   apt-get update && apt-get install -y --no-install-recommends pgloader &&
-  pgloader sqlite:///app/projects/.arcreel.db \
-           postgresql://arcreel:\${POSTGRES_PASSWORD}@postgres:5432/arcreel
+  pgloader sqlite:///app/projects/.SHOTWISE.db \
+           postgresql://SHOTWISE:\${POSTGRES_PASSWORD}@postgres:5432/SHOTWISE
 "
 ```
 
@@ -66,7 +66,7 @@ docker compose run --rm shotwise-app bash -c "
 ### 6. 验证数据
 
 ```bash
-docker compose exec postgres psql -U arcreel -d arcreel -c "
+docker compose exec postgres psql -U SHOTWISE -d SHOTWISE -c "
   SELECT 'tasks' AS tbl, COUNT(*) FROM tasks
   UNION ALL
   SELECT 'api_calls', COUNT(*) FROM api_calls
@@ -80,7 +80,7 @@ docker compose exec postgres psql -U arcreel -d arcreel -c "
 对比 SQLite 中的记录数：
 
 ```bash
-sqlite3 projects/.arcreel.db "
+sqlite3 projects/.SHOTWISE.db "
   SELECT 'tasks', COUNT(*) FROM tasks
   UNION ALL
   SELECT 'api_calls', COUNT(*) FROM api_calls
@@ -106,5 +106,5 @@ docker compose up -d
 如果需要回退：
 
 1. 停止服务：`docker compose down`
-2. 恢复备份：`cp projects/.arcreel.db.bak projects/.arcreel.db`
+2. 恢复备份：`cp projects/.SHOTWISE.db.bak projects/.SHOTWISE.db`
 3. 移除 `.env` 中的 `POSTGRES_PASSWORD`，不使用 `docker-compose.yml` 中的 PostgreSQL 配置启动
