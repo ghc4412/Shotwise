@@ -1,9 +1,9 @@
 ﻿<h1 align="center">
   <br>
   <picture>
-    <source media="(prefers-color-scheme: light)" srcset="frontend/public/android-chrome-maskable-512x512.png">
-    <source media="(prefers-color-scheme: dark)" srcset="frontend/public/android-chrome-512x512.png">
-    <img src="frontend/public/android-chrome-maskable-512x512.png" alt="SHOTWISE Logo" width="128" style="border-radius: 16px;">
+    <source media="(prefers-color-scheme: light)" srcset="frontend/public/shotwise-mark.svg">
+    <source media="(prefers-color-scheme: dark)" srcset="frontend/public/shotwise-mark.svg">
+    <img src="frontend/public/shotwise-mark.svg" alt="SHOTWISE Logo" width="128" style="border-radius: 16px;">
   </picture>
   <br>
   SHOTWISE
