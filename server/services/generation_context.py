@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from lib.audio_backends.base import VoiceOption
 from lib.backend_assembly import assemble_backend
 from lib.config.resolver import ConfigResolver, VideoCapability, VoiceConsistency, get_provider_fallback
+from lib.custom_provider.backends import CustomVideoBackend
 from lib.db.base import DEFAULT_USER_ID
 from lib.gemini_shared import get_shared_rate_limiter
 from lib.media_generator import MediaGenerator
@@ -158,9 +159,10 @@ class ImageLaneRequest:
 class VideoLaneRequest:
     """声明本次任务需要 video lane。
 
-    ``capability`` 决定 i2v / r2v 能力桶（``docs/adr/0054``）：图生视频 / 宫格 → i2v，
-    参考生视频（含无参考图退化镜头）→ r2v。None = 不定桶，走旧三级解析且不过能力闸——
-    供 resume 等按 payload 排空、不承诺能力的路径使用。
+    ``capability`` 决定 i2v / r2v 能力桶（``docs/adr/0054``）：图生视频 / 宫格 → i2v；
+    参考生视频按镜头解析后的实际参考图分流——有参考图 → r2v，无参考图的退化镜头降级
+    → i2v（由 executor 判定后声明，见 ``lib.reference_video.units``）。None = 不定桶，
+    走旧三级解析且不过能力闸——供 resume 等按 payload 排空、不承诺能力的路径使用。
     """
 
     capability: VideoCapability | None = None
@@ -222,6 +224,9 @@ class VideoLaneResult:
     # 天然对齐，调用方须显式算出「谁的声音配哪张图」再随请求下发。能力查询失败降级为 False——
     # 与其余能力字段同口径，不明时不额外收紧。
     reference_audio_per_image: bool = False
+    # 自定义供应商解析出的 endpoint（ENDPOINT_REGISTRY 键）；内置供应商无该维度，为 None。
+    # 续跑据此与提交时持久化的 endpoint 比对，见 server.services.resume_executor。
+    endpoint: str | None = None
 
     @property
     def is_silent(self) -> bool:
@@ -305,8 +310,10 @@ async def resolve_generation_context(
     的解析或构造失败即原样上抛、整次调用失败——无部分结果、无跨 provider 兜底；仅能力
     查询失败降级空值放行。``project`` 是调用方已加载的项目快照，本函数不读盘。
 
-    video lane 的能力按项目生成路线解析（见 ``lib.config.resolver.caps_generation_mode``）：
-    路线创建即定、整个项目按同一条路径生成，声音一致性等二维派生值因此不需要集号。
+    video lane 的定桶随 ``VideoLaneRequest.capability``：None 时按项目生成路线解析（见
+    ``lib.config.resolver.caps_generation_mode``）——路线创建即定、整个项目按同一条路径生成，
+    声音一致性等二维派生值因此不需要集号；显式给定时按指定桶解析（参考路线内按镜头分流的
+    调用方自带判定结果）。
     """
     from lib.db import async_session_factory
 
@@ -383,6 +390,9 @@ async def resolve_generation_context(
                 requested_generate_audio=requested_generate_audio,
                 max_reference_audio_count=max_reference_audio_count,
                 reference_audio_per_image=reference_audio_per_image,
+                # 显式按类型分流而非 getattr 探测：endpoint 为 None 恰好是「跳过续跑比对」
+                # 这条最宽松分支，属性一旦改名，探测式取值会静默失效且无任何信号。
+                endpoint=video_backend.endpoint if isinstance(video_backend, CustomVideoBackend) else None,
             )
 
         if audio is not None:

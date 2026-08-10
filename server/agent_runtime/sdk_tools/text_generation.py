@@ -37,7 +37,7 @@ from lib.json_io import atomic_write_json, load_json_or_none
 from lib.path_safety import PathTraversalError, safe_join
 from lib.project_manager import DEFAULT_SOURCE_KIND, is_reference_video_project
 from lib.prompt_builders_reference import build_reference_units_split_prompt
-from lib.prompt_builders_script import build_narration_split_prompt, build_normalize_prompt
+from lib.prompt_builders_script import append_user_instructions, build_narration_split_prompt, build_normalize_prompt
 from lib.reference_video.draft_validation import (
     DraftViolation,
     collect_violations,
@@ -78,12 +78,24 @@ from lib.text_backends.base import DEFAULT_MAX_OUTPUT_TOKENS, TextGenerationRequ
 from lib.text_generator import TextGenerator
 from lib.text_utils import strip_json_code_fences
 from server.agent_runtime.sdk_tools._context import (
+    MAX_INSTRUCTIONS_LEN,
     ToolContext,
     fetch_video_caps,
+    read_instructions_arg,
     reference_unit_duration_tiers,
     resolve_video_caps,
     tool_error,
 )
+
+# 四个分集数据生成工具共用的 instructions 参数 schema：用户意见原样注入 prompt 末尾的
+# 「用户意见」分节，遵循强度由正文表达（需要强约束时在正文写明）。
+_INSTRUCTIONS_SCHEMA: dict[str, Any] = {
+    "type": "string",
+    "description": (
+        "用户对本次生成的意见原文（可选）；原样注入 prompt 末尾的「用户意见」分节，"
+        f"遵循强度由正文表达，缺省/空白视同未传，最长 {MAX_INSTRUCTIONS_LEN} 字符"
+    ),
+}
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +178,7 @@ async def _resolve_video_capabilities(project_name: str) -> dict[str, Any]:
     return await resolver.video_capabilities(project_name)
 
 
-def _annotate_reference_unit_tiers(payload: dict[str, Any], project: dict[str, Any]) -> None:
+async def _annotate_reference_unit_tiers(payload: dict[str, Any], project: dict[str, Any]) -> None:
     """就地补上参考视频路径逐 unit 的两套生效档位（非该路径的项目不补）。
 
     ``supported_durations`` 是型号声明的全集，不含「分辨率↔时长」「参考图↔时长」两条联动约束。
@@ -181,7 +193,7 @@ def _annotate_reference_unit_tiers(payload: dict[str, Any], project: dict[str, A
     durations = [int(d) for d in payload.get("supported_durations") or []]
     if not durations:
         return
-    with_refs, without_refs = reference_unit_duration_tiers(project, payload, durations)
+    with_refs, without_refs = await reference_unit_duration_tiers(project, payload, durations)
     payload["reference_unit_durations"] = {
         "with_references": with_refs,
         "without_references": without_refs,
@@ -199,7 +211,7 @@ def get_video_capabilities_tool(ctx: ToolContext):
     async def _handler(_args: dict[str, Any]) -> dict[str, Any]:
         try:
             payload = await _resolve_video_capabilities(ctx.project_name)
-            _annotate_reference_unit_tiers(payload, ctx.pm.load_project(ctx.project_name))
+            await _annotate_reference_unit_tiers(payload, ctx.pm.load_project(ctx.project_name))
             return {"content": [{"type": "text", "text": json.dumps(payload, ensure_ascii=False, indent=2)}]}
         except FileNotFoundError as exc:
             return {
@@ -275,6 +287,7 @@ def generate_episode_script_tool(ctx: ToolContext):
             "type": "object",
             "properties": {
                 "episode": {"type": "integer", "description": "剧集编号"},
+                "instructions": _INSTRUCTIONS_SCHEMA,
                 "dry_run": {"type": "boolean", "description": "仅显示 prompt，不调用模型"},
             },
             "required": ["episode"],
@@ -284,6 +297,9 @@ def generate_episode_script_tool(ctx: ToolContext):
         try:
             episode = int(args["episode"])
             dry_run = bool(args.get("dry_run"))
+            instructions, param_err = read_instructions_arg(args)
+            if param_err is not None:
+                return param_err
 
             project_path = ctx.project_path
             try:
@@ -326,7 +342,7 @@ def generate_episode_script_tool(ctx: ToolContext):
 
             if dry_run:
                 generator = ScriptGenerator(project_path)
-                prompt = await generator.build_prompt(episode)
+                prompt = await generator.build_prompt(episode, instructions=instructions)
                 return {
                     "content": [{"type": "text", "text": f"DRY RUN — 以下是将发送给文本模型的 Prompt:\n\n{prompt}"}]
                 }
@@ -349,7 +365,7 @@ def generate_episode_script_tool(ctx: ToolContext):
                 }
 
             generator = await ScriptGenerator.create(project_path)
-            result_path = await generator.generate(episode=episode)
+            result_path = await generator.generate(episode=episode, instructions=instructions)
             return {"content": [{"type": "text", "text": f"✅ 剧本生成完成: {result_path}"}]}
         except FileNotFoundError as exc:
             return {"content": [{"type": "text", "text": f"❌ 文件错误: {exc}"}], "is_error": True}
@@ -458,6 +474,7 @@ def normalize_drama_script_tool(ctx: ToolContext):
                     "type": "string",
                     "description": "指定小说源文件路径（相对项目目录）；默认读取 source/ 下所有文本",
                 },
+                "instructions": _INSTRUCTIONS_SCHEMA,
                 "dry_run": {"type": "boolean", "description": "仅显示 prompt，不调用模型"},
             },
             "required": ["episode"],
@@ -468,6 +485,9 @@ def normalize_drama_script_tool(ctx: ToolContext):
             episode = int(args["episode"])
             source = args.get("source")
             dry_run = bool(args.get("dry_run"))
+            instructions, param_err = read_instructions_arg(args)
+            if param_err is not None:
+                return param_err
 
             project_path = ctx.project_path
             project = ctx.pm.load_project(ctx.project_name)
@@ -500,6 +520,7 @@ def normalize_drama_script_tool(ctx: ToolContext):
                 # 每场选不低于该场 utterances 口播时长的档位，语速按此从 lib.speech_rate 单一真相源注入。
                 source_language=project.get("source_language"),
             )
+            prompt = append_user_instructions(prompt, instructions)
 
             if dry_run:
                 return {
@@ -560,17 +581,19 @@ def normalize_drama_script_tool(ctx: ToolContext):
 
 
 class ReferenceSplitCaps(NamedTuple):
-    """rv 拆分用的视频能力：两套逐 unit 档位 + 派生上限 + 用户偏好 + 原始能力 dict。
+    """rv 拆分用的视频能力：两套逐 unit 档位 + 派生上限 + 用户偏好 + 声音输入档。
 
     ``reference_durations`` / ``text_durations`` 是带 / 不带 ``@`` 引用的 unit 各自的生效档位，
     ``durations`` 是二者的并集——schema 枚举与 prompt 候选集合取并集，因为落在任一套内的时长都
     可能合法；归属哪一套要等正文派生出 references 才知道。三者相等即该型号在当前分辨率下未声明
     生效的「参考图↔时长」联动约束，多数型号如此。
 
-    ``raw`` 是解析到的原始能力 dict（故障回退时为空 dict），供声音相关的容忍 warning 取
-    ``voice_consistency`` / ``max_reference_audio_count`` / ``requested_generate_audio`` /
-    ``model``——它们与时长档位同源于这一次解析，分两次查会让同一份产物的档位与声音提示描述
-    不同时刻的配置。
+    ``voice`` 是同一次能力解析派生出的声音输入档，供声音相关的容忍 warning 消费——与时长档位同源
+    于这一次解析，分两次查会让同一份产物的档位与声音提示描述不同时刻的配置。能力解析故障回退时
+    档位相关的几位落到 ``VoiceRenderSettings`` 的字段默认，唯 ``requested_generate_audio`` 仍带着
+    本集的无声意图（该位不依赖能力接口，回退分支独立解析后写回，见
+    ``_fetch_reference_caps_with_fallback``）。携带值对象而非原始能力 dict：下游只需要声音那几位，
+    穿一整个 dict 过接口会把能力 key 名耦合扩散到消费侧。
     """
 
     default_duration: int | None
@@ -579,7 +602,7 @@ class ReferenceSplitCaps(NamedTuple):
     text_durations: list[int]
     max_duration: int
     max_refs: int | None
-    raw: dict[str, Any]
+    voice: VoiceRenderSettings
 
     def tiers_for(self, *, has_references: bool) -> list[int]:
         """该引用状态下的生效档位。"""
@@ -621,7 +644,7 @@ async def _fetch_reference_caps_with_fallback(project: dict[str, Any], episode: 
     durations = [int(d) for d in caps.get("supported_durations") or []]
     if not durations:
         durations = list(DEFAULT_FALLBACK)
-    with_refs, without_refs = reference_unit_duration_tiers(project, caps, durations)
+    with_refs, without_refs = await reference_unit_duration_tiers(project, caps, durations)
     unit_durations = sorted(set(with_refs) | set(without_refs))
     max_duration = max(unit_durations)
     raw_refs = caps.get("max_reference_images")
@@ -637,7 +660,7 @@ async def _fetch_reference_caps_with_fallback(project: dict[str, Any], episode: 
         text_durations=sorted(set(without_refs)),
         max_duration=max_duration,
         max_refs=max_refs,
-        raw=caps,
+        voice=VoiceRenderSettings.from_caps(caps),
     )
 
 
@@ -750,7 +773,9 @@ _TOLERATED_VOICE_WARNINGS = (
 )
 
 
-def _reference_voice_warning_lines(unit_texts: list[str], project: dict[str, Any], caps: dict[str, Any]) -> list[str]:
+def _reference_voice_warning_lines(
+    unit_texts: list[str], project: dict[str, Any], voice: VoiceRenderSettings
+) -> list[str]:
     """逐 unit 派生声音绑定，取容忍类 warning 的渲染文本（跨 unit 去重、保持首现顺序）。
 
     逐 unit 而非把全集正文拼起来判：unit 就是一次生成调用，参考音频段数上限按调用计——拼起来
@@ -763,7 +788,7 @@ def _reference_voice_warning_lines(unit_texts: list[str], project: dict[str, Any
     段数上限」这些该让 agent 看见的提示反被吞掉。
     """
     characters = project.get(BUCKET_KEY["character"]) or {}
-    settings = replace(VoiceRenderSettings.from_caps(caps), requires_reference_image=False)
+    settings = replace(voice, requires_reference_image=False)
     seen: set[tuple[str, str]] = set()
     lines: list[str] = []
     for text in unit_texts:
@@ -941,7 +966,7 @@ async def _promote_reference_step1(ctx: ToolContext, episode: int, draft: Quaran
             "content": [{"type": "text", "text": _render_step1_conflict_report(episode, draft, conflict)}],
             "is_error": True,
         }
-    warning_lines = _reference_voice_warning_lines([f["text"] for f in flat_units], project, split_caps.raw)
+    warning_lines = _reference_voice_warning_lines([f["text"] for f in flat_units], project, split_caps.voice)
     return {
         "content": [{"type": "text", "text": _reference_result_text(step1_path, units, warning_lines, action="晋升")}]
     }
@@ -1167,6 +1192,7 @@ def split_reference_video_units_tool(ctx: ToolContext):
                     "type": "string",
                     "description": "指定小说源文件路径（相对项目目录）；默认读取 source/ 下所有文本",
                 },
+                "instructions": _INSTRUCTIONS_SCHEMA,
                 "dry_run": {"type": "boolean", "description": "仅显示 prompt，不调用模型"},
             },
             "required": ["episode"],
@@ -1177,6 +1203,9 @@ def split_reference_video_units_tool(ctx: ToolContext):
             episode = int(args["episode"])
             source = args.get("source")
             dry_run = bool(args.get("dry_run"))
+            instructions, param_err = read_instructions_arg(args)
+            if param_err is not None:
+                return param_err
 
             project_path = ctx.project_path
             project = ctx.pm.load_project(ctx.project_name)
@@ -1216,6 +1245,7 @@ def split_reference_video_units_tool(ctx: ToolContext):
                 episode_outline=episode_outline,
                 next_episode_outline=next_episode_outline,
             )
+            prompt = append_user_instructions(prompt, instructions)
 
             if dry_run:
                 return {
@@ -1289,7 +1319,7 @@ def split_reference_video_units_tool(ctx: ToolContext):
             with script_review.step1_write_lock(project_path, episode) as step1_path:
                 script_review.write_step1_locked(project_path, episode, {"units": raw_units})
                 clear_quarantine(project_path, episode, QUARANTINE_KIND_STEP1)
-            warning_lines = _reference_voice_warning_lines([f["text"] for f in flat_units], project, split_caps.raw)
+            warning_lines = _reference_voice_warning_lines([f["text"] for f in flat_units], project, split_caps.voice)
             return {
                 "content": [
                     {
@@ -1481,6 +1511,7 @@ def split_narration_segments_tool(ctx: ToolContext):
                     "type": "string",
                     "description": "指定小说源文件路径（相对项目目录）；默认读取 source/ 下所有文本",
                 },
+                "instructions": _INSTRUCTIONS_SCHEMA,
                 "dry_run": {"type": "boolean", "description": "仅显示 prompt，不调用模型"},
             },
             "required": ["episode"],
@@ -1491,6 +1522,9 @@ def split_narration_segments_tool(ctx: ToolContext):
             episode = int(args["episode"])
             source = args.get("source")
             dry_run = bool(args.get("dry_run"))
+            instructions, param_err = read_instructions_arg(args)
+            if param_err is not None:
+                return param_err
 
             project_path = ctx.project_path
             project = ctx.pm.load_project(ctx.project_name)
@@ -1522,6 +1556,7 @@ def split_narration_segments_tool(ctx: ToolContext):
                 # 输出语言取项目 source_language（生成内容语言的唯一真相源），与 normalize / reference 同口径。
                 target_language=project.get("source_language") or "中文",
             )
+            prompt = append_user_instructions(prompt, instructions)
 
             if dry_run:
                 return {

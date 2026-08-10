@@ -14,6 +14,7 @@ from server.auth import CurrentUserInfo, get_current_user
 from server.error_handlers import register_error_handlers
 from server.routers import script_review as router_mod
 from tests.auth_deps import AUTH_DEPENDENCIES
+from tests.fakes import fake_reference_caps_fetcher
 
 
 def _drama_step1() -> dict:
@@ -203,18 +204,7 @@ class TestReferenceVideoRouter:
         (project_path / "source").mkdir(parents=True, exist_ok=True)
         (project_path / "source" / "episode_1.txt").write_text(novel, encoding="utf-8")
 
-        async def _fake_caps(_project, _episode=None):
-            return mod.ReferenceSplitCaps(
-                default_duration=4,
-                durations=[4, 6, 8],
-                reference_durations=[4, 6, 8],
-                text_durations=[4, 6, 8],
-                max_duration=8,
-                max_refs=3,
-                raw={},
-            )
-
-        monkeypatch.setattr(mod, "_fetch_reference_caps_with_fallback", _fake_caps)
+        monkeypatch.setattr(mod, "_fetch_reference_caps_with_fallback", fake_reference_caps_fetcher(max_duration=8))
 
         flat_units = [{"duration_seconds": 4, "source_text": novel, "text": "镜头1：门开了\n@[阿离]：｛我来了。｝"}]
         write_quarantine(
@@ -254,18 +244,7 @@ class TestReferenceVideoRouter:
         (project_path / "source").mkdir(parents=True, exist_ok=True)
         (project_path / "source" / "episode_1.txt").write_text("阿离站在屋檐下。", encoding="utf-8")
 
-        async def _fake_caps(_project, _episode=None):
-            return mod.ReferenceSplitCaps(
-                default_duration=4,
-                durations=[4, 6, 8],
-                reference_durations=[4, 6, 8],
-                text_durations=[4, 6, 8],
-                max_duration=8,
-                max_refs=3,
-                raw={},
-            )
-
-        monkeypatch.setattr(mod, "_fetch_reference_caps_with_fallback", _fake_caps)
+        monkeypatch.setattr(mod, "_fetch_reference_caps_with_fallback", fake_reference_caps_fetcher(max_duration=8))
         write_quarantine(
             project_path,
             1,
@@ -440,6 +419,7 @@ class TestReferenceVideoRouter:
         （收窄后的逐 unit 可选项）都要经 caps 解析出真实档位，否则这类项目的审阅门只能退回
         结构区间 clamp，读时迁移的收编对其整体失效。
         """
+        from server.agent_runtime.sdk_tools import _context
         from server.services import script_review as mod
 
         client, pm = _client(monkeypatch, tmp_path, generation_mode="reference_video")
@@ -448,6 +428,11 @@ class TestReferenceVideoRouter:
             return {"provider_id": "custom-acme", "model": "acme-video", "supported_durations": [5, 10]}
 
         monkeypatch.setattr(mod, "resolve_video_caps", _fake_caps)
+
+        async def _no_i2v(_project, *, capability=None):
+            raise ValueError("i2v bucket unresolvable in this test")
+
+        monkeypatch.setattr(_context, "resolve_video_caps", _no_i2v)
 
         with client:
             _write_rv_step1(pm, _rv_step1())

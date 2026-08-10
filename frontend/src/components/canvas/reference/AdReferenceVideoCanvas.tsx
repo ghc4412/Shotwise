@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Clock, Layers, RefreshCw, Scissors, Sparkles } from "lucide-react";
+import { Clock, Layers, RefreshCw, Scissors, Sparkles, TriangleAlert } from "lucide-react";
 import { API } from "@/api";
 import { enqueueReferenceVideoUnit } from "@/actions/generation";
 import { EpisodeHeader } from "./EpisodeHeader";
@@ -68,8 +68,12 @@ interface HydratedUnit {
   /** 与 shot_ids 一一对应；镜头已从剧本删除时为 null */
   members: (AdShot | null)[];
   durationSeconds: number;
-  /** 存在悬空 shot_id——索引与当前剧本已不一致，需重新派生 */
-  stale: boolean;
+  /**
+   * 存在悬空 shot_id——索引与当前剧本已不一致，需重新派生。与后端下发的
+   * `unit.stale`（成片偏离剧本编排、建议重新生成）是两个语义：悬空禁用生成入口，
+   * stale 仅提示。
+   */
+  dangling: boolean;
 }
 
 function shotRangeLabel(shotIds: string[]): string {
@@ -123,6 +127,26 @@ export function AdReferenceVideoCanvas({
   // 的数据，落定前必须把这次加载作废，否则派生前读出的旧分组会盖掉刚派生出的新分组。
   const loadControllerRef = useRef<AbortController | null>(null);
 
+  // 后端的 stale 角标是读时按 shots 现算的派生属性，与成员镜头 ID 序列 + 参考集同坐标系
+  // （lib/reference_video/ad_units.py 的 ad_unit_source_signature）。镜头参考被编辑后必须
+  // 重拉分组，角标才反映最新判定；只按任务完成自增的 unitsRevision 会让它停在上一次拉取
+  // 的结果，直到有任务完成、重新派生或画布重挂。正文与时长不进该坐标系，改文案不触发重拉。
+  // 四个参考字段可选，归一到空数组再序列化：缺省与空数组是同一个语义（该镜头无此类参考），
+  // 直接序列化会得到 null 与 [] 两种字符串，字段在两种形态间来回就会白白重拉一次。
+  const unitsStaleKey = useMemo(
+    () =>
+      JSON.stringify(
+        shots.map((s) => [
+          s.shot_id,
+          s.products_in_shot ?? [],
+          s.characters_in_shot ?? [],
+          s.scenes ?? [],
+          s.props ?? [],
+        ]),
+      ),
+    [shots],
+  );
+
   useEffect(() => {
     // 剧本未生成时后端无分组可返回；hasScript 转 true 后本 effect 随依赖重跑补上首次拉取。
     if (!hasScript) return;
@@ -142,7 +166,7 @@ export function AdReferenceVideoCanvas({
         if (!controller.signal.aborted) setError(errMsg(err));
       });
     return () => controller.abort();
-  }, [projectName, episode, hasScript, unitsRevision, setUnits]);
+  }, [projectName, episode, hasScript, unitsRevision, unitsStaleKey, setUnits]);
 
   const shotById = useMemo(() => new Map(shots.map((s) => [s.shot_id, s])), [shots]);
 
@@ -190,7 +214,7 @@ export function AdReferenceVideoCanvas({
           (sum, s) => sum + (typeof s?.duration_seconds === "number" ? s.duration_seconds : 0),
           0,
         ),
-        stale: members.some((s) => s === null),
+        dangling: members.some((s) => s === null),
       };
     });
   }, [units, shotById]);
@@ -449,13 +473,13 @@ export function AdReferenceVideoCanvas({
           )
         ) : (
           <ul className="mx-auto flex max-w-5xl flex-col gap-3">
-            {hydrated.map(({ unit, members, durationSeconds, stale }) => (
+            {hydrated.map(({ unit, members, durationSeconds, dangling }) => (
               <AdUnitCard
                 key={unit.unit_id}
                 unit={unit}
                 members={members}
                 durationSeconds={durationSeconds}
-                stale={stale}
+                dangling={dangling}
                 status={statusMap[unit.unit_id]}
                 busy={busyUnitIds.has(unit.unit_id)}
                 saving={savingUnitIds.has(unit.unit_id)}
@@ -489,7 +513,8 @@ interface AdUnitCardProps {
   unit: AdReferenceUnit;
   members: (AdShot | null)[];
   durationSeconds: number;
-  stale: boolean;
+  /** 悬空 shot_id——索引失效，须重新派生；禁用生成入口（区别于 `unit.stale` 仅提示）。 */
+  dangling: boolean;
   status: UnitStatus;
   /**
    * 占用集（含入队后真实任务行落库前的乐观标记）命中与否，独立于 status：
@@ -515,7 +540,7 @@ function AdUnitCard({
   unit,
   members,
   durationSeconds,
-  stale,
+  dangling,
   status,
   busy,
   saving,
@@ -574,8 +599,15 @@ function AdUnitCard({
           </span>
         </span>
         <span className="flex-1" />
-        {stale && (
-          <span className="text-[11px] text-amber-300">{t("ad_ref_stale")}</span>
+        {dangling && (
+          <span className="text-[11px] text-amber-300">{t("ad_ref_dangling")}</span>
+        )}
+        {/* 悬空时生成入口已禁用，「建议重新生成」是执行不了的建议：由悬空提示独占 */}
+        {unit.stale && !dangling && (
+          <span className="inline-flex items-center gap-1 rounded border border-amber-300/25 bg-amber-400/10 px-2 py-0.5 text-[11px] text-amber-300">
+            <TriangleAlert className="h-3 w-3" aria-hidden="true" />
+            {t("ad_ref_unit_stale")}
+          </span>
         )}
         <StatusBadge status={status} size="md" />
       </div>
@@ -699,7 +731,7 @@ function AdUnitCard({
           <button
             type="button"
             className="sv-navbtn inline-flex items-center justify-center gap-1.5"
-            disabled={inFlight || busy || saving || stale || deriving}
+            disabled={inFlight || busy || saving || dangling || deriving}
             onClick={() => onGenerate(unit.unit_id)}
           >
             <Sparkles className="h-3 w-3" aria-hidden="true" />

@@ -7,6 +7,12 @@ Single-file fakes stay in their respective test modules.
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
+
+from instructor.core import InstructorRetryException
+
+if TYPE_CHECKING:
+    from lib.reference_video.voice_settings import VoiceRenderSettings
 
 
 class FakeSDKClient:
@@ -178,3 +184,61 @@ class FakeImageBackend:
             provider=self._provider,
             model=self._model,
         )
+
+
+def fake_reference_caps_fetcher(
+    *,
+    default_duration: int | None = 4,
+    durations: tuple[int, ...] = (4, 6, 8),
+    reference_durations: tuple[int, ...] | None = None,
+    text_durations: tuple[int, ...] | None = None,
+    max_duration: int = 12,
+    max_refs: int | None = 3,
+    voice: VoiceRenderSettings | None = None,
+):
+    """假 ``_fetch_reference_caps_with_fallback``：返回一份 ``ReferenceSplitCaps`` 的 async 取值器。
+
+    ``reference_durations`` / ``text_durations`` 留 None 即与 ``durations`` 同集（该型号未声明
+    生效的「参考图↔时长」联动约束）；``voice`` 留 None 取 ``VoiceRenderSettings`` 的字段默认
+    （``soft`` 有声、无参考音频）。
+
+    被 monkeypatch 的目标签名带 episode 位，故取值器收两参——多数用例只关心返回值。
+    运行期用到的两个类型在函数体内导入：它们出自 lib / server 侧的业务模块，本模块的其余替身不
+    依赖这两个包，不为一个替身把依赖提到导入期（签名上的标注由 ``from __future__`` 延迟求值，
+    经 ``TYPE_CHECKING`` 供类型检查器读取）。
+    """
+    from lib.reference_video.voice_settings import VoiceRenderSettings
+    from server.agent_runtime.sdk_tools.text_generation import ReferenceSplitCaps
+
+    async def _fetch(_project, _episode=None) -> ReferenceSplitCaps:
+        return ReferenceSplitCaps(
+            default_duration=default_duration,
+            durations=list(durations),
+            reference_durations=list(durations if reference_durations is None else reference_durations),
+            text_durations=list(durations if text_durations is None else text_durations),
+            max_duration=max_duration,
+            max_refs=max_refs,
+            voice=VoiceRenderSettings() if voice is None else voice,
+        )
+
+    return _fetch
+
+
+def instructor_api_call_exhausted(cause: Exception) -> InstructorRetryException:
+    """构造「API 调用失败」形态的 Instructor 异常，供结构化输出降级链的判据测试使用。
+
+    API 调用本身抛的异常（参数被拒、瞬态 5xx、连接错误）会中断档内重试循环、被包成
+    ``InstructorRetryException``，原异常只挂在 ``__cause__`` 上。降级链的判据要认的正是这个
+    形态，拿裸 API 异常做桩会测出生产里不存在的路径。此处 ``failed_attempts`` 为空表示这一档
+    一次都没走到解析；先解析失败若干次再折在 API 上的混合形态由测试模块自行构造。形态本身由
+    ``TestInstructorExceptionShape`` 对真实 Instructor 钉住。
+    """
+    exc = InstructorRetryException(
+        str(cause),
+        last_completion=None,
+        n_attempts=1,
+        total_usage=0,
+        failed_attempts=[],
+    )
+    exc.__cause__ = cause
+    return exc

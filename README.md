@@ -10,7 +10,11 @@
   <br>
 </h1>
 
-<h4 align="center">开源 AI 视频生成工作台 — 从小说到短视频，全程 AI Agent 驱动</h4>
+<p align="center">
+  <strong>开源、自托管的 AI 视频生产工作台</strong>
+  <br>
+  将小说、成品剧本或商品素材转化为角色一致、过程可控、成本可追踪、可继续编辑的短视频。
+</p>
 
 <p align="center">
   <a href="README.md"><img src="https://img.shields.io/badge/lang-中文-red?style=flat-square" alt="中文"></a>
@@ -29,22 +33,20 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.12+-3776AB?logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React">
-  <img src="https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white" alt="FastAPI">
-  <img src="https://img.shields.io/badge/Claude_Agent_SDK-Anthropic-191919?logo=anthropic&logoColor=white" alt="Claude Agent SDK">
-  <img src="https://img.shields.io/badge/Gemini-Image_&_Video_&_Text-886FBF?logo=googlegemini&logoColor=white" alt="Gemini">
-  <img src="https://img.shields.io/badge/火山方舟-Image_&_Video_&_Text-FF6A00?logo=bytedance&logoColor=white" alt="火山方舟">
-  <img src="https://img.shields.io/badge/Grok-Image_&_Video_&_Text-000000?logo=x&logoColor=white" alt="Grok">
-  <img src="https://img.shields.io/badge/OpenAI-Image_&_Video_&_Text-74AA9C?logo=openai&logoColor=white" alt="OpenAI">
-  <img src="https://img.shields.io/badge/Vidu-Image_&_Video-1A73E8" alt="Vidu">
+  <a href="#快速开始"><strong>快速开始</strong></a>
+  ·
+  <a href="docs/getting-started.md">入门教程</a>
+  ·
+  <a href="docs/README.md">完整文档</a>
+  ·
+  <a href="#交流群">加入社区</a>
 </p>
 
 <p align="center">
   <img src="docs/assets/hero-screenshot.png" alt="SHOTWISE 工作台" width="800">
 </p>
 
----
+> ArcReel 不是一个简单的“提示词套壳”。它把内容分析、剧本结构化、角色与场景资产、分镜生成、视频任务、费用统计、版本回滚和成片导出组织成一条可审核、可中断恢复的生产流水线。
 
 ## 界面与主题
 
@@ -56,60 +58,67 @@ Shotwise 提供面向生产工作的工作台界面：项目大厅、项目工�
 
 <table>
 <tr>
-<td width="20%" align="center">
-<h3>🤖 AI Agent 工作流</h3>
-基于 <strong>Claude Agent SDK</strong>，编排 Skill + 聚焦 Subagent 多智能体协作，自动完成从剧本创作到视频合成的完整流水线
+<td width="33%" valign="top">
+
+### 🎭 AI 漫剧与小说改编
+
+从长篇小说或成品剧本提取角色、场景和剧情结构，分集制作角色一致的剧集动画。
+
 </td>
-<td width="20%" align="center">
-<h3>🎨 多供应商图像生成</h3>
-<strong>Gemini</strong>、<strong>火山方舟</strong>、<strong>Grok</strong>、<strong>OpenAI</strong>、<strong>Vidu</strong>、<strong>阿里百炼</strong>、<strong>MiniMax</strong>、<strong>可灵</strong> 及自定义供应商，角色设计图确保角色一致性，线索追踪保证道具/场景跨镜连贯
+<td width="33%" valign="top">
+
+### 🎙️ 说书与旁白短视频
+
+按朗读节奏拆分内容，生成分镜、旁白音轨和竖屏视频，并导出可继续编辑的剪映草稿。
+
 </td>
-<td width="20%" align="center">
-<h3>🎬 多供应商视频生成</h3>
-<strong>Veo 3.1</strong>、<strong>Seedance</strong>、<strong>Grok</strong>、<strong>Sora 2</strong>、<strong>Vidu Q3</strong>、<strong>阿里百炼</strong>、<strong>MiniMax</strong>、<strong>可灵</strong> 及自定义供应商，全局/项目级可切换
-</td>
-<td width="20%" align="center">
-<h3>⚡ 异步任务队列</h3>
-RPM 速率限制 + Image/Video/Audio 独立并发通道，lease-based 调度，支持断点续传
-</td>
-<td width="20%" align="center">
-<h3>🖥️ 可视化工作台</h3>
-Web UI 管理项目、预览素材、版本回滚、实时 SSE 任务追踪，内置 AI 助手
+<td width="33%" valign="top">
+
+### 🛍️ 广告与带货短片
+
+上传商品多图，建立产品参考资产，按目标时长生成带货镜头脚本和产品锚定画面。
+
 </td>
 </tr>
 </table>
 
-## 工作流程
+## 从输入到成片
 
 ```mermaid
-graph TD
-    A["📖 上传小说"] --> B["🔍 全局角色/线索提取"]
-    B --> C["✂️ 分集规划与切分"]
-    C --> D["📝 剧本预处理与 JSON 生成"]
-    D --> E["👤 生成角色设计图"]
-    D --> F["🔑 生成线索设计图"]
-    E --> G["🖼️ 生成分镜图 / 宫格图"]
-    F --> G
-    G --> H["🎬 生成视频片段"]
-    H --> I["🎞️ FFmpeg 合成最终视频"]
-    H --> J["📦 导出剪映草稿"]
+flowchart LR
+    A["小说 / 成品剧本 / 商品素材"] --> B["内容分析与项目规划"]
+    B --> C["角色 / 场景 / 道具资产"]
+    C --> D["分集与结构化剧本"]
+    D --> E["分镜图 / 分镜板"]
+    E --> F["视频片段 / 旁白音轨"]
+    F --> G["成片合成"]
+    F --> H["剪映草稿导出"]
 ```
+
+每个阶段都可以由 AI 助手编排，也可以由用户在工作台中审核、调整或重新生成。详细模式选择见 [创作流程与模式](docs/workflows.md)。
 
 ## 快速开始
 
-> ⚠️ **操作系统**：推荐 Linux / macOS / WSL2 / Docker。Windows 原生可运行项目创建与基础流程，但 Bash 沙箱、bwrap 等 POSIX-only 隔离机制会自动降级，生产部署仍建议 WSL2 或 Docker Desktop
+### 准备工作
 
-### 默认部署（SQLite）
+- Docker 和 Docker Compose
+- 建议从 2 GB 可用内存起步
+- 完整创作流程需要：
+  - 一组用于 ArcReel AI 助手的模型凭据
+  - 可用的文本、图像和视频生成能力（可以由一家全模态供应商提供，也可以组合多家供应商）
+  - 按需配置的 TTS 能力
+- 默认使用远程模型 API，通常不要求本机 GPU；接入本地模型时，资源要求由对应服务决定
+
+### 默认部署：SQLite
 
 ```bash
 git clone https://github.com/ghc4412/Shotwise.git
 cd SHOTWISE/deploy
 cp .env.example .env
 docker compose up -d
-# 访问 http://localhost:1241
 ```
 
-### 生产部署（PostgreSQL）
+检查服务状态：
 
 ```bash
 cd SHOTWISE/deploy/production
@@ -117,42 +126,61 @@ cp .env.example .env    # 需设置 POSTGRES_PASSWORD
 docker compose up -d
 ```
 
-首次启动后，使用默认账号登录（用户名 `admin`，密码在 `.env` 中通过 `AUTH_PASSWORD` 设置；未设置则首次启动时自动生成并回写到 `.env`），前往 **设置页**（`/app/settings`）完成配置：
+部署、升级、备份和反向代理见 [部署与运维](docs/deployment.md)；支持边界和漏洞报告方式见 [安全政策](SECURITY.md)。
 
 1. **SHOTWISE 智能体** — 配置驱动 AI 助手的供应商凭据，支持 Anthropic 官方及多种兼容供应商，自定义 Base URL 与模型
 2. **AI 生图/生视频/生文本** — 配置至少一个供应商的 API Key（Gemini / 火山方舟 / Grok / OpenAI / Vidu / 阿里百炼 / MiniMax / 可灵），或添加自定义供应商
 
-> 📖 详细步骤请参考 [完整入门教程](docs/getting-started.md)
+### 🤖 Agent 驱动的可恢复工作流
 
-## 功能特性
+基于 Claude Agent SDK 的编排 Skill 与聚焦 Subagent：主 Agent 识别项目所处阶段，把角色提取、分集规划、剧本规范化和资产生成分发给对应 Subagent，并只接收精炼结果。
 
-- **完整生产流水线** — 小说 → 剧本 → 角色设计 → 分镜图片 → 视频片段 → 成片，一键编排
-- **多智能体架构** — 编排 Skill 检测项目状态并自动调度聚焦 Subagent，每个 Subagent 独立完成一项任务后返回摘要
-- **沙箱化 Agent 运行环境** — Agent 工具调用默认运行在 bwrap 沙箱内，文件系统、网络、子进程能力按白名单授权；Linux/macOS 自动启用，Windows 原生不支持沙箱时自动降级
-- **多供应商支持** — 图片/视频/文本生成支持 Gemini、火山方舟、Grok、OpenAI、Vidu、阿里百炼、MiniMax、可灵 等预置供应商（各供应商支持的模态有所不同），全局/项目级可切换；AI 助手凭据同样支持多供应商配置
-- **自定义供应商** — 接入任何 OpenAI 兼容 / Google 兼容 API（如 Ollama、vLLM、第三方中转），自动发现可用模型并分配媒体类型，与预置供应商享有同等功能
-- **三种内容模式** — 说书模式（narration）按朗读节奏拆分片段，剧集动画模式（drama）按场景/对话结构组织，广告/短片模式（ad）按目标时长生成带货镜头、单集直达单视频
-- **两条视频生成路线** — 图生视频（分镜图驱动）/ 参考生视频（直接以角色/场景/道具资产图生成视频，跳过分镜步骤）；路线在创建项目时二选一。宫格（多分镜合成 grid_4/6/9，拆分后每格作一张场景起始分镜图）是图生视频路线内的分镜图生产方式，非广告/短片项目可随时开关
-- **多种剧本源** — 既可从小说原文改编，也可直接导入成品剧本（screenplay）：逐字保留台词与画外音，按作者人物表提取角色，群演空镜不建资产
-- **广告/短片项目** — 面向带货短片的项目类型：上传产品多图并生成标准产品参考图，一键生成八段式带货镜头脚本，产品镜头全程锚定真品，导出剪映自带口播字幕轨
-- **旁白配音（TTS）** — 设置页配置音色与语速，分镜逐段试听、一键补齐全集，智能体一句话即可生成全集；支持阿里百炼 Qwen3 TTS 与任意 OpenAI 兼容 TTS，导出剪映草稿自带逐段旁白音轨
-- **渐进式分集规划** — 人机协作切分长篇小说：一次规划一批剧情完整的集，Agent 建议断点、用户确认后物理切分，一句话意见即可重置并重新规划，按需制作
-- **风格参考图** — 上传风格图，AI 自动分析并统一应用到所有图片生成，确保全项目视觉一致
-- **角色一致性** — AI 先生成角色设计图，后续所有分镜和视频均参考该设计
-- **线索追踪** — 关键道具、场景元素标记为"线索"，跨镜头保持视觉连贯
-- **版本历史** — 每次重新生成自动保存历史版本，支持一键回滚
-- **多供应商费用追踪** — 图片/视频/文本全部纳入费用计算，按供应商分策略计费，不同币种分别统计
-- **费用预估** — 生成前预估项目/单集/单镜头费用，三级下钻展示预估与实际费用对比
-- **剪映草稿导出** — 按集导出剪映草稿 ZIP，支持剪映 5.x / 6+（[操作指南](docs/jianying-export-guide.md)）
-- **多 API Key 管理** — 每个供应商支持配置多个 API Key 并切换激活，支持 Google Vertex AI 凭证上传
-- **多语言界面** — 前后端全面国际化，支持多语言切换
-- **项目导入/导出** — 整个项目打包归档，方便备份和迁移
+### 🎨 角色、场景与道具资产
+
+角色设计图、风格参考图以及场景和道具资产作为跨镜头参考源，减少人物外观、场景氛围和关键物品在不同镜头中的漂移。
+
+### 🎬 三种视频制作方式
+
+- **分镜图生视频**：以单张分镜图驱动视频生成，适合逐镜审核和调整。
+- **分镜板生视频**：先在一张分镜板（宫格）中统一生成多个镜头，再切分为单镜头分镜图生成视频，适合多镜头一致性要求较高的场景。
+- **参考生视频**：直接引用角色、场景和道具资产，跳过普通分镜步骤。
+
+### ⚡ 异步任务与并发控制
+
+图像、视频和音频任务拥有独立并发通道；支持 RPM 限速、任务状态跟踪、失败恢复和中断后的继续执行。
+
+### 🕰️ 版本历史与项目归档
+
+重新生成会保留历史版本；项目可整体导入和导出，便于备份、迁移以及不同环境之间交接。
+
+### 💰 费用预估与实际用量
+
+按供应商和媒体类型统计调用量，区分币种，并提供项目、剧集和镜头级的预估与实际费用对比。
+
+### 🎙️ 旁白与后期导出
+
+支持旁白 TTS、逐段试听和批量生成；剪映草稿导出可保留视频片段、旁白音轨和字幕轨，方便继续后期处理。
+
+### 🔌 外部 Agent 集成
+
+ArcReel 可以签发 `arc-` 前缀 API Key，并通过同步 Agent 对话端点供 OpenClaw 等外部 Agent 平台调用。
 
 ## 供应商支持
 
 SHOTWISE 通过统一的 `ImageBackend` / `VideoBackend` / `TextBackend` 协议，支持多个预置供应商和自定义供应商，可在全局或项目级别切换：
 
-### 图片供应商
+| 供应商 | 文本 | 图像 | 视频 | TTS |
+|---|:---:|:---:|:---:|:---:|
+| Gemini | ✅ | ✅ | ✅ | — |
+| 火山方舟 | ✅ | ✅ | ✅ | — |
+| Grok | ✅ | ✅ | ✅ | — |
+| OpenAI | ✅ | ✅ | ✅ | — |
+| Vidu | — | ✅ | ✅ | — |
+| 阿里百炼 | ✅ | ✅ | ✅ | ✅ |
+| MiniMax | ✅ | ✅ | ✅ | — |
+| 可灵 Kling | — | ✅ | ✅ | — |
+| Agnes | ✅ | ✅ | ✅ | — |
+| 自定义供应商 | 取决于接口 | 取决于接口 | 取决于接口 | 取决于接口 |
 
 | 供应商 | 可用模型 | 能力 | 计费方式 |
 |--------|----------|------|----------|
@@ -247,73 +275,74 @@ SHOTWISE 支持通过 [OpenClaw](https://openclaw.ai) 等外部 AI Agent 平台�
 
 ```mermaid
 flowchart TB
-    subgraph UI["Web UI — React 19"]
-        U1["项目管理"] ~~~ U2["素材预览"] ~~~ U3["AI 助手"] ~~~ U4["任务监控"]
-    end
-
-    subgraph Server["FastAPI Server"]
-        S1["REST API<br/>路由分发"] ~~~ S2["Agent Runtime<br/>Claude Agent SDK"]
-        S3["SSE Stream<br/>实时状态推送"] ~~~ S4["Auth<br/>JWT + API Key"]
-    end
-
-    subgraph Core["Core Library"]
-        C1["VideoBackend 抽象层<br/>Gemini · 火山方舟 · Grok · OpenAI · Vidu · 阿里百炼 · MiniMax · 可灵 · 自定义"] ~~~ C2["ImageBackend 抽象层<br/>Gemini · 火山方舟 · Grok · OpenAI · Vidu · 阿里百炼 · MiniMax · 可灵 · 自定义"]
-        C5["TextBackend 抽象层<br/>Gemini · 火山方舟 · Grok · OpenAI · 阿里百炼 · MiniMax · 自定义"] ~~~ C3["GenerationQueue<br/>RPM 限速 · Image/Video/Audio 通道"]
-        C4["ProjectManager<br/>文件系统 + 版本管理"]
-    end
-
-    subgraph Data["数据层"]
-        D1["SQLAlchemy 2.0 Async ORM"] ~~~ D2["SQLite / PostgreSQL"]
-        D3["Alembic 迁移"] ~~~ D4["UsageTracker<br/>多供应商费用追踪"]
-    end
-
-    UI --> Server --> Core --> Data
+    UI["React 19 Web UI"] --> API["FastAPI API / SSE"]
+    API --> AGENT["Agent Runtime<br/>Skill + Subagent"]
+    API --> CORE["Core Services"]
+    AGENT --> CORE
+    CORE --> PROVIDERS["Text / Image / Video / TTS Backends"]
+    CORE --> QUEUE["Generation Queue<br/>RPM + 独立并发通道"]
+    CORE --> PROJECTS["Project Manager<br/>文件资产 + 版本历史"]
+    CORE --> DB["SQLAlchemy 2.0<br/>SQLite / PostgreSQL"]
 ```
 
-## 技术栈
+技术栈包括 React 19、TypeScript、FastAPI、Python 3.12+、Claude Agent SDK、SQLAlchemy 2.0、FFmpeg、Docker 和 Docker Compose。架构边界与扩展方式见 [架构说明](docs/architecture.md)。
 
-| 层级 | 技术 |
-|------|------|
-| **前端** | React 19, TypeScript, Tailwind CSS 4, wouter, zustand, Framer Motion, Vite |
-| **后端** | FastAPI, Python 3.12+, uvicorn, Pydantic 2 |
-| **AI 智能体** | Claude Agent SDK (Skill + Subagent 多智能体架构) |
-| **图像生成** | Gemini (`google-genai`), 火山方舟 (`volcengine-python-sdk[ark]`), Grok (`xai-sdk`), OpenAI (`openai`), Vidu / 阿里百炼 / MiniMax / 可灵 (`httpx`) |
-| **视频生成** | Gemini Veo 3.1 (`google-genai`), 火山方舟 Seedance 2.0/1.5 (`volcengine-python-sdk[ark]`), Grok (`xai-sdk`), OpenAI Sora 2 (`openai`), Vidu Q3 / 阿里百炼 / MiniMax Hailuo / 可灵 (`httpx`) |
-| **文本生成** | Gemini (`google-genai`), 火山方舟 (`volcengine-python-sdk[ark]`), Grok (`xai-sdk`), OpenAI (`openai`), 阿里百炼 / MiniMax (`httpx`), Instructor (结构化输出降级) |
-| **旁白配音 (TTS)** | 阿里百炼 Qwen3 TTS (`httpx`), 任意 OpenAI 兼容 TTS（自定义供应商） |
-| **媒体处理** | FFmpeg, Pillow |
-| **ORM & 数据库** | SQLAlchemy 2.0 (async), Alembic, aiosqlite, asyncpg — SQLite (默认) / PostgreSQL (生产) |
-| **认证** | JWT (`pyjwt`), API Key (SHA-256 哈希), Argon2 密码哈希 (`pwdlib`) |
-| **部署** | Docker, Docker Compose（`deploy/` 默认, `deploy/production/` 含 PostgreSQL） |
+## 使用前需要了解的边界
+
+- 媒体生成依赖第三方模型服务，生成速度、可用性、内容策略和成本受供应商影响。
+- 长篇内容仍需要人工审核分集、角色资产和关键剧情节点，ArcReel 的目标是增强创作者，而不是完全取消审核。
+- 不同视频模型对参考图数量、视频时长、首尾帧、音频和地区可用性的支持不同。
+- Windows 原生环境可以运行部分基础流程，但 Agent 沙箱等 POSIX 能力会降级；优先使用 Linux、macOS、WSL2 或 Docker。
+- 生产环境应使用 PostgreSQL、HTTPS、强密码和定期备份，不建议直接把未加保护的 `1241` 端口暴露到公网。
+
+更多问题见 [常见问题](docs/FAQ.md)。
 
 ## 文档
 
-- 📖 [完整入门教程](docs/getting-started.md) — 从零开始的手把手指南
-- 📦 [剪映草稿导出指南](docs/jianying-export-guide.md) — 将视频片段导入剪映桌面版进行二次编辑
-- 💰 [Google GenAI 费用说明](docs/google-genai-docs/pricing.md) — Gemini 图像 / Veo 视频生成官方定价页抓取（英文）
-- 💰 [火山方舟费用说明](docs/ark-docs/火山方舟费用参考.md) — 火山方舟视频 / 图片 / 文本模型费用参考
+| 文档 | 内容 |
+|---|---|
+| [文档导航](docs/README.md) | 按使用者、运维者和开发者整理的文档入口 |
+| [完整入门教程](docs/getting-started.md) | 从首次部署到生成第一条视频 |
+| [创作流程与模式](docs/workflows.md) | 小说、剧本、广告模式以及三种视频制作方式 |
+| [供应商与模型配置](docs/providers.md) | Agent、文本、图像、视频、TTS 供应商的选择和配置 |
+| [部署与运维](docs/deployment.md) | SQLite、PostgreSQL、升级、备份、反向代理 |
+| [安全政策](SECURITY.md) | 支持版本、部署边界、私密漏洞报告和协调披露 |
+| [安全威胁模型](docs/security/threat-model.md) | 安全资产、信任边界、攻击面和重评触发条件 |
+| [剪映草稿导出](docs/jianying-export-guide.md) | 将 ArcReel 生成结果交给剪映继续编辑 |
+| [架构说明](docs/architecture.md) | Agent Runtime、任务队列、供应商抽象和数据层 |
+| [常见问题](docs/FAQ.md) | 部署、费用、模型、数据和许可证问题 |
+| [贡献指南](CONTRIBUTING.md) | 本地开发、测试、代码规范和 PR 流程 |
+| [更新记录](CHANGELOG.md) | 每个版本的功能和修复 |
+
+## 交流群
+
+扫码加入飞书交流群，获取使用帮助、版本动态和创作经验：
+
+<p align="center">
+  <img src="docs/assets/feishu-qr.png" alt="ArcReel 飞书交流群二维码" width="280">
+</p>
+
+遇到可以复现的 Bug 或明确的功能需求，也可以直接提交 [GitHub Issue](https://github.com/ArcReel/ArcReel/issues)。
 
 ## 贡献
 
-欢迎贡献代码、报告 Bug 或提出功能建议！请参阅 [贡献指南](CONTRIBUTING.md) 了解本地开发环境搭建、测试和代码规范。
+欢迎贡献代码、文档、测试、供应商适配和问题复现。
 
-本地克隆后请务必执行一次：
+开始开发前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。本地克隆后建议立即安装项目的 pre-commit 钩子：
 
 ```bash
 uv run pre-commit install
 ```
 
-安装 pre-commit 钩子（ruff check + format、frontend eslint、workflow tripwire），避免把可被自动修复的问题推到 CI。
+## 许可证与商业使用
 
-## 📜 许可证
+ArcReel 采用 [GNU Affero General Public License v3.0](LICENSE)，附加条款见 [NOTICE](NOTICE)。
 
-本项目采用 [GNU Affero 通用公共许可证 v3.0 (AGPL-3.0)](./LICENSE) 授权，
-附加条款见 [NOTICE](./NOTICE)。
+如果你的组织无法采用 AGPL-3.0，或者希望在不承担 AGPL 开源义务的情况下进行商业部署、白标或再分发，请联系：
+
+**support@arc-reel.com**
 
 Copyright © 2026 Pollo3470 and SHOTWISE contributors
-
-如果您所在组织的政策不允许使用 AGPL-3.0 许可的软件，或您希望在不承担
-AGPL-3.0 开源义务的前提下商用本项目，请联系：[support@arc-reel.com](mailto:support@arc-reel.com)
 
 ---
 

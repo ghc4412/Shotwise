@@ -44,6 +44,10 @@ class _FakeQueue:
         self._succeeded_rows = succeeded_rows
         self._failed_rows = failed_rows
         self._orphans: list[dict] = []
+        self.persisted_providers: list[tuple[str, str]] = []
+
+    async def persist_execution_provider_id(self, task_id, provider_id):
+        self.persisted_providers.append((task_id, provider_id))
 
     async def acquire_or_renew_worker_lease(self, name, owner_id, ttl_seconds):
         self._lease_calls += 1
@@ -118,9 +122,9 @@ class TestExtractProvider:
     """_extract_provider 是解析链的薄投影：按 task_type 派发，取 .provider_id。"""
 
     @pytest.mark.unit
-    async def test_video_payload_provider(self):
-        """payload 携带历史 video_provider → 投影直接取到（payload 层短路，无需 DB）。"""
-        task = {"payload": {"video_provider": "ark"}, "task_type": "video"}
+    async def test_video_payload_pinned_bucket_provider(self):
+        """payload 携带入队锁定的桶键 → 投影直接取到（payload 层短路，无需 DB）。"""
+        task = {"payload": {"video_provider_i2v": "ark/doubao-seedance-2-0-260128"}, "task_type": "video"}
         assert await _extract_provider(task) == "ark"
 
     @pytest.mark.unit
@@ -159,7 +163,7 @@ class TestExtractProvider:
 
         项目同时配置了不同 provider 的 video_backend（ark）与 image_provider_t2i
         （gemini-vertex）。reference_video 属于 video lane，认领期 provider 投影须取 ark；
-        若误判为 image lane（历史上 task_type != "video" 即读 image 槽），会取到纯图片
+        若误判为 image lane（按 task_type != "video" 去读 image 槽），会取到纯图片
         供应商，导致 worker 在 video 通道以 video_max==0 直接把任务标记
         「供应商不支持 video 生成」。"""
         _patch_pm(
@@ -174,7 +178,7 @@ class TestExtractProvider:
 
     @pytest.mark.unit
     async def test_reference_video_prefers_r2v_bucket_provider(self, monkeypatch):
-        """配置 r2v 桶后，reference_video 的认领期投影随桶内 provider，与执行层定桶解析同源。"""
+        """payload 无 script_file、镜头级参考集无从判定时，reference_video 投影回退代表桶 r2v。"""
         _patch_pm(
             monkeypatch,
             {
@@ -186,15 +190,70 @@ class TestExtractProvider:
         assert await _extract_provider(task) == "minimax"
 
     @pytest.mark.unit
+    @pytest.mark.parametrize(
+        ("references", "expected_provider"),
+        [([{"type": "character", "name": "A"}], "minimax"), ([], "ark")],
+    )
+    async def test_reference_video_routes_by_unit_reference_bucket(self, monkeypatch, references, expected_provider):
+        """reference_video 投影按 unit 声明的参考集分桶：有参考图 → r2v 桶 provider，
+        无参考图退化镜头 → i2v 桶 provider，与执行层降级定桶同口径。"""
+        project = {
+            "video_provider_i2v": "ark/doubao-seedance-1-5-pro-251215",
+            "video_provider_r2v": "minimax/S2V-01",
+        }
+        script = {"video_units": [{"unit_id": "E1U1", "references": references, "shots": [{"text": "t"}]}]}
+        pm_cls = type(
+            "PM",
+            (),
+            {
+                "load_project": lambda self, name: project,
+                "load_script": lambda self, name, filename: script,
+            },
+        )
+        monkeypatch.setattr("lib.config.resolver.get_project_manager", pm_cls)
+        task = {
+            "payload": {"script_file": "ep1.json"},
+            "project_name": "demo",
+            "task_type": "reference_video",
+            "resource_id": "E1U1",
+        }
+        assert await _extract_provider(task) == expected_provider
+
+    @pytest.mark.unit
+    async def test_reference_video_script_read_failure_falls_back_to_r2v(self, monkeypatch):
+        """剧本读取失败时投影回退 r2v 代表桶，不冒泡阻断认领。"""
+
+        def _load_script(self, name, filename):
+            raise ScriptEditError("broken")
+
+        project = {
+            "video_provider_i2v": "ark/doubao-seedance-1-5-pro-251215",
+            "video_provider_r2v": "minimax/S2V-01",
+        }
+        pm_cls = type("PM", (), {"load_project": lambda self, name: project, "load_script": _load_script})
+        monkeypatch.setattr("lib.config.resolver.get_project_manager", pm_cls)
+        task = {
+            "payload": {"script_file": "ep1.json"},
+            "project_name": "demo",
+            "task_type": "reference_video",
+            "resource_id": "E1U1",
+        }
+        assert await _extract_provider(task) == "minimax"
+
+    @pytest.mark.unit
     async def test_payload_provider_takes_precedence_over_project(self, monkeypatch):
-        """payload 历史 provider 优先于项目级。"""
+        """payload 锁定的 provider 优先于项目级。"""
         _patch_pm(monkeypatch, {"video_backend": "grok/grok-imagine-video"})
-        task = {"payload": {"video_provider": "ark"}, "project_name": "demo", "task_type": "video"}
+        task = {
+            "payload": {"video_provider_i2v": "ark/doubao-seedance-2-0-260128"},
+            "project_name": "demo",
+            "task_type": "video",
+        }
         assert await _extract_provider(task) == "ark"
 
     @pytest.mark.unit
     async def test_deleted_project_load_failure_falls_back_not_raises(self, monkeypatch):
-        """指向已删除/不可读项目的历史任务：load_project 抛错也须回退 DEFAULT_PROVIDER，
+        """指向已删除/不可读项目的残留任务：load_project 抛错也须回退 DEFAULT_PROVIDER，
         绝不冒泡阻断认领循环（否则一个坏任务会拖垮整个 worker）。"""
 
         def _raising_pm():
@@ -1036,7 +1095,7 @@ class TestGenerationWorker:
                         "task_id": "vid1",
                         "task_type": "gen_video",
                         "media_type": "video",
-                        "payload": {"video_provider": "ark"},
+                        "payload": {"video_provider_i2v": "ark/doubao-seedance-2-0-260128"},
                     },
                 ]
 
@@ -1069,6 +1128,58 @@ class TestGenerationWorker:
 
         # Wait for tasks to complete
         await asyncio.gather(*worker._slots.all_active_tasks(), return_exceptions=True)
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_claim_requeue_on_full_pool_refreshes_provider_projection(self, monkeypatch):
+        """池满回队前把重派生的 provider 刷回投影列。
+
+        走到二次校验池满这条路，说明存量投影与现值分裂（NULL 兜底，或入队后剧本参考集 /
+        供应商配置被改）；不刷新的话存量值躲过 pool_full 的 SQL 过滤，满池期间每个 cycle
+        都重复 claim → requeue → break，同 lane 其他可跑任务被持续排头阻塞。
+        """
+
+        class _StaleProjectionQueue(_FakeQueue):
+            def __init__(self):
+                super().__init__()
+                self._tasks = [
+                    {
+                        "task_id": "vid-stale",
+                        "task_type": "reference_video",
+                        "media_type": "video",
+                        "provider_id": "ark",  # 入队时的投影，与现值分裂
+                        "payload": {},
+                    }
+                ]
+
+            async def claim_next_task(self, media_type, **_kwargs):  # type: ignore[override]
+                if media_type == "video" and self._tasks:
+                    return self._tasks.pop()
+                return None
+
+        queue = _StaleProjectionQueue()
+        worker = GenerationWorker(queue=queue, capacity=_cap({"minimax": {"video": 1}}))
+
+        async def _current_provider(_task):
+            return "minimax"
+
+        monkeypatch.setattr("lib.generation_worker._extract_provider", _current_provider)
+
+        occupier = asyncio.create_task(asyncio.sleep(30))
+        worker._slots.register("minimax", "video", "vid-running", occupier)
+        requeued: list[str] = []
+
+        async def _capture_requeue(self, task_id):
+            requeued.append(task_id)
+
+        monkeypatch.setattr(GenerationWorker, "_requeue_single_task", _capture_requeue)
+        try:
+            await worker._claim_tasks()
+        finally:
+            occupier.cancel()
+
+        assert requeued == ["vid-stale"]
+        assert queue.persisted_providers == [("vid-stale", "minimax")]
 
     # ------------------------------------------------------------------
     # _pool_full_providers
@@ -1218,7 +1329,7 @@ class TestGenerationWorker:
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_handle_orphan_uses_persisted_provider_id(self, monkeypatch):
-        """task.provider_id 优先于 _extract_provider 的当前项目解析（CR round-2 N2 回归）。
+        """task.provider_id 优先于 _extract_provider 的当前项目解析。
 
         如果 task 持久化的 provider_id 是 Grok（不支持 resume），即便当前项目配置
         已切换成 Ark（支持 resume），孤儿仍应被识别为 non_resumable → [resume_unsupported]，
@@ -1235,8 +1346,8 @@ class TestGenerationWorker:
                 "provider_job_id": "stale-job",
                 "media_type": "video",
                 "task_type": "video",
-                # payload 显式写 video_provider=ark，模拟"项目已切换" → _extract_provider 会解析成 ark
-                "payload": {"video_provider": "ark"},
+                # payload 锁定桶键写 ark，模拟"项目已切换" → _extract_provider 会解析成 ark
+                "payload": {"video_provider_i2v": "ark/doubao-seedance-2-0-260128"},
                 "project_name": "demo",
             }
         ]
@@ -1311,7 +1422,7 @@ class TestGenerationWorker:
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_handle_orphan_fast_path_returns_immediately(self, monkeypatch):
-        """fix #647 #1：fast path 不阻塞——5 个可 resume orphan + video_max=2，
+        """fast path 不阻塞——5 个可 resume orphan + video_max=2，
         `_handle_orphan_tasks_on_start` 应几乎立刻返回（< 100ms），
         实际 dispatch 由后台 dispatcher 处理。"""
         import time
@@ -1354,7 +1465,7 @@ class TestGenerationWorker:
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_handle_orphan_dispatcher_respects_pool_capacity(self, monkeypatch):
-        """fix #647 #1：后台 dispatcher 受 video 容量约束分批 promote 进 INFLIGHT，
+        """后台 dispatcher 受 video 容量约束分批 promote 进 INFLIGHT，
         任一时刻 inflight 占用 ≤ cap（pending 不消耗 sem，不计入此上限）。"""
         queue = _FakeQueue()
         queue._orphans = [
@@ -1426,7 +1537,7 @@ class TestGenerationWorker:
     @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_handle_orphan_dispatcher_exits_on_stop_event(self, monkeypatch):
-        """fix #647 #1：`_stop_event` 触发时 dispatcher 干净退出，不再 dispatch 剩余 orphan。"""
+        """`_stop_event` 触发时 dispatcher 干净退出，不再 dispatch 剩余 orphan。"""
         queue = _FakeQueue()
         queue._orphans = [
             {
@@ -1476,8 +1587,11 @@ class TestGenerationWorker:
     # ------------------------------------------------------------------
     @pytest.mark.unit
     @pytest.mark.asyncio
-    async def test_process_resume_task_locks_persisted_provider_to_payload(self, monkeypatch):
-        """C2 回归：persisted provider_id 应注入 payload.video_provider。"""
+    async def test_process_resume_task_keeps_pinned_video_identity(self, monkeypatch):
+        """视频任务的续跑身份由入队锁定的桶键决定，persisted provider_id 不注入 payload。
+
+        注入只覆盖 provider、盖不住 model，两者分裂即静默换模型续跑。
+        """
         queue = _FakeQueue()
         worker = GenerationWorker(queue=queue)
         captured_task: dict | None = None
@@ -1497,13 +1611,13 @@ class TestGenerationWorker:
             "media_type": "video",
             "provider_id": "openai",
             "provider_job_id": "openai-job",
-            "payload": {"video_provider": "gemini-aistudio"},  # payload 原本指向另一个 provider
+            "payload": {"video_provider_i2v": "gemini-aistudio/veo-3.1-fast-generate-preview"},
             "project_name": "demo",
         }
         await worker._process_resume_task(task)
         assert captured_task is not None
-        # _process_resume_task 应覆写为持久化 provider_id (openai)
-        assert captured_task["payload"]["video_provider"] == "openai"
+        # 锁定键原样交给 resume，persisted provider_id 不写进 payload
+        assert captured_task["payload"] == {"video_provider_i2v": "gemini-aistudio/veo-3.1-fast-generate-preview"}
         assert captured_job_id == "openai-job"
         assert queue.succeeded == [("resume-locked", {"ok": True})]
 
@@ -1532,6 +1646,40 @@ class TestGenerationWorker:
         await worker._process_resume_task(task)
         assert queue.failed and queue.failed[0][0] == "exp"
         assert "[resume_expired_detail]" in queue.failed[0][1]
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_process_resume_task_endpoint_changed(self, monkeypatch):
+        """ResumeEndpointChangedError → mark_failed [resume_endpoint_changed]，错误可归因。"""
+        from lib.video_backends.base import ResumeEndpointChangedError
+
+        queue = _FakeQueue()
+        worker = GenerationWorker(queue=queue)
+
+        async def _changed(_task, *, job_id):
+            raise ResumeEndpointChangedError(
+                job_id=job_id,
+                provider="custom-7",
+                submitted_endpoint="openai-video",
+                current_endpoint="minimax-video",
+            )
+
+        monkeypatch.setattr("server.services.resume_executor.execute_resume_video_task", _changed)
+        task = {
+            "task_id": "ep",
+            "task_type": "video",
+            "media_type": "video",
+            "provider_id": "custom-7",
+            "provider_job_id": "x",
+            "payload": {},
+            "project_name": "demo",
+        }
+        await worker._process_resume_task(task)
+        assert queue.failed and queue.failed[0][0] == "ep"
+        assert "[resume_endpoint_changed_detail]" in queue.failed[0][1]
+        # 两侧 endpoint 都进错误详情，用户能归因到「接口被换过」而非泛化失败
+        assert "openai-video" in queue.failed[0][1]
+        assert "minimax-video" in queue.failed[0][1]
 
     @pytest.mark.unit
     @pytest.mark.asyncio

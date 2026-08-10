@@ -13,14 +13,20 @@ from typing import Any
 from sqlalchemy.exc import SQLAlchemyError
 
 from lib.asset_types import ASSET_SPECS, BUCKET_KEY, SHEET_KEY, normalize_asset_bucket, normalize_asset_name
-from lib.config.resolver import ConfigResolver, constrain_durations, get_provider_fallback
+from lib.config.resolver import (
+    ConfigResolver,
+    ProviderModel,
+    VideoCapability,
+    constrain_durations,
+    get_provider_fallback,
+)
 from lib.db import async_session_factory
 from lib.db.base import DEFAULT_USER_ID
 from lib.generation_queue import get_generation_queue
 from lib.path_safety import safe_exists
 from lib.prompt_builders import append_product_fidelity_tail
 from lib.reference_video import assemble_shots_text, assemble_shots_text_for_render
-from lib.reference_video.ad_units import resolve_ad_unit_shots
+from lib.reference_video.ad_units import ad_unit_references, ad_unit_source_signature, resolve_ad_unit_shots
 from lib.reference_video.duration_slots import DurationSlot, resolve_duration_slot
 from lib.reference_video.errors import MissingReferenceError
 from lib.reference_video.prompt_render import (
@@ -29,6 +35,7 @@ from lib.reference_video.prompt_render import (
     render_unit_prompt,
     resolve_reference_audio_paths,
 )
+from lib.reference_video.units import reference_video_bucket
 from lib.reference_video.voice_settings import VoiceRenderSettings
 from lib.script_editor import ScriptEditError
 from lib.script_models import ReferenceResource, ad_script_total_duration
@@ -47,13 +54,28 @@ logger = logging.getLogger(__name__)
 async def _persist_effective_duration(task_id: str, duration_seconds: int) -> None:
     """把取档后实际申请的秒数写回 task payload，供 resume 路径读取（见调用点注释）。
 
-    非致命路径：持久化失败只降级 resume 元数据精度，不影响本次已在进行的生成，
+    非致命路径：持久化失败只降级 resume 元数据精度，不影响已在进行的生成，
     故只记日志、不上抛阻断 executor 主流程。
     """
     try:
         await get_generation_queue().persist_effective_duration(task_id, duration_seconds)
     except Exception:
         logger.warning("effective_duration 写回 payload 失败 task_id=%s", task_id, exc_info=True)
+
+
+async def _persist_execution_identity(
+    task_id: str, execution_model: ProviderModel, capability: VideoCapability
+) -> None:
+    """把执行期实际解析出的身份写回 ``task.provider_id`` 列与 payload 锁定键（见调用点注释）。
+
+    fail-fast：写回失败上抛、任务在向 provider 提交前失败。吞掉异常继续提交会留下
+    「身份停留在入队投影、job_id 却已持久化」的任务——重启恢复拿错 backend
+    轮询，与 ``persist_provider_job_id`` 防「幽灵任务」是同一语义（ADR 0007）；此处
+    失败发生在提交前，没有已计费的 provider 端 job 可丢。
+    """
+    await get_generation_queue().persist_execution_identity(
+        task_id, execution_model=execution_model, capability=capability
+    )
 
 
 def _dedupe_typed_references(references: list[dict]) -> list[dict]:
@@ -265,14 +287,21 @@ class ProjectDurationContext:
     max_duration: int | None = None
 
 
-async def resolve_project_duration_context(project: dict) -> ProjectDurationContext:
+async def resolve_project_duration_context(
+    project: dict,
+    *,
+    capability: VideoCapability | None = None,
+) -> ProjectDurationContext:
     """一次性解析视频能力（档位全集 + 单次生成时长上限 + 分辨率 + provider/model 身份）。
+
+    ``capability`` 未给定时按项目路线定桶；给定时按指定桶解析——参考路线内按镜头分流的
+    调用方（费用估算、逐 unit 预检）以此对无参考图退化镜头按 i2v 桶模型取档。
 
     解析失败按空档位处理（沿用现状放行，不弹确认）；分辨率仅在档位非空时才解析，
     空档位下分辨率约束无意义。``max_duration`` 与 :func:`resolve_max_unit_duration`
     取自同一份能力解析结果，供需要现推分组的调用方复用而不再触发一次 IO。
     """
-    caps = await project_video_caps(project, degraded_to="时长取档不施加档位约束")
+    caps = await project_video_caps(project, degraded_to="时长取档不施加档位约束", capability=capability)
     durations = tuple(int(d) for d in caps.get("supported_durations") or [])
     provider_id = str(caps.get("provider_id") or "")
     model = caps.get("model")
@@ -295,17 +324,21 @@ def precheck_unit(ctx: ProjectDurationContext, unit: dict, ad_shots: list[dict] 
     provider 按 ADR-0001 在执行时才解析，故 ``ctx`` 只是近似：实际档位以执行时的 model
     能力为准。
 
-    「是否带参考图」按 unit 声明的 references 近似——执行层按解析后的实际图判定，而 ad 路径
-    的资产缺图退化为纯文本要读盘才知道。近似方向保守：声明了参考却缺图的异常单元会多收窄
-    一档、至多多问一次确认，不会漏掉需要确认的情形。
+    「是否带参考图」的判据与调用方的定桶同源：ad 传入了成员镜头，就从镜头现算参考集
+    （索引里的 references 只是可能落后于镜头的展示缓存，两处取不同来源会出现「按 r2v
+    模型解析能力、却按 i2v 档位取档」的自相矛盾）；其余路径按 unit 声明的 references。
+    两者都是近似——执行层按解析后的实际图判定，而 ad 路径的资产缺图退化为纯文本要读盘才
+    知道。近似方向保守：声明了参考却缺图的异常单元会多收窄一档、至多多问一次确认，不会
+    漏掉需要确认的情形。
     """
+    with_reference_images = bool(ad_unit_references(ad_shots) if ad_shots is not None else unit.get("references"))
     durations = (
         effective_reference_durations(
             ctx.provider_id,
             ctx.model_name,
             list(ctx.supported_durations),
             ctx.resolution,
-            with_reference_images=bool(unit.get("references")),
+            with_reference_images=with_reference_images,
         )
         if ctx.supported_durations
         else []
@@ -554,17 +587,23 @@ async def execute_reference_video_task(
             raise ValueError(f"unit not found: {resource_id}")
         # 索引悬空（镜头被删/改 ID 后未重新派生）在此 fail-loud，提示重新派生
         ad_shots = resolve_ad_unit_shots(script, unit) if is_ad else None
-        return project, project_path, unit, ad_shots
+        # 来源签名按执行期剧本快照计算：prompt 从这份快照重组，产物真正依据的编排即此刻
+        # 编排；finalize 时剧本可能已被编辑，彼时现算会把偏离的产物误认成与新编排一致。
+        signature = ad_unit_source_signature(script, unit) if is_ad else None
+        return project, project_path, unit, ad_shots, signature
 
-    project, project_path, unit, ad_shots = await asyncio.to_thread(_load)
+    project, project_path, unit, ad_shots, source_signature = await asyncio.to_thread(_load)
     is_ad = ad_shots is not None
 
     # 2. 解析 references（narration/drama 缺图直接失败；ad 软口径跳过 + warning）
     ad_entries: list[dict] = []
     ad_warnings: list[dict] = []
     if is_ad:
+        # 参考集从成员镜头快照现算，与来源签名同源：索引里持久化的 references 只是
+        # 展示缓存，镜头参考字段被编辑后未重新派生时它落后于镜头——拿它送生成会让
+        # 产物依据旧参考、签名却记录新参考，stale 被错误清除且档案留下假 provenance。
         ad_entries, ad_warnings = _resolve_ad_unit_reference_entries(
-            project, project_path, unit.get("references") or []
+            project, project_path, ad_unit_references(ad_shots or [])
         )
         source_refs = [e["image"] for e in ad_entries]
     else:
@@ -573,13 +612,17 @@ async def execute_reference_video_task(
     # 3. 单次解析生成上下文（声明 video lane）：构造 generator 并按实际 backend 身份
     #    查能力上限与 resolution。provider 身份解析收口于 GenerationContext
     #    （docs/adr/0049）——executor 不再触碰 MediaGenerator 私有属性、不再手工重建
-    #    registry provider_id。
+    #    registry provider_id。桶按本 unit 解析后的实际参考图分流（docs/adr/0054）：
+    #    有参考图 → r2v；无参考图的退化镜头降级 → i2v，不送入拒空参考的 r2v 桶模型。
+    #    判据取解析结果而非声明——ad 的资产缺图按软口径跳过后 source_refs 可为空，
+    #    与 backend「只在 reference_images 非空时施加参考图约束」的口径同源。
+    execution_capability = reference_video_bucket(with_references=bool(source_refs))
     ctx = await resolve_generation_context(
         project_name,
         payload,
         project=project,
         user_id=user_id,
-        video=VideoLaneRequest(capability="r2v"),
+        video=VideoLaneRequest(capability=execution_capability),
     )
     generator = ctx.generator
     video = ctx.video
@@ -642,6 +685,12 @@ async def execute_reference_video_task(
     # 时长，即回退路径本身的行为），不影响当前生成结果，不 fail-fast。
     if task_id is not None:
         await _persist_effective_duration(task_id, effective_duration)
+        # task.provider_id 列与 payload 锁定键都是入队时按 unit 声明近似的投影，执行按
+        # 解析后实际参考图分桶后两者可能与实际分裂（ad 声明了参考但资产全缺图：投影
+        # r2v、执行降级 i2v）。resume 解析里锁定键优先于列注入——提交前把实际执行身份
+        # 写回列与锁定键，否则重启后会按陈旧身份去轮实际 backend 的 provider_job_id，
+        # 已提交任务的恢复丢失。
+        await _persist_execution_identity(task_id, video.provider_model, execution_capability)
 
     # 6. 渲染 prompt：ad 与 narration/drama 共用三段论渲染管线（`<X>@图片N` 绑定 + 声音声明 +
     #    分镜段 + 约束包），差异只在输入形态（见 `lib.reference_video.prompt_render` 模块
@@ -712,7 +761,15 @@ async def execute_reference_video_task(
         video_uri=video_uri,
         versions=generator.versions,
         warnings=warnings,
+        source_signature=source_signature if is_ad else _COMPUTE_SOURCE_SIGNATURE,
     )
+
+
+class _ComputeSourceSignature:
+    """``apply_unit_video_assets`` 的 ``source_signature`` 缺省哨兵：按剧本现算。"""
+
+
+_COMPUTE_SOURCE_SIGNATURE = _ComputeSourceSignature()
 
 
 def apply_unit_video_assets(
@@ -722,7 +779,8 @@ def apply_unit_video_assets(
     video_uri: str | None,
     thumb_rel: str | None,
     generated_at: str | None = None,
-) -> None:
+    source_signature: str | None | _ComputeSourceSignature = _COMPUTE_SOURCE_SIGNATURE,
+) -> str | None:
     """在剧本 dict 上写回 unit.generated_assets（video_clip / video_uri / video_thumbnail / status）。
 
     生成 finalize 与版本还原共用，保证两条路径写出的字段口径一致。unit 在
@@ -735,12 +793,21 @@ def apply_unit_video_assets(
 
     ``generated_at`` 缺省戳当前时间（生成 finalize）；版本还原传入被还原版本的入库时间，
     使「片段是否早于当前参考音频设置」按还原回来的旧内容成立，而不是被还原动作洗成最新。
+
+    ``source_signature`` 仅作用于 ad 派生索引（``reference_units``）条目：产物来源
+    签名是读时 stale 判定的比较基准。缺省按本剧本现算（finalize 兜底口径——上传与
+    resume 拿不到生成时的编排快照，按写回时刻的编排认定；剧本恰在这期间被编辑时，
+    偏离的产物会被盖上新编排的签名而判为非 stale，是已知漏报面、不会误报）；生成 finalize 传入执行期
+    快照的签名（产物真正依据的编排，剧本可能在生成期间被编辑）；版本还原传入被还原
+    版本档案里的签名，无档案传 None 清除（来源不可考，按存量产物口径视为非 stale）。
+    历史剧本残留的 stale 键随写回顺带剥除。返回写入的签名（narration/drama
+    的 ``video_units`` 条目不承载签名，返回 None）。
     """
-    unit_lists = [script.get(key) for key in ("video_units", "reference_units")]
-    candidates = [units for units in unit_lists if isinstance(units, list)]
+    unit_lists = [(key, script.get(key)) for key in ("video_units", "reference_units")]
+    candidates = [(key, units) for key, units in unit_lists if isinstance(units, list)]
     if not candidates:
         raise ScriptEditError("video_units / reference_units 必须是 list", key="script_edit_unit_lists_invalid")
-    for units in candidates:
+    for key, units in candidates:
         for u in units:
             if not isinstance(u, dict) or u.get("unit_id") != resource_id:
                 continue
@@ -758,7 +825,19 @@ def apply_unit_video_assets(
             else:
                 ga.pop("video_thumbnail", None)
             ga["status"] = "completed"
-            return
+            u.pop("stale", None)
+            if key != "reference_units":
+                return None
+            resolved_signature = (
+                ad_unit_source_signature(script, u)
+                if isinstance(source_signature, _ComputeSourceSignature)
+                else source_signature
+            )
+            if resolved_signature:
+                ga["source_signature"] = resolved_signature
+            else:
+                ga.pop("source_signature", None)
+            return resolved_signature
     raise KeyError(resource_id)
 
 
@@ -773,8 +852,14 @@ async def _finalize_reference_video_unit(
     video_uri: str | None,
     versions: VersionManager,
     warnings: list[dict[str, Any]] | None = None,
+    source_signature: str | None | _ComputeSourceSignature = _COMPUTE_SOURCE_SIGNATURE,
 ) -> dict[str, Any]:
-    """Normal + resume 共用：抽缩略图、写 unit.generated_assets、返回 result dict。"""
+    """Normal + resume + 上传共用：抽缩略图、写 unit.generated_assets、返回 result dict。
+
+    ``source_signature``：正常生成传执行期快照的签名，resume / 上传按缺省口径写回时现算
+    （见 ``apply_unit_video_assets``）。写入的签名同步补进对应版本记录，供版本还原取回
+    该版产物的来源基准。
+    """
     warnings = warnings if warnings is not None else []
 
     thumb_dir = project_path / "reference_videos" / "thumbnails"
@@ -786,16 +871,39 @@ async def _finalize_reference_video_unit(
         thumb_path.unlink(missing_ok=True)
         thumb_rel = None
 
-    def _update_unit_assets():
+    def _update_unit_assets() -> str | None:
         pm = get_project_manager()
         # 资产回写热路径：只动 unit.generated_assets，结构不可能因此变坏，豁免结构校验。
         with pm.locked_script(project_name, script_file, validate=False) as script:
-            apply_unit_video_assets(script, resource_id, video_uri=video_uri, thumb_rel=thumb_rel)
+            return apply_unit_video_assets(
+                script, resource_id, video_uri=video_uri, thumb_rel=thumb_rel, source_signature=source_signature
+            )
 
-    await asyncio.to_thread(_update_unit_assets)
+    written_signature = await asyncio.to_thread(_update_unit_assets)
+    if written_signature:
+        # 版本记录是签名的还原档案：补写发生在产物与剧本都已落盘之后，失败只降级
+        # 还原时的基准精度（按无档案口径清除签名），不足以推翻已成功的 finalize
+        # 结果——versions.json 读写异常在此吞掉并记日志，不让它把成功的付费生成
+        # 报成失败、诱发重试再生成一个版本。
+        try:
+            await asyncio.to_thread(
+                versions.update_version_metadata,
+                "reference_videos",
+                resource_id,
+                version,
+                source_signature=written_signature,
+            )
+        except Exception:
+            logger.warning("来源签名补写版本记录失败 resource_id=%s version=%s", resource_id, version, exc_info=True)
 
     def _latest_created_at() -> str | None:
-        history = versions.get_versions("reference_videos", resource_id) or {}
+        # 与上面的档案补写读同一个 versions.json，同样在产物与剧本落盘之后：文件不可读时
+        # 让结果少一个时间戳，而不是把已成功的付费生成报成失败——只吞掉护栏才成立。
+        try:
+            history = versions.get_versions("reference_videos", resource_id) or {}
+        except Exception:
+            logger.warning("读取版本记录取入库时间失败 resource_id=%s", resource_id, exc_info=True)
+            return None
         records = history.get("versions") or []
         if not records:
             return None

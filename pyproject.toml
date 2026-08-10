@@ -1,7 +1,7 @@
 [project]
 name = "shotwise"
 # managed by release-please — do not bump manually
-version = "0.24.0"
+version = "0.25.0"
 description = "Shotwise AI Production Studio"
 readme = "README.md"
 requires-python = ">=3.12"

@@ -130,6 +130,54 @@ describe("AdReferenceVideoCanvas", () => {
     });
   });
 
+  it("镜头参考集变化后重拉分组，正文变化不重拉", async () => {
+    // stale 是后端读时按镜头 ID 序列 + 参考集派生的，两者变了才需要重拉刷新角标；
+    // 正文/时长不进该坐标系，改文案重拉只是白白打接口。
+    mockedAPI.listAdReferenceUnits.mockResolvedValue({ units: [makeUnit()] });
+    const { rerender } = renderCanvas();
+    await waitFor(() => expect(mockedAPI.listAdReferenceUnits).toHaveBeenCalledTimes(1));
+
+    const textEdited = SHOTS.map((s) => ({ ...s, voiceover_text: `改了 ${s.shot_id}` }));
+    rerender(
+      <AdReferenceVideoCanvas
+        projectName="demo"
+        episode={1}
+        episodeTitle="广告片"
+        shots={textEdited}
+        hasScript
+        scriptFile="episode_1.json"
+      />,
+    );
+    await waitFor(() => expect(mockedAPI.listAdReferenceUnits).toHaveBeenCalledTimes(1));
+
+    // 缺省 ↔ 空数组是同一语义，不该被当成参考集变化
+    const emptied = SHOTS.map((s) => ({ ...s, scenes: [], props: [] }));
+    rerender(
+      <AdReferenceVideoCanvas
+        projectName="demo"
+        episode={1}
+        episodeTitle="广告片"
+        shots={emptied}
+        hasScript
+        scriptFile="episode_1.json"
+      />,
+    );
+    await waitFor(() => expect(mockedAPI.listAdReferenceUnits).toHaveBeenCalledTimes(1));
+
+    const refEdited = SHOTS.map((s, i) => (i === 0 ? { ...s, products_in_shot: ["按摩仪"] } : s));
+    rerender(
+      <AdReferenceVideoCanvas
+        projectName="demo"
+        episode={1}
+        episodeTitle="广告片"
+        shots={refEdited}
+        hasScript
+        scriptFile="episode_1.json"
+      />,
+    );
+    await waitFor(() => expect(mockedAPI.listAdReferenceUnits).toHaveBeenCalledTimes(2));
+  });
+
   it("剧本未生成时不拉取分组并给出指引", async () => {
     renderCanvas({ shots: [], hasScript: false });
 
@@ -389,6 +437,52 @@ describe("AdReferenceVideoCanvas", () => {
     expect(await screen.findByText(/需重新派生/)).toBeInTheDocument();
     expect(screen.getByText(/镜头已删除/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /生成视频/ })).toBeDisabled();
+  });
+
+  it("stale 分组展示剧本已变更角标且生成入口保持可用", async () => {
+    // 与索引悬空不同：stale 只是产物落后于剧本编排的提示，重新生成正是建议动作，不禁用
+    mockedAPI.listAdReferenceUnits.mockResolvedValue({
+      units: [
+        makeUnit({
+          stale: true,
+          generated_assets: { video_clip: "reference_videos/E1U1.mp4", status: "completed" },
+        }),
+      ],
+    });
+
+    renderCanvas();
+
+    expect(await screen.findByText(/剧本已变更，建议重新生成/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /重新生成/ })).toBeEnabled();
+  });
+
+  it("非 stale 分组不展示剧本已变更角标", async () => {
+    mockedAPI.listAdReferenceUnits.mockResolvedValue({
+      units: [makeUnit({ generated_assets: { video_clip: "reference_videos/E1U1.mp4", status: "completed" } })],
+    });
+
+    renderCanvas();
+
+    await screen.findByRole("button", { name: /重新生成/ });
+    expect(screen.queryByText(/剧本已变更，建议重新生成/)).not.toBeInTheDocument();
+  });
+
+  it("索引悬空的 stale 分组只提示重新派生", async () => {
+    // 悬空禁用生成入口，此时「建议重新生成」无从执行，只留悬空提示
+    mockedAPI.listAdReferenceUnits.mockResolvedValue({
+      units: [
+        makeUnit({
+          shot_ids: ["E1S1", "E1S9"],
+          stale: true,
+          generated_assets: { video_clip: "reference_videos/E1U1.mp4", status: "completed" },
+        }),
+      ],
+    });
+
+    renderCanvas();
+
+    expect(await screen.findByText(/需重新派生/)).toBeInTheDocument();
+    expect(screen.queryByText(/剧本已变更，建议重新生成/)).not.toBeInTheDocument();
   });
 
   it("加载失败展示错误而非空态提示", async () => {

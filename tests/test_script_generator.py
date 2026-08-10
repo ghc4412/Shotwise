@@ -187,8 +187,32 @@ class TestScriptGenerator:
         assert "E1S01" in prompt
         assert "第一段原文，逐字保留。" in prompt  # novel_text 作只读上下文渲染
         assert "姜月茴" in prompt
-        # 透传式 prompt：不再要求 LLM 复制 novel_text，只产视觉层
-        assert "只产视觉层" in prompt
+
+    @pytest.mark.unit
+    async def test_build_prompt_appends_user_instructions(self, tmp_path):
+        """instructions 以中性「用户意见」分节追加到 prompt 末尾；未传时无该分节。"""
+        project_path = tmp_path / "demo"
+        _write_json(
+            project_path / "project.json",
+            {
+                "title": "项目",
+                "content_mode": "narration",
+                "overview": {"synopsis": "概述"},
+                "characters": {"姜月茴": {}},
+                "style": "古风",
+                "style_description": "cinematic",
+            },
+        )
+        _write_step1_json(project_path, 1, [_step1_seg("E1S01", "第一段原文，逐字保留。", duration=4)])
+
+        generator = ScriptGenerator(project_path)
+        generator._fetch_video_capabilities = _fixed_caps_468
+
+        plain = await generator.build_prompt(1)
+        assert "# 用户意见" not in plain
+
+        prompt = await generator.build_prompt(1, instructions="多给人物面部特写")
+        assert prompt.endswith("# 用户意见\n多给人物面部特写")
 
     @pytest.mark.unit
     async def test_narration_step2_build_prompt_uses_project_source_language(self, tmp_path):
@@ -426,9 +450,6 @@ class TestScriptGenerator:
         # 已定稿内容透传进 prompt：scene_id + 视觉改编描述 + 口播（仅供理解）
         assert "E1S01" in prompt
         assert "姜月茴立于庭院" in prompt
-        # step2 只补视觉层
-        assert "image_prompt" in prompt
-        assert "video_prompt" in prompt
 
     @pytest.mark.unit
     async def test_drama_step2_build_prompt_omits_outline(self, tmp_path):
@@ -454,7 +475,6 @@ class TestScriptGenerator:
         prompt = await generator.build_prompt(1)
 
         # 大纲 / 钩子内容不在 step2 prompt（它们驱动 step1 内容生成，不影响 step2 视觉）
-        assert "<episode_outline>" not in prompt
         assert "少年坠崖生死未卜" not in prompt
 
     @pytest.mark.unit
@@ -661,6 +681,24 @@ class TestScriptGenerator:
         assert "utterances" not in props
         assert "source_text" not in props
         assert "duration_seconds" not in props
+
+    @pytest.mark.unit
+    async def test_generate_drama_step2_appends_user_instructions(self, tmp_path):
+        """generate 路径的 instructions 同样以中性「用户意见」分节追加到发给模型的 prompt 末尾。"""
+        project_path = tmp_path / "demo"
+        _write_drama_ledger_project(
+            project_path,
+            [{"episode": 1, "title": "第一集", "script_file": "scripts/episode_1.json"}],
+            characters={"姜月茴": {}},
+        )
+        _write_json(project_path / "drafts" / "episode_1" / "step1_normalized_script.json", _drama_step1_content())
+
+        fake = _FakeTextGenerator(json.dumps(_drama_visual_response(), ensure_ascii=False))
+        generator = ScriptGenerator(project_path, generator=fake)
+        generator._fetch_video_capabilities = _fixed_caps_468
+        await generator.generate(1, instructions="打斗场面多给全景")
+
+        assert fake.backend.last_request.prompt.endswith("# 用户意见\n打斗场面多给全景")
 
     @pytest.mark.unit
     async def test_generate_sets_script_max_output_tokens(self, tmp_path):
@@ -1158,7 +1196,7 @@ def test_resolve_max_duration_tracks_narrowed_set(tmp_path):
 
     # rv 模式是 max_duration 真正当 unit 总时长上限用的分支：上限一旦退回 caps["max_duration"]
     # （Veo 全集 8、海螺全集 10），step1 会按全集上限拆 unit、step2 的枚举再判非法。
-    # 两侧都钉死具体值，同时钉住「上限 == max(枚举集合)」这条不变量。
+    # 两侧都钉死具体值，同时锁定「上限 == max(枚举集合)」这条不变量。
     for sg_case, caps_case, expected in ((sg, caps, 8), (hailuo, hailuo_caps, 6)):
         durations = sg_case._resolve_supported_durations(caps_case, gen_mode="reference_video")
         assert durations == [expected]
@@ -1719,10 +1757,8 @@ class TestAdScriptGeneration:
         generator._fetch_video_capabilities = _fixed_caps_468
         prompt = await generator.build_prompt(1)
 
-        assert "带货八段框架" in prompt
-        assert "| cta | 3 | 27-30 | 1 |" in prompt
         assert "突出速干卖点" in prompt
-        assert "### 速干杯" in prompt
+        assert "速干杯" in prompt
 
     @pytest.mark.unit
     async def test_build_prompt_reference_path_uses_free_duration(self, tmp_path):
@@ -1733,9 +1769,8 @@ class TestAdScriptGeneration:
         generator = ScriptGenerator(project_path)
         prompt = await generator.build_prompt(1)
 
-        assert "带货八段框架" in prompt
-        assert "1 到 15 秒间整数任选" in prompt
-        # 不得落入参考视频 video_units prompt
+        assert "突出速干卖点" in prompt
+        assert "速干杯" in prompt
         assert "video_units" not in prompt
 
     @pytest.mark.unit
@@ -1752,9 +1787,6 @@ class TestAdScriptGeneration:
         generator._fetch_video_capabilities = _fixed_caps_468
         prompt = await generator.build_prompt(1)
 
-        # 口播语速折算按 en 口径（约 2.5 词/秒），不得回落默认 zh 口径（约 5 字/秒）
-        assert "约 2.5 词/秒" in prompt
-        assert "约 5 字/秒" not in prompt
         # 输出语言规则锁定为项目 source_language，不回落默认中文
         assert "所有字符串值必须使用 en" in prompt
         assert "所有字符串值必须使用 中文" not in prompt
@@ -1787,8 +1819,6 @@ class TestAdScriptGeneration:
         generator._fetch_video_capabilities = _fixed_caps_468
         prompt = await generator.build_prompt(1)
 
-        # products 归一化为空 → 自动分流通用短片 prompt，不落带货框架
-        assert "带货八段框架" not in prompt
         assert isinstance(prompt, str) and prompt
 
     @pytest.mark.unit

@@ -10,6 +10,9 @@ ad 剧本骨架唯一（shots 是内容唯一真相，见 docs/adr/0033）；ref
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 from lib.asset_types import normalize_asset_name
 from lib.script_models import GeneratedAssets, ad_shot_duration_seconds, get_generated_assets
 
@@ -29,8 +32,12 @@ _REFERENCE_FIELDS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _unit_references(shots: list[dict]) -> list[dict]:
+def ad_unit_references(shots: list[dict]) -> list[dict]:
     """unit 参考集：成员镜头参考的并集，产品在前，类型内按首次出现顺序去重。
+
+    shots 是内容唯一真相：派生索引、来源签名与执行期请求都从成员镜头现算参考集，
+    三处同源——索引里持久化的 ``references`` 只是展示用缓存，镜头参考字段被编辑后
+    未重新派生时它会落后于镜头，拿它送生成会让产物依据的参考与签名记录的不一致。
 
     去重按归一名（:func:`lib.asset_types.normalize_asset_name`）而非裸字符串：同一资产在不同
     镜头里可能以 NFC/NFD 两种等价编码写入，裸比对判不相等会让它派生出两条 reference——画布
@@ -68,7 +75,7 @@ def derive_ad_reference_units(
     时长之和不超过该上限。单镜头自身超上限时无法再拆，独立成 unit，留给
     执行层 clamp + warning 软处理。
 
-    每个 unit 继承成员镜头的参考集（产品全量且绝对优先，见 ``_unit_references``）。
+    每个 unit 继承成员镜头的参考集（产品全量且绝对优先，见 ``ad_unit_references``）。
 
     Returns:
         ``[{"unit_id": "E{episode}U{n}", "shot_ids": [...], "references": [...]}, ...]``
@@ -106,18 +113,39 @@ def derive_ad_reference_units(
         {
             "unit_id": f"E{episode}U{n}",
             "shot_ids": [s["shot_id"] for s in group],
-            "references": _unit_references(group),
+            "references": ad_unit_references(group),
         }
         for n, group in enumerate(groups, start=1)
     ]
 
 
+def _reference_signature(entries: object) -> list[tuple[str, str]]:
+    """references 的比较坐标系：(type, NFC 归一名) 有序列表。
+
+    落盘条目保留镜头里的原始编码形式（见 ``ad_unit_references``），同一资产可能以
+    NFC/NFD 两种等价形式出现——参考集是否变化必须按归一名判定，裸字节比较会把
+    编码形式差异误判为语义变化。脏条目（非 dict、非字符串字段）确定性跳过/降级，
+    与派生侧对脏数据的稳健口径一致。
+    """
+    if not isinstance(entries, list):
+        return []
+    signature: list[tuple[str, str]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        signature.append((str(entry.get("type")), normalize_asset_name(name) if isinstance(name, str) else str(name)))
+    return signature
+
+
 def merge_ad_reference_units(existing: object, derived: list[dict]) -> list[dict]:
     """把新派生的分组与剧本中已持久化的索引合并（纯函数，不改入参）。
 
-    unit 的身份是「位置 + 成员 + 参考集」：``unit_id``、``shot_ids``、``references``
-    全部一致时沿用旧条目的 ``generated_assets``（产物文件按 unit_id 命名，三者
-    任一变化都意味着旧产物指针不再可信，重置为全新待生成状态）。
+    剧本编辑只改剧本：合并按 ``unit_id`` 沿用旧条目的 ``generated_assets``，
+    从不清空产物指针——产物内容与指针只由成功的生成覆盖（finalize 单一写点）。
+    合并不判定产物是否过期：stale 是读时派生属性（``is_ad_unit_stale``，比较
+    当前编排签名与产物落盘签名），不落盘；旧条目上残留的历史标记位随条目重建
+    自然丢弃。
     """
     existing_by_id: dict[str, dict] = {}
     if isinstance(existing, list):
@@ -128,16 +156,97 @@ def merge_ad_reference_units(existing: object, derived: list[dict]) -> list[dict
     merged: list[dict] = []
     for unit in derived:
         prev = existing_by_id.get(unit["unit_id"])
-        assets = None
-        if (
-            isinstance(prev, dict)
-            and prev.get("shot_ids") == unit["shot_ids"]
-            and prev.get("references") == unit["references"]
-        ):
-            # 损坏值经 get_generated_assets 归一化为空 dict，与下面的 `assets or 模板` 汇合到同一结果。
-            assets = dict(get_generated_assets(prev))
+        # 损坏值经 get_generated_assets 归一化为空 dict，与下面的 `assets or 模板` 汇合到同一结果。
+        assets = dict(get_generated_assets(prev)) if isinstance(prev, dict) else {}
         merged.append({**unit, "generated_assets": assets or GeneratedAssets().model_dump()})
     return merged
+
+
+def ad_unit_source_signature(script: dict, unit: dict) -> str:
+    """unit 的编排 + 参考集签名：规范化 JSON 的 sha256（十六进制）。
+
+    比较坐标系与合并派生同源：只含成员镜头 ID 序列与从 shots（内容唯一真相）
+    现算的参考集（NFC 归一），镜头正文与时长不进签名——纯文案编辑不作废产物。
+    成员镜头缺失（索引悬空）时按现存成员计算：与生成时全员在场的签名必然不同，
+    读时自然判为偏离。
+    """
+    return _source_signature(ad_shots_by_id(script), unit)
+
+
+def _source_signature(by_id: dict[str, dict], unit: dict) -> str:
+    """按已建好的镜头索引算签名——批量判定共用一份索引，不逐 unit 重建。"""
+    # shot_ids 整体非 list（Agent 裸写的脏索引）与元素非字符串同口径降级为空成员集，
+    # 而不是让读时派生在 GET /units、导出预检这些只读路径上抛 TypeError。
+    shot_ids = unit.get("shot_ids")
+    member_ids = [
+        sid for sid in (shot_ids if isinstance(shot_ids, list) else []) if isinstance(sid, str) and sid in by_id
+    ]
+    payload = {
+        "shot_ids": member_ids,
+        "references": _reference_signature(ad_unit_references([by_id[sid] for sid in member_ids])),
+    }
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def is_ad_unit_stale(script: dict, unit: dict) -> bool:
+    """读时派生 stale：产物落盘签名与当前编排签名不一致即偏离。
+
+    无成片谈不上产物过期；无签名的存量产物视为非 stale（签名机制引入前生成，
+    无从比较），随下一次生成补齐签名。
+    """
+    return _is_stale(ad_shots_by_id(script), unit)
+
+
+def _is_stale(by_id: dict[str, dict], unit: dict) -> bool:
+    """按已建好的镜头索引判 stale，语义同 ``is_ad_unit_stale``。"""
+    assets = get_generated_assets(unit)
+    if not assets.get("video_clip"):
+        return False
+    recorded = assets.get("source_signature")
+    if not isinstance(recorded, str) or not recorded:
+        return False
+    return recorded != _source_signature(by_id, unit)
+
+
+def annotate_ad_unit_staleness(script: dict, units: object) -> list:
+    """给对外透出的 unit 列表注入读时派生的 ``stale``（返回浅拷贝，不落盘）。
+
+    剧本中的条目不承载 stale——历史剧本残留的 stale 键在此剥除，偏离的 unit
+    仅在返回副本上携带 ``stale: True``（与旧口径一致：非 stale 不带该键）。
+    脏条目（非 dict）原样透传，交由消费方的既有降级分支处理。
+
+    镜头索引在进入循环前建一次并贯穿全部 unit：逐 unit 走
+    ``is_ad_unit_stale`` 会按 unit 数重复扫描 shots。
+    """
+    if not isinstance(units, list):
+        return []
+    by_id = ad_shots_by_id(script)
+    annotated: list = []
+    for unit in units:
+        if not isinstance(unit, dict):
+            annotated.append(unit)
+            continue
+        entry = {k: v for k, v in unit.items() if k != "stale"}
+        if _is_stale(by_id, unit):
+            entry["stale"] = True
+        annotated.append(entry)
+    return annotated
+
+
+def ad_stale_unit_ids(script: dict, units: object) -> list[str]:
+    """偏离当前编排的 unit_id 清单，判定与 ``annotate_ad_unit_staleness`` 同源。
+
+    只要 id 清单的调用方走这里，就与注入路径共用同一份镜头索引，也不必为读一个
+    布尔位构造整份对外副本。清单是要给人看的（智能体把它拼进提示文案），无
+    ``unit_id`` 的脏条目按跳过处理——转成字符串会让 ``None`` 混进去冒充真实 unit ID。
+    """
+    if not isinstance(units, list):
+        return []
+    by_id = ad_shots_by_id(script)
+    return [
+        u["unit_id"] for u in units if isinstance(u, dict) and isinstance(u.get("unit_id"), str) and _is_stale(by_id, u)
+    ]
 
 
 def sync_ad_reference_units(
@@ -148,8 +257,9 @@ def sync_ad_reference_units(
 ) -> list[dict]:
     """从 shots 重新派生分组并写回 ``script["reference_units"]``，返回合并后的索引。
 
-    shots 是内容唯一真相：索引始终由本函数从 shots 重算，成员与参考集未变的
-    unit 保留既有 ``generated_assets``（见 ``merge_ad_reference_units``）。
+    shots 是内容唯一真相：索引始终由本函数从 shots 重算，``generated_assets``
+    按 unit_id 沿用、从不清空；产物是否偏离编排由读取侧派生
+    （见 ``is_ad_unit_stale``），本函数不打标。
     """
     derived = derive_ad_reference_units(script.get("shots"), episode=episode, max_unit_duration=max_unit_duration)
     merged = merge_ad_reference_units(script.get("reference_units"), derived)

@@ -42,11 +42,14 @@ from lib.episode_ledger import (
 from lib.episode_paths import episode_script_relpath
 from lib.path_safety import PathTraversalError, safe_join
 from lib.project_manager import ProjectManager, resolve_source_kind
+from lib.prompt_builders_script import USER_INSTRUCTIONS_HEADER
 from lib.text_backends.base import (
     DEFAULT_MAX_OUTPUT_TOKENS,
+    StructuredOutputExhaustedError,
     TextGenerationRequest,
     TextOutputTruncatedError,
     TextTaskType,
+    truncate_for_log,
 )
 from lib.text_generator import TextGenerator
 from lib.text_metrics import count_reading_units, reading_unit_noun
@@ -413,9 +416,9 @@ class EpisodePlanner:
         当前源文件已无剩余有效内容时按文件名序自动推进到下一个源文件；
         ``source_exhausted=True`` 表示全部源文件都已规划完毕。
 
-        ``instructions`` 是可选的用户分集偏好（如按章节对齐切分），strip 后为空视同未传；
-        非空则以「必须全部落实」的强度注入规划 prompt，优先于默认剧情弧完整性。规划按窗口
-        分多批、指令不持久化，调用方须在每批 plan 调用都重复带上。
+        ``instructions`` 是可选的用户分集意见（如按章节对齐切分），strip 后为空视同未传；
+        非空则原样注入规划 prompt 的中性「用户意见」分节，遵循强度由意见正文自行表达。规划按窗口
+        分多批、意见不持久化，调用方须在每批 plan 调用都重复带上。
 
         新提交的集号若在磁盘上已有下游产物（剧本/step1/媒体，见
         :func:`lib.episode_ledger.has_downstream_products`），说明该集实际已被消费过
@@ -606,6 +609,10 @@ class EpisodePlanner:
         结构化输出被输出上限截断时 :class:`TextOutputTruncatedError` 直接短路本循环——
         重发同一份必然再截断的请求没有意义；追加本规划器特有的杠杆提示（调小窗口字数 /
         每批集数）后转为 :class:`EpisodePlanningError` 冒泡（见 docs/adr/0044）。
+
+        后端结构化输出降级链耗尽的 :class:`StructuredOutputExhaustedError` 同样短路本循环，
+        转为 :class:`EpisodePlanningError`，让智能体拿到「供应商结构化输出能力不足」的可读
+        话术而非后端内部异常原文。
         """
         if self.generator is None:
             raise RuntimeError("TextGenerator 未初始化，请使用 EpisodePlanner.create() 工厂方法")
@@ -625,6 +632,9 @@ class EpisodePlanner:
                     f"{exc}也可调小项目设置 planning_window_chars（单批窗口字数）或 "
                     "planning_max_episodes（单批集数上限）以缩小本批输出体量后重试。"
                 ) from exc
+            except StructuredOutputExhaustedError as exc:
+                # 后端的降级链已把各档与档内重试都走完，本层再重试只是重复同一条必败路径。
+                raise EpisodePlanningError(str(exc)) from exc
             try:
                 draft = self._parse_draft(result.text, draft_model)
                 drafts = list(getattr(draft, "episodes"))
@@ -651,11 +661,13 @@ class EpisodePlanner:
         try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
+            logger.warning("分集规划输出不是合法 JSON（%s）；模型原始输出：%s", exc, truncate_for_log(response_text))
             raise _DraftRejected([f"输出不是合法 JSON：{exc}"]) from exc
         try:
             return draft_model.model_validate(data)
         except ValidationError as exc:
             issues = "; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()[:5])
+            logger.warning("分集规划输出不符合 schema（%s）；模型原始输出：%s", issues, truncate_for_log(response_text))
             raise _DraftRejected([f"输出不符合 schema：{issues}"]) from exc
 
     def _effective_start(self, project: Mapping[str, Any]) -> tuple[str, int]:
@@ -974,9 +986,9 @@ def _build_planning_prompt(
 ) -> str:
     """规划 prompt。仅面向文本模型，不做 i18n。
 
-    ``instructions`` 非空时以「必须全部落实」的强度注入一个用户意见分节；为空则不注入，
-    prompt 与无指令时逐字一致。``progress`` 非 None 时注入「全局进度」分节（调用方只在
-    instructions 非空时传入）。
+    ``instructions`` 非空时注入一个中性的「用户意见」分节（遵循强度由意见正文自行表达，
+    模板不加强度限定词）；为空则不注入，prompt 与无意见时逐字一致。``progress`` 非 None 时
+    注入「全局进度」分节（调用方只在 instructions 非空时传入）。
     """
     overview = project.get("overview") or {}
     unit_name = reading_unit_noun(_language_of(project))
@@ -1010,7 +1022,7 @@ def _build_planning_prompt(
             lines.append(f"- 第 {entry.get('episode')} 集《{title}》 钩子：{hook}")
 
     if instructions:
-        lines += ["", "# 用户规划意见（必须全部落实）", instructions]
+        lines += ["", USER_INSTRUCTIONS_HEADER, instructions]
     if progress is not None:
         lines += [
             "",
