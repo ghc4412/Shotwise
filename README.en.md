@@ -39,6 +39,12 @@
 
 ---
 
+## Interface and Themes
+
+Shotwise uses a production-focused workspace layout across the project lobby, studio workspace, and login page. Use the sun/moon button in the top-right utility area to switch between light and dark mode. The preference is stored in the current browser and restored after refresh.
+
+The browser tab, PWA manifest, login page, and project lobby share the `shotwise-mark.svg` brand mark.
+
 ## Core Features
 
 <table>

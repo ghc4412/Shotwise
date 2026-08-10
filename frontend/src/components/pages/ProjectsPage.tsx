@@ -29,6 +29,7 @@ import { CreateProjectModal } from "./CreateProjectModal";
 import { OpenClawModal } from "./OpenClawModal";
 import { rememberAssetLibraryReturnTo } from "./AssetLibraryPage";
 import { ICON_BTN_FILLED_CLS } from "@/components/ui/darkroom-tokens";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import {
   ProjectCard,
   Poster,
@@ -391,7 +392,7 @@ function TopBar({
   const { t } = useTranslation(["common", "dashboard", "assets"]);
   return (
     <div
-      className="sticky top-0 z-30"
+      className="lobby-topbar sticky top-0 z-30"
       style={{
         background:
           "linear-gradient(180deg, oklch(0.20 0.011 265 / 0.55), oklch(0.15 0.010 265 / 0.45))",
@@ -405,7 +406,7 @@ function TopBar({
       <div className="mx-auto flex max-w-[1320px] items-center gap-4 px-6 py-3">
         <div className="flex items-center gap-2.5">
           <img
-            src="/android-chrome-192x192.png"
+            src="/shotwise-mark.svg"
             alt={BRAND.name}
             className="h-8 w-8 rounded-lg"
           />
@@ -477,6 +478,7 @@ function TopBar({
             {t("dashboard:create_project")}
           </button>
           <span aria-hidden className="mx-1 h-5 w-px bg-hairline-soft" />
+          <ThemeToggle compact />
           <button
             type="button"
             onClick={onOpenClaw}
@@ -671,7 +673,7 @@ function FilterPills({ active, onChange, counts, phaseLabels, t }: FilterPillsPr
 
   return (
     <div
-      className="sticky z-20 border-b border-hairline backdrop-blur-md"
+      className="lobby-filterbar sticky z-20 border-b border-hairline backdrop-blur-md"
       style={{
         top: "var(--lobby-topbar-h, 57px)",
         background:
@@ -953,13 +955,11 @@ export function ProjectsPage() {
 
   return (
     <div
-      className="relative min-h-screen text-text"
+      className="lobby-shell relative min-h-screen text-text"
       style={
         {
           // FilterPills 的 sticky top 读这个变量；TopBar = logo h-8 (32) + py-3 (24) + 1px border
           "--lobby-topbar-h": "57px",
-          background:
-            "radial-gradient(1100px 540px at 8% -10%, oklch(0.32 0.05 295 / 0.28), transparent 55%), radial-gradient(900px 500px at 100% 110%, oklch(0.26 0.04 260 / 0.25), transparent 55%), linear-gradient(180deg, var(--color-bg-grad-a), var(--color-bg-grad-b))",
         } as CSSProperties
       }
     >

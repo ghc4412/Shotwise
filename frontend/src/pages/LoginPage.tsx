@@ -9,6 +9,7 @@ import { safeReturnPath } from "@/utils/safe-url";
 import { BRAND } from "@/branding";
 import type { LoginResponse, ErrorResponse } from "@/api";
 import { FieldLabel } from "@/components/ui/FieldLabel";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import {
   ACCENT_BTN_CLS,
   ACCENT_BUTTON_STYLE,
@@ -75,6 +76,9 @@ export function LoginPage() {
       data-testid="login-page"
       className="relative flex min-h-screen items-center justify-center overflow-hidden bg-bg px-4 text-text"
     >
+      <div className="absolute right-5 top-5">
+        <ThemeToggle compact />
+      </div>
       <div aria-hidden className="pointer-events-none absolute inset-0" style={AMBIENT_GLOW_STYLE} />
       <div aria-hidden className="pointer-events-none absolute inset-0" style={POSTER_GRID_STYLE} />
 
@@ -87,7 +91,7 @@ export function LoginPage() {
             system · login
           </div>
           <h1 className="font-editorial mt-1 flex items-center justify-center gap-2 text-[28px] tracking-tight text-text">
-            <img src="/android-chrome-192x192.png" alt="" aria-hidden className="h-7 w-7" />
+            <img src="/shotwise-mark.svg" alt="" aria-hidden className="h-7 w-7" />
             <span>{BRAND.name}</span>
           </h1>
         </div>

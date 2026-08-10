@@ -5,3 +5,4 @@ export { DropdownPill } from "./DropdownPill";
 export { ImageFlipReveal } from "./ImageFlipReveal";
 export { InlineWarning } from "./InlineWarning";
 export { ProviderModelSelect } from "./ProviderModelSelect";
+export { ThemeToggle } from "./ThemeToggle";

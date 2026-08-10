@@ -50,4 +50,6 @@ export default {
   'not_found_title': '页面未找到',
   'not_found_back': '返回首页',
   'recommended': '推荐',
+  'theme_light': '切换为日间模式',
+  'theme_dark': '切换为夜间模式',
 } satisfies Record<keyof typeof enCommon, string>;

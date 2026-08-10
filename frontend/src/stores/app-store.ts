@@ -20,6 +20,9 @@ interface FocusedContext {
 
 const ALL_ENTITIES_REVISION_KEY = "__all__";
 
+export type AppTheme = "dark" | "light";
+const APP_THEME_STORAGE_KEY = "shotwise-theme";
+
 export const ASSISTANT_PANEL_DEFAULT_WIDTH = 505;
 export const ASSISTANT_PANEL_MIN_WIDTH = 360;
 export const ASSISTANT_PANEL_MAX_WIDTH = 720;
@@ -46,7 +49,28 @@ function readPersistedAssistantPanelWidth(): number {
   }
 }
 
+function readPersistedTheme(): AppTheme {
+  if (typeof window === "undefined") return "dark";
+  try {
+    return window.localStorage.getItem(APP_THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
+
+function applyTheme(theme: AppTheme): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.classList.toggle("theme-light", theme === "light");
+  document.documentElement.classList.toggle("theme-dark", theme === "dark");
+  document.documentElement.style.colorScheme = theme;
+}
+
 interface AppState {
+  theme: AppTheme;
+  setTheme: (theme: AppTheme) => void;
+  toggleTheme: () => void;
+  initializeTheme: () => void;
+
   // Context focus (design doc "Context-Aware" feature)
   focusedContext: FocusedContext | null;
   setFocusedContext: (ctx: FocusedContext | null) => void;
@@ -147,6 +171,24 @@ function buildWorkspaceNotification(
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
+  theme: readPersistedTheme(),
+  setTheme: (theme) => {
+    applyTheme(theme);
+    set({ theme });
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(APP_THEME_STORAGE_KEY, theme);
+      }
+    } catch {
+      // localStorage may be unavailable; the in-memory theme remains active.
+    }
+  },
+  toggleTheme: () => {
+    const next = get().theme === "dark" ? "light" : "dark";
+    get().setTheme(next);
+  },
+  initializeTheme: () => applyTheme(get().theme),
+
   focusedContext: null,
   setFocusedContext: (ctx) => set({ focusedContext: ctx }),
 

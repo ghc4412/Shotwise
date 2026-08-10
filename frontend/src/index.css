@@ -81,12 +81,45 @@
 }
 
 /* 全局 body 背景 — radial+linear 复合梯度 */
-html { color-scheme: dark; }
+html {
+    color-scheme: dark;
+    --color-header: oklch(0.19 0.012 265 / 0.86);
+    --color-bg-glow-a: oklch(0.32 0.05 295 / 0.28);
+    --color-bg-glow-b: oklch(0.26 0.04 260 / 0.25);
+}
+
+html.theme-light {
+    color-scheme: light;
+    --color-bg: oklch(0.975 0.008 250);
+    --color-bg-grad-a: oklch(0.995 0.004 250);
+    --color-bg-grad-b: oklch(0.945 0.012 250);
+    --color-surface-2: oklch(0.985 0.006 250);
+    --color-header: oklch(0.995 0.004 250 / 0.9);
+    --color-bg-glow-a: oklch(0.84 0.05 220 / 0.2);
+    --color-bg-glow-b: oklch(0.88 0.05 165 / 0.16);
+    --color-hairline: oklch(0.58 0.022 250 / 0.28);
+    --color-hairline-strong: oklch(0.48 0.028 250 / 0.42);
+    --color-hairline-soft: oklch(0.58 0.022 250 / 0.16);
+    --color-text: oklch(0.22 0.028 250);
+    --color-text-2: oklch(0.36 0.022 250);
+    --color-text-3: oklch(0.51 0.018 250);
+    --color-text-4: oklch(0.62 0.014 250);
+    --color-accent: oklch(0.54 0.14 240);
+    --color-accent-2: oklch(0.62 0.12 210);
+    --color-accent-soft: oklch(0.54 0.14 240 / 0.22);
+    --color-accent-dim: oklch(0.54 0.14 240 / 0.10);
+    --color-accent-glow: oklch(0.54 0.14 240 / 0.25);
+    --color-good: oklch(0.58 0.13 155);
+    --color-warn: oklch(0.67 0.14 75);
+    --color-danger: oklch(0.60 0.16 25);
+    --color-warm: oklch(0.68 0.14 75);
+    --color-warm-bright: oklch(0.60 0.15 75);
+}
 
 body {
     background:
-        radial-gradient(1000px 500px at 8% -10%, oklch(0.32 0.05 295 / 0.28), transparent 55%),
-        radial-gradient(900px 500px at 98% 110%, oklch(0.26 0.04 260 / 0.25), transparent 55%),
+        radial-gradient(1000px 500px at 8% -10%, var(--color-bg-glow-a), transparent 55%),
+        radial-gradient(900px 500px at 98% 110%, var(--color-bg-glow-b), transparent 55%),
         linear-gradient(180deg, var(--color-bg-grad-a), var(--color-bg-grad-b));
     background-attachment: fixed;
     color: var(--color-text);

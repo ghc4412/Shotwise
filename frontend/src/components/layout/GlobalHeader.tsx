@@ -16,6 +16,7 @@ import { WorkspaceNotificationsDrawer } from "./WorkspaceNotificationsDrawer";
 import { ExportScopeDialog } from "./ExportScopeDialog";
 import { ProjectMenu } from "./ProjectMenu";
 import { PhaseStepper } from "./PhaseStepper";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 import { API } from "@/api";
 import { ArchiveDiagnosticsDialog } from "@/components/shared/ArchiveDiagnosticsDialog";
@@ -195,7 +196,7 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
   return (
     <>
       <header
-        className="grid h-12 shrink-0 items-center px-4"
+        className="workspace-header grid h-12 shrink-0 items-center px-4"
         style={{
           gridTemplateColumns: "minmax(0, 256px) 1fr auto",
           gap: 14,
@@ -385,6 +386,8 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
           />
 
           {/* Export — accent CTA */}
+          <ThemeToggle compact />
+
           <div
             className="relative"
             ref={exportAnchorRef}

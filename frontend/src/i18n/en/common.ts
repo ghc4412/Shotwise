@@ -49,4 +49,6 @@ export default {
   'not_found_title': 'Page not found',
   'not_found_back': 'Back to home',
   'recommended': 'Recommended',
+  'theme_light': 'Switch to light mode',
+  'theme_dark': 'Switch to dark mode',
 };

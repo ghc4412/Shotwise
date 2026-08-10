@@ -15,10 +15,93 @@ body {
  * 这里直接在 .app-shell 上落地最终背景，避免歧义。 */
 .app-shell {
     background:
-        radial-gradient(1000px 500px at 8% -10%, oklch(0.32 0.05 295 / 0.28), transparent 55%),
-        radial-gradient(900px 500px at 98% 110%, oklch(0.26 0.04 260 / 0.25), transparent 55%),
+        radial-gradient(1000px 500px at 8% -10%, var(--color-bg-glow-a), transparent 55%),
+        radial-gradient(900px 500px at 98% 110%, var(--color-bg-glow-b), transparent 55%),
         linear-gradient(180deg, var(--color-bg-grad-a), var(--color-bg-grad-b));
     background-attachment: fixed;
+}
+
+.lobby-shell {
+    background:
+        radial-gradient(1100px 540px at 8% -10%, var(--color-bg-glow-a), transparent 55%),
+        radial-gradient(900px 500px at 100% 110%, var(--color-bg-glow-b), transparent 55%),
+        linear-gradient(180deg, var(--color-bg-grad-a), var(--color-bg-grad-b));
+}
+
+.lobby-topbar,
+.workspace-header {
+    background: var(--color-header) !important;
+    border-color: var(--color-hairline) !important;
+}
+
+.lobby-filterbar {
+    background: color-mix(in oklab, var(--color-bg-grad-a) 78%, transparent) !important;
+    border-color: var(--color-hairline) !important;
+}
+
+.theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 30px;
+    padding: 0 0.55rem;
+    border: 1px solid var(--color-hairline-soft);
+    border-radius: 7px;
+    color: var(--color-text-3);
+    background: color-mix(in oklab, var(--color-surface-2) 52%, transparent);
+    transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.theme-toggle:hover {
+    color: var(--color-text);
+    border-color: var(--color-accent-soft);
+    background: var(--color-accent-dim);
+}
+
+.theme-toggle:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--color-accent-dim);
+}
+
+.theme-toggle-compact {
+    width: 30px;
+    justify-content: center;
+    padding: 0;
+}
+
+.theme-toggle-icon {
+    display: grid;
+    place-items: center;
+}
+
+html.theme-light .app-sidebar,
+html.theme-light .app-panel,
+html.theme-light .app-panel-strong {
+    background: color-mix(in oklab, var(--color-bg-grad-a) 86%, transparent);
+    box-shadow: 0 16px 40px oklch(0.22 0.02 250 / 0.08);
+}
+
+@media (max-width: 820px) {
+    .lobby-topbar > div {
+        gap: 0.6rem;
+        overflow-x: auto;
+        padding-inline: 1rem;
+        scrollbar-width: none;
+    }
+
+    .lobby-topbar > div::-webkit-scrollbar {
+        display: none;
+    }
+
+    .lobby-topbar label {
+        min-width: 200px;
+        width: min(36vw, 300px);
+    }
+
+    .lobby-topbar button {
+        flex-shrink: 0;
+        white-space: nowrap;
+    }
 }
 
 /* 大标题 / Landing display */

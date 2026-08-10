@@ -3,5 +3,13 @@
     "short_name": "Shotwise",
     "theme_color": "#111827",
     "background_color": "#111827",
-    "display": "standalone"
+    "display": "standalone",
+    "icons": [
+        {
+            "src": "/shotwise-mark.svg",
+            "sizes": "any",
+            "type": "image/svg+xml",
+            "purpose": "any maskable"
+        }
+    ]
 }

@@ -5,6 +5,7 @@
 import { createRoot } from "react-dom/client";
 import { AppRoutes } from "./router";
 import { useAuthStore } from "@/stores/auth-store";
+import { useAppStore } from "@/stores/app-store";
 import { i18nReady } from "@/i18n";
 import { BRAND, BRAND_DOCUMENT_TITLE } from "@/branding";
 
@@ -27,6 +28,7 @@ if (metaDescription) {
 
 // 从 localStorage 恢复登录状态
 useAuthStore.getState().initialize();
+useAppStore.getState().initializeTheme();
 
 // ---------------------------------------------------------------------------
 // 全局滚动条 auto-hide：滚动时渐显、停止 1.2s 后渐隐
