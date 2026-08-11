@@ -36,7 +36,7 @@ def _release(version: str) -> dict[str, str]:
         "tag_name": f"v{version}",
         "name": version,
         "body": "## What's Changed\n- add about tab",
-        "html_url": f"https://github.com/example/ArcReel/releases/tag/v{version}",
+        "html_url": f"https://github.com/example/Shotwise/releases/tag/v{version}",
         "published_at": "2026-04-21T08:00:00Z",
     }
 

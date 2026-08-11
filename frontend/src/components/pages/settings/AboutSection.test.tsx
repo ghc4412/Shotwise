@@ -26,7 +26,7 @@ describe("AboutSection diagnostics download (issue #1040)", () => {
   it("defers URL.revokeObjectURL past the click, still revokes after the deferred timer fires", async () => {
     vi.spyOn(API, "downloadDiagnostics").mockResolvedValue({
       blob: new Blob(["zip-bytes"]),
-      filename: "arcreel-diagnostics.zip",
+      filename: "shotwise-diagnostics.zip",
     });
 
     // 先用真实定时器渲染完成，避免 findByRole/waitFor 的内部轮询与 fake timers 相互卡死

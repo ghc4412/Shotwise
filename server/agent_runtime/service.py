@@ -67,7 +67,7 @@ class AssistantService:
         )
         # Shared with SessionManager (lazy-cached there) so reads via the
         # adapter and writes via SDK options use the same per-user namespace.
-        # None when ARCREEL_SDK_SESSION_STORE=off.
+        # None when SHOTWISE_SDK_SESSION_STORE=off.
         self._session_store = self.session_manager._build_session_store()
         self.transcript_adapter = SdkTranscriptAdapter(store=self._session_store)
         self.event_log = EventLogService(self.event_log_store, self.transcript_adapter)

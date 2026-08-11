@@ -32,7 +32,7 @@ export function AgentPageIntro() {
               color: "var(--color-text)",
             }}
           >
-            {t("arcreel_agent")}
+            {t("shotwise_agent")}
           </h2>
           <p className="mt-1.5 text-[12.5px] leading-[1.55] text-text-3">
             {t("agent_sdk_desc")}

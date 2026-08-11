@@ -32,7 +32,7 @@ from lib.validation_messages import MessageRef, ValidationMessage, ValidationRes
 
 logger = logging.getLogger(__name__)
 
-ARCHIVE_MANIFEST_NAME = "arcreel-export.json"
+ARCHIVE_MANIFEST_NAME = "shotwise-export.json"
 ARCHIVE_FORMAT_VERSION = 2
 ARCHIVE_SCRIPT_SCHEMA_VERSION = 2
 DEFAULT_IMPORT_FILENAME = "imported-project.zip"
@@ -293,7 +293,7 @@ class ProjectArchiveService:
                 members = self._scan_archive_members(archive)
                 root_parts, manifest = self._locate_project_root(archive, members)
 
-                with tempfile.TemporaryDirectory(prefix="arcreel-import-") as temp_dir:
+                with tempfile.TemporaryDirectory(prefix="shotwise-import-") as temp_dir:
                     staging_dir = Path(temp_dir) / "project"
                     staging_dir.mkdir(parents=True, exist_ok=True)
 
@@ -379,7 +379,7 @@ class ProjectArchiveService:
         scope: str,
     ) -> tuple[tempfile.TemporaryDirectory[str], Path, dict[str, Any], ArchiveDiagnostics]:
         source_dir = self.project_manager.get_project_path(project_name)
-        temp_dir = tempfile.TemporaryDirectory(prefix="arcreel-export-")
+        temp_dir = tempfile.TemporaryDirectory(prefix="shotwise-export-")
         snapshot_dir = Path(temp_dir.name) / project_name
         self._copy_visible_tree(source_dir, snapshot_dir)
 

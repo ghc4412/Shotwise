@@ -76,7 +76,7 @@ export function anchorSelector(anchor: OnboardingAnchor): string {
 }
 
 /**
- * driver 自带的高亮框位移与气泡淡入是元素级动画，写在它自己的样式里，`.arc-tour` 皮肤
+ * driver 自带的高亮框位移与气泡淡入是元素级动画，写在它自己的样式里，`.shotwise-tour` 皮肤
  * 覆盖不到。声明了 reduced motion 的用户整场引导会看到 11 次跨页大幅位移，这里直接关掉
  * driver 的动画开关，改为逐步瞬间就位——讲解内容一字不少。
  *
@@ -198,7 +198,7 @@ function renderProgress(progress: HTMLElement, current: number, total: number, l
   progress.replaceChildren();
 
   const strip = document.createElement("span");
-  strip.className = "arc-tour-filmstrip";
+  strip.className = "shotwise-tour-filmstrip";
   strip.setAttribute("aria-hidden", "true");
   for (let i = 0; i < total; i += 1) {
     const cell = document.createElement("span");
@@ -207,7 +207,7 @@ function renderProgress(progress: HTMLElement, current: number, total: number, l
   }
 
   const sr = document.createElement("span");
-  sr.className = "arc-tour-sr-only";
+  sr.className = "shotwise-tour-sr-only";
   sr.textContent = label;
 
   progress.appendChild(strip);
@@ -253,7 +253,7 @@ export function startTour(
 
   const instance: Driver = driver({
     steps: driveSteps,
-    popoverClass: "arc-tour",
+    popoverClass: "shotwise-tour",
     animate: !prefersReducedMotion(),
     overlayColor: OVERLAY_INK,
     overlayOpacity: 0.78,
@@ -373,12 +373,12 @@ export function startTour(
 
 /** 「跳过」按钮 —— 最后一步没有可跳过的内容，只留「完成」 */
 function decorateSkip(popover: PopoverDOM, isLastStep: boolean, label: string): void {
-  popover.footer.querySelector(".arc-tour-skip-btn")?.remove();
+  popover.footer.querySelector(".shotwise-tour-skip-btn")?.remove();
   if (isLastStep) return;
 
   const skip = document.createElement("button");
   skip.type = "button";
-  skip.className = "driver-popover-footer-btn arc-tour-skip-btn";
+  skip.className = "driver-popover-footer-btn shotwise-tour-skip-btn";
   skip.textContent = label;
   skip.addEventListener("click", () => popover.closeButton.click());
   popover.footer.insertBefore(skip, popover.footerButtons);

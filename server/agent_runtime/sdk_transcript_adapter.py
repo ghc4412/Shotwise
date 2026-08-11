@@ -2,7 +2,7 @@
 
 Reads conversation history via ``get_session_messages_from_store`` when a
 SessionStore is wired in, or falls back to ``get_session_messages``
-(filesystem) when ``ARCREEL_SDK_SESSION_STORE=off`` is set.
+(filesystem) when ``SHOTWISE_SDK_SESSION_STORE=off`` is set.
 
 The store path eliminates the previous dependency on the private
 ``_internal._read_session_file`` symbol. SDK 0.1.71's reconstructed
@@ -37,7 +37,7 @@ class SdkTranscriptAdapter:
     Constructed with an optional store. When the store is present, reads go
     through the SDK's SessionStore helpers; otherwise they fall back to the
     SDK's filesystem reader (``get_session_messages``) so the rollback path
-    (``ARCREEL_SDK_SESSION_STORE=off``) still works.
+    (``SHOTWISE_SDK_SESSION_STORE=off``) still works.
 
     ``project_cwd`` is supplied per call because a single AssistantService
     instance serves many projects.
@@ -152,7 +152,7 @@ class SdkTranscriptAdapter:
 
         锚定依据主 transcript 原始载荷中 Task tool_result 的
         ``toolUseResult.agentId`` 与同载荷 tool_result 块的 ``tool_use_id``。
-        文件系统回退路径（``ARCREEL_SDK_SESSION_STORE=off``）的公开读取接口
+        文件系统回退路径（``SHOTWISE_SDK_SESSION_STORE=off``）的公开读取接口
         不携带该元数据，无法锚定，降级为不合并（子时间线仍在 transcript 中，
         不丢数据）。
         """
@@ -246,7 +246,7 @@ class SdkTranscriptAdapter:
         return anchors
 
     async def _read_via_legacy(self, sdk_session_id: str) -> list[dict[str, Any]]:
-        """Filesystem fallback for ARCREEL_SDK_SESSION_STORE=off."""
+        """Filesystem fallback for SHOTWISE_SDK_SESSION_STORE=off."""
         if get_session_messages is None:
             return []
         try:

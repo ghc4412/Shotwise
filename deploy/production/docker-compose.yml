@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:18-alpine
     environment:
-      POSTGRES_USER: arcreel
+      POSTGRES_USER: shotwise
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
-      POSTGRES_DB: arcreel
+      POSTGRES_DB: shotwise
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - ./pgdata:/var/lib/postgresql
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U arcreel"]
+      test: ["CMD-SHELL", "pg_isready -U shotwise"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -24,7 +24,7 @@ services:
       - "1241:1241"
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://arcreel:${POSTGRES_PASSWORD}@postgres:5432/arcreel
+      DATABASE_URL: postgresql+asyncpg://shotwise:${POSTGRES_PASSWORD}@postgres:5432/shotwise
       TZ: ${TZ:-Asia/Shanghai}
     # Agent Bash 沙箱 (bwrap) 需要：
     # 1) 非特权 user namespace → 放开 docker 默认 seccomp/apparmor profile

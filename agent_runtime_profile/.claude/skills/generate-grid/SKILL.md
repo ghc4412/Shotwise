@@ -17,9 +17,9 @@ description: 生成宫格分镜图。当用户说"生成宫格"、"宫格生图"
 
 | 操作 | 工具 |
 |------|------|
-| 整集生成 | `mcp__arcreel__generate_grid({"script": "episode_1.json"})` |
-| 指定场景所在的组 | `mcp__arcreel__generate_grid({"script": "episode_1.json", "scene_ids": ["E1S01", "E1S02", "E1S03"]})` |
-| 列出当前分组信息 | `mcp__arcreel__generate_grid({"script": "episode_1.json", "list_only": true})` |
+| 整集生成 | `mcp__shotwise__generate_grid({"script": "episode_1.json"})` |
+| 指定场景所在的组 | `mcp__shotwise__generate_grid({"script": "episode_1.json", "scene_ids": ["E1S01", "E1S02", "E1S03"]})` |
+| 列出当前分组信息 | `mcp__shotwise__generate_grid({"script": "episode_1.json", "list_only": true})` |
 
 ## 输出
 

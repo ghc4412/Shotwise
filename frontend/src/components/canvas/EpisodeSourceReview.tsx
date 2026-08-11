@@ -81,7 +81,7 @@ function EpisodeHeader({
       <button
         type="button"
         onClick={onStart}
-        className="arc-btn-primary focus-ring mt-0.5 inline-flex shrink-0 items-center gap-1.5 rounded-lg px-4 py-2 text-[12.5px] font-semibold"
+        className="shotwise-btn-primary focus-ring mt-0.5 inline-flex shrink-0 items-center gap-1.5 rounded-lg px-4 py-2 text-[12.5px] font-semibold"
       >
         <Sparkles className="h-3.5 w-3.5" aria-hidden />
         {t("episode_workspace_start_cta", { episode })}

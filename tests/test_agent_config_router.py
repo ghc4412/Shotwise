@@ -80,9 +80,9 @@ async def test_list_preset_providers_returns_catalog(authed_client) -> None:
     assert deepseek["discovery_url"] == "https://api.deepseek.com"
     assert deepseek["default_model"] == "deepseek-v4-pro"
     assert deepseek["icon_key"] == "DeepSeek"
-    arcreel = next(p for p in data["providers"] if p["id"] == "arcreel")
-    assert arcreel["is_recommended"] is True
-    assert arcreel["api_key_url"] == "https://api.arc-reel.com/"
+    shotwise = next(p for p in data["providers"] if p["id"] == "shotwise")
+    assert shotwise["is_recommended"] is True
+    assert shotwise["api_key_url"] == "https://api.shotwise.com/"
 
 
 @pytest.mark.asyncio

@@ -1,12 +1,12 @@
 """Application data root resolution.
 
-Centralizes where ArcReel stores per-deployment data (projects, SQLite DB,
+Centralizes where Shotwise stores per-deployment data (projects, SQLite DB,
 generated assets, system config). Decoupling this from the repository layout
 lets the same backend code run under varied deployment shapes that don't keep
 data alongside the source tree.
 
 Resolution order:
-    1. ``ARCREEL_DATA_DIR`` — explicit override
+    1. ``SHOTWISE_DATA_DIR`` — explicit override
     2. ``AI_ANIME_PROJECTS`` — legacy alias kept for backward compatibility
     3. ``PROJECT_ROOT / "projects"`` — default
 
@@ -22,7 +22,7 @@ from pathlib import Path
 
 from lib.env_init import PROJECT_ROOT
 
-_ENV_KEYS: tuple[str, ...] = ("ARCREEL_DATA_DIR", "AI_ANIME_PROJECTS")
+_ENV_KEYS: tuple[str, ...] = ("SHOTWISE_DATA_DIR", "AI_ANIME_PROJECTS")
 
 
 @functools.cache

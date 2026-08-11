@@ -104,7 +104,7 @@ export default {
   'diagnostics_download_failed': 'Download failed: {{error}}',
   'config_issues': 'Configuration Issues',
   'config_issues_hint': 'The following issues were found in the current configuration and may affect functionality:',
-  'arcreel_agent': '[[brand]] Agent',
+  'shotwise_agent': '[[brand]] Agent',
   'chat_role_user': 'You',
   'chat_role_assistant': 'Assistant',
   'chat_role_system': 'System',
@@ -1047,7 +1047,7 @@ export default {
   'reference_tab_preview': 'Video',
   'reference_tab_aria': 'Reference unit panel tabs',
 
-  // ArcReel Workbench v3 — Reference Video
+  // Shotwise Workbench v3 — Reference Video
   'reference_main_tab_aria': 'Workspace main tabs',
   'grid_canvas_tab_aria': 'Grid workbench main tabs',
   'list_source_files_failed': 'Failed to load source files: {{message}}',
@@ -1385,7 +1385,7 @@ export default {
   // Timeline typed entries (interrupt / AskUserQuestion answer)
   'chat_interrupt_notice': 'Session interrupted by user',
   'chat_question_answer_label': 'Answered',
-  // MCP tool display names (single source of truth: ARCREEL_MCP_TOOL_IDS in
+  // MCP tool display names (single source of truth: SHOTWISE_MCP_TOOL_IDS in
   // server/agent_runtime/sdk_tools/__init__.py; tests/test_frontend_mcp_tool_i18n.py
   // enforces all locales stay in sync — adding a backend tool without wiring zh/en/vi fails CI)
   'tool_name_list_pending_assets': 'List pending assets',

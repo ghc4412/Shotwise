@@ -26,7 +26,7 @@ export function GridStoryboardBar({ checked, onToggle, animated }: GridStoryboar
     <div
       className={
         "flex items-start gap-2.5 rounded-[9px] border border-hairline-soft bg-bg-grad-a/50 px-3.5 py-2.5" +
-        (animated ? " arc-slide-in" : "")
+        (animated ? " shotwise-slide-in" : "")
       }
     >
       <LayoutGrid

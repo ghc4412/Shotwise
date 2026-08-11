@@ -166,7 +166,7 @@ def test_sandbox_bwrap_probe_apparmor_userns_diagnoses_ubuntu_2404(
     msg = str(exc_info.value)
     assert "Ubuntu 24.04" in msg
     assert "apparmor_restrict_unprivileged_userns=0" in msg
-    assert "60-arcreel-bwrap.conf" in msg
+    assert "60-shotwise-bwrap.conf" in msg
 
 
 def test_sandbox_bwrap_probe_userns_clone_disabled(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -15,7 +15,7 @@ def test_startup_migration_creates_marker_after_run(tmp_path: Path):
 
     summary = asyncio.run(_migrate_source_encoding_on_startup(tmp_path))
 
-    marker = project / ".arcreel" / "source_encoding_migrated"
+    marker = project / ".shotwise" / "source_encoding_migrated"
     assert marker.exists()
     assert "p1" in summary  # 返回每项目的简报
 
@@ -25,7 +25,7 @@ def test_startup_migration_skips_already_marked(tmp_path: Path):
     (project / "source").mkdir(parents=True)
     bad = project / "source" / "n.txt"
     bad.write_bytes(("第一章\n" * 30).encode("gbk"))
-    marker_dir = project / ".arcreel"
+    marker_dir = project / ".shotwise"
     marker_dir.mkdir()
     (marker_dir / "source_encoding_migrated").touch()
 
@@ -47,8 +47,8 @@ def test_startup_migration_isolates_project_failures(tmp_path: Path, monkeypatch
 
     # 即使 bad 项目内文件解码失败，迁移函数本身不应抛错（只记录到 errors.log）
     summary = asyncio.run(_migrate_source_encoding_on_startup(tmp_path))
-    assert (good / ".arcreel" / "source_encoding_migrated").exists()
-    assert (bad / ".arcreel" / "source_encoding_migrated").exists()
-    assert (bad / ".arcreel" / "migration_errors.log").exists()
+    assert (good / ".shotwise" / "source_encoding_migrated").exists()
+    assert (bad / ".shotwise" / "source_encoding_migrated").exists()
+    assert (bad / ".shotwise" / "migration_errors.log").exists()
     assert "good" in summary
     assert "bad" in summary

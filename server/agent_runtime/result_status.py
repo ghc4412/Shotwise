@@ -1,4 +1,4 @@
-"""SDK result 消息到 ArcReel 会话终态的唯一映射。"""
+"""SDK result 消息到 Shotwise 会话终态的唯一映射。"""
 
 from __future__ import annotations
 

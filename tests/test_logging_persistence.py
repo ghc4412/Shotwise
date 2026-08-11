@@ -52,8 +52,8 @@ def _reset_root_logger():
 
 @pytest.fixture
 def isolated_log_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setenv("ARCREEL_LOG_DIR", str(tmp_path / "logs"))
-    monkeypatch.delenv("ARCREEL_LOG_FILE_DISABLED", raising=False)
+    monkeypatch.setenv("SHOTWISE_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.delenv("SHOTWISE_LOG_FILE_DISABLED", raising=False)
     return tmp_path / "logs"
 
 
@@ -66,7 +66,7 @@ def test_file_handler_registered_by_default(isolated_log_dir: Path) -> None:
 
 
 def test_file_handler_disabled_by_env(isolated_log_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARCREEL_LOG_FILE_DISABLED", "1")
+    monkeypatch.setenv("SHOTWISE_LOG_FILE_DISABLED", "1")
     logging_config.setup_logging()
     root = logging.getLogger()
     assert not any(isinstance(h, TimedRotatingFileHandler) for h in root.handlers)
@@ -74,18 +74,18 @@ def test_file_handler_disabled_by_env(isolated_log_dir: Path, monkeypatch: pytes
 
 def test_logs_written_to_file(isolated_log_dir: Path) -> None:
     logging_config.setup_logging()
-    logging.getLogger("test.persistence").info("hello-arcreel")
+    logging.getLogger("test.persistence").info("hello-shotwise")
     for h in logging.getLogger().handlers:
         h.flush()
-    log_file = isolated_log_dir / "arcreel.log"
+    log_file = isolated_log_dir / "shotwise.log"
     assert log_file.exists()
-    assert "hello-arcreel" in log_file.read_text(encoding="utf-8")
+    assert "hello-shotwise" in log_file.read_text(encoding="utf-8")
 
 
 def test_mkdir_failure_graceful(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     target = tmp_path / "blocked" / "logs"
-    monkeypatch.setenv("ARCREEL_LOG_DIR", str(target))
-    monkeypatch.delenv("ARCREEL_LOG_FILE_DISABLED", raising=False)
+    monkeypatch.setenv("SHOTWISE_LOG_DIR", str(target))
+    monkeypatch.delenv("SHOTWISE_LOG_FILE_DISABLED", raising=False)
 
     real_mkdir = Path.mkdir
 
@@ -113,7 +113,7 @@ def test_idempotent(isolated_log_dir: Path) -> None:
 
 @pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "Yes"])
 def test_disabled_env_accepts_aliases(isolated_log_dir: Path, monkeypatch: pytest.MonkeyPatch, value: str) -> None:
-    monkeypatch.setenv("ARCREEL_LOG_FILE_DISABLED", value)
+    monkeypatch.setenv("SHOTWISE_LOG_FILE_DISABLED", value)
     logging_config.setup_logging()
     root = logging.getLogger()
     assert not any(isinstance(h, TimedRotatingFileHandler) for h in root.handlers)
@@ -133,8 +133,8 @@ def isolated_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     project_root = tmp_path / "root"
     data_root.mkdir()
     project_root.mkdir()
-    monkeypatch.setenv("ARCREEL_DATA_DIR", str(data_root))
-    monkeypatch.delenv("ARCREEL_LOG_DIR", raising=False)
+    monkeypatch.setenv("SHOTWISE_DATA_DIR", str(data_root))
+    monkeypatch.delenv("SHOTWISE_LOG_DIR", raising=False)
     monkeypatch.setattr(logging_config, "PROJECT_ROOT", project_root)
     app_data_dir_mod._reset_for_tests()
     yield tmp_path
@@ -147,20 +147,20 @@ def test_resolve_log_dir_default_is_project_root(isolated_data_dir: Path) -> Non
 
 def test_resolve_log_dir_env_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     target = tmp_path / "custom-logs"
-    monkeypatch.setenv("ARCREEL_LOG_DIR", str(target))
+    monkeypatch.setenv("SHOTWISE_LOG_DIR", str(target))
     assert logging_config.resolve_log_dir() == target
 
 
 def test_resolve_log_dir_relative_path_resolves_against_project_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """相对路径 ARCREEL_LOG_DIR 必须基于 PROJECT_ROOT 解析。"""
+    """相对路径 SHOTWISE_LOG_DIR 必须基于 PROJECT_ROOT 解析。"""
     project_root = tmp_path / "repo"
     project_root.mkdir()
     monkeypatch.setattr(logging_config, "PROJECT_ROOT", project_root)
-    monkeypatch.setenv("ARCREEL_LOG_DIR", "var/log/arcreel")
+    monkeypatch.setenv("SHOTWISE_LOG_DIR", "var/log/shotwise")
 
-    assert logging_config.resolve_log_dir() == project_root / "var" / "log" / "arcreel"
+    assert logging_config.resolve_log_dir() == project_root / "var" / "log" / "shotwise"
 
 
 def test_legacy_log_dir_points_to_app_data(isolated_data_dir: Path) -> None:
@@ -170,16 +170,16 @@ def test_legacy_log_dir_points_to_app_data(isolated_data_dir: Path) -> None:
 def test_migrate_moves_legacy_dir_when_new_absent(isolated_data_dir: Path) -> None:
     old_dir = isolated_data_dir / "data" / "logs"
     old_dir.mkdir()
-    (old_dir / "arcreel.log").write_text("old content\n", encoding="utf-8")
-    (old_dir / "arcreel.log.2026-05-20").write_text("rotated\n", encoding="utf-8")
+    (old_dir / "shotwise.log").write_text("old content\n", encoding="utf-8")
+    (old_dir / "shotwise.log.2026-05-20").write_text("rotated\n", encoding="utf-8")
 
     logging_config.migrate_legacy_log_dir()
 
     new_dir = isolated_data_dir / "root" / "logs"
     assert not old_dir.exists()
     assert new_dir.exists()
-    assert (new_dir / "arcreel.log").read_text(encoding="utf-8") == "old content\n"
-    assert (new_dir / "arcreel.log.2026-05-20").exists()
+    assert (new_dir / "shotwise.log").read_text(encoding="utf-8") == "old content\n"
+    assert (new_dir / "shotwise.log.2026-05-20").exists()
 
 
 def test_migrate_skips_when_both_have_content(isolated_data_dir: Path) -> None:
@@ -188,14 +188,14 @@ def test_migrate_skips_when_both_have_content(isolated_data_dir: Path) -> None:
     new_dir = isolated_data_dir / "root" / "logs"
     old_dir.mkdir()
     new_dir.mkdir()
-    (old_dir / "arcreel.log").write_text("old\n", encoding="utf-8")
-    (new_dir / "arcreel.log").write_text("new\n", encoding="utf-8")
+    (old_dir / "shotwise.log").write_text("old\n", encoding="utf-8")
+    (new_dir / "shotwise.log").write_text("new\n", encoding="utf-8")
 
     logging_config.migrate_legacy_log_dir()
 
     # 两边都原样保留，不静默覆盖
-    assert (old_dir / "arcreel.log").read_text(encoding="utf-8") == "old\n"
-    assert (new_dir / "arcreel.log").read_text(encoding="utf-8") == "new\n"
+    assert (old_dir / "shotwise.log").read_text(encoding="utf-8") == "old\n"
+    assert (new_dir / "shotwise.log").read_text(encoding="utf-8") == "new\n"
 
 
 def test_migrate_proceeds_when_new_dir_empty(isolated_data_dir: Path) -> None:
@@ -209,16 +209,16 @@ def test_migrate_proceeds_when_new_dir_empty(isolated_data_dir: Path) -> None:
     new_dir = isolated_data_dir / "root" / "logs"
     old_dir.mkdir()
     new_dir.mkdir()  # 模拟 docker 预创建的空 mount point
-    (old_dir / "arcreel.log").write_text("payload\n", encoding="utf-8")
-    (old_dir / "arcreel.log.2026-05-20").write_text("rotated\n", encoding="utf-8")
+    (old_dir / "shotwise.log").write_text("payload\n", encoding="utf-8")
+    (old_dir / "shotwise.log.2026-05-20").write_text("rotated\n", encoding="utf-8")
 
     logging_config.migrate_legacy_log_dir()
 
     assert not old_dir.exists(), "旧目录应已被搬走"
     # new_dir 本身（挂载点）不能被 rmdir，但内容已被填入
     assert new_dir.exists(), "new_dir 必须保留（bind-mount 挂载点不能 rmdir）"
-    assert (new_dir / "arcreel.log").read_text(encoding="utf-8") == "payload\n"
-    assert (new_dir / "arcreel.log.2026-05-20").read_text(encoding="utf-8") == "rotated\n"
+    assert (new_dir / "shotwise.log").read_text(encoding="utf-8") == "payload\n"
+    assert (new_dir / "shotwise.log.2026-05-20").read_text(encoding="utf-8") == "rotated\n"
 
 
 def test_migrate_preserves_new_dir_when_it_is_mountpoint(
@@ -234,8 +234,8 @@ def test_migrate_preserves_new_dir_when_it_is_mountpoint(
     new_dir = isolated_data_dir / "root" / "logs"
     old_dir.mkdir()
     new_dir.mkdir()
-    (old_dir / "arcreel.log").write_text("payload\n", encoding="utf-8")
-    (old_dir / "arcreel.log.2026-05-20").write_text("rotated\n", encoding="utf-8")
+    (old_dir / "shotwise.log").write_text("payload\n", encoding="utf-8")
+    (old_dir / "shotwise.log.2026-05-20").write_text("rotated\n", encoding="utf-8")
 
     real_rmdir = Path.rmdir
 
@@ -252,8 +252,8 @@ def test_migrate_preserves_new_dir_when_it_is_mountpoint(
     # 即使 new_dir.rmdir 全程会失败，迁移仍要完成
     assert not old_dir.exists()
     assert new_dir.exists()
-    assert (new_dir / "arcreel.log").read_text(encoding="utf-8") == "payload\n"
-    assert (new_dir / "arcreel.log.2026-05-20").read_text(encoding="utf-8") == "rotated\n"
+    assert (new_dir / "shotwise.log").read_text(encoding="utf-8") == "payload\n"
+    assert (new_dir / "shotwise.log.2026-05-20").read_text(encoding="utf-8") == "rotated\n"
 
 
 def test_migrate_noop_when_legacy_absent(isolated_data_dir: Path) -> None:
@@ -264,29 +264,29 @@ def test_migrate_noop_when_legacy_absent(isolated_data_dir: Path) -> None:
 def test_migrate_skips_when_log_dir_env_set(isolated_data_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     old_dir = isolated_data_dir / "data" / "logs"
     old_dir.mkdir()
-    (old_dir / "arcreel.log").write_text("keep me\n", encoding="utf-8")
-    monkeypatch.setenv("ARCREEL_LOG_DIR", str(isolated_data_dir / "custom"))
+    (old_dir / "shotwise.log").write_text("keep me\n", encoding="utf-8")
+    monkeypatch.setenv("SHOTWISE_LOG_DIR", str(isolated_data_dir / "custom"))
 
     logging_config.migrate_legacy_log_dir()
 
     # 用户显式设了 LOG_DIR，旧目录原地保留
-    assert (old_dir / "arcreel.log").read_text(encoding="utf-8") == "keep me\n"
+    assert (old_dir / "shotwise.log").read_text(encoding="utf-8") == "keep me\n"
 
 
 def test_migrate_noop_when_paths_equal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """ARCREEL_DATA_DIR == PROJECT_ROOT 时旧新路径解析到同一处，不要把目录自己 rename 到自己。"""
-    monkeypatch.setenv("ARCREEL_DATA_DIR", str(tmp_path))
-    monkeypatch.delenv("ARCREEL_LOG_DIR", raising=False)
+    """SHOTWISE_DATA_DIR == PROJECT_ROOT 时旧新路径解析到同一处，不要把目录自己 rename 到自己。"""
+    monkeypatch.setenv("SHOTWISE_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("SHOTWISE_LOG_DIR", raising=False)
     monkeypatch.setattr(logging_config, "PROJECT_ROOT", tmp_path)
     app_data_dir_mod._reset_for_tests()
     try:
         logs = tmp_path / "logs"
         logs.mkdir()
-        (logs / "arcreel.log").write_text("hi\n", encoding="utf-8")
+        (logs / "shotwise.log").write_text("hi\n", encoding="utf-8")
 
         logging_config.migrate_legacy_log_dir()  # 不抛
 
-        assert (logs / "arcreel.log").read_text(encoding="utf-8") == "hi\n"
+        assert (logs / "shotwise.log").read_text(encoding="utf-8") == "hi\n"
     finally:
         app_data_dir_mod._reset_for_tests()
 
@@ -298,8 +298,8 @@ def test_migrate_falls_back_to_copy_on_exdev(isolated_data_dir: Path, monkeypatc
 
     old_dir = isolated_data_dir / "data" / "logs"
     old_dir.mkdir()
-    (old_dir / "arcreel.log").write_text("payload\n", encoding="utf-8")
-    (old_dir / "arcreel.log.2026-05-20").write_text("rotated\n", encoding="utf-8")
+    (old_dir / "shotwise.log").write_text("payload\n", encoding="utf-8")
+    (old_dir / "shotwise.log.2026-05-20").write_text("rotated\n", encoding="utf-8")
 
     real_rename = os.rename
 
@@ -316,8 +316,8 @@ def test_migrate_falls_back_to_copy_on_exdev(isolated_data_dir: Path, monkeypatc
 
     new_dir = isolated_data_dir / "root" / "logs"
     assert not old_dir.exists(), "shutil.move 应在跨设备时自动 copy+unlink"
-    assert (new_dir / "arcreel.log").read_text(encoding="utf-8") == "payload\n"
-    assert (new_dir / "arcreel.log.2026-05-20").read_text(encoding="utf-8") == "rotated\n"
+    assert (new_dir / "shotwise.log").read_text(encoding="utf-8") == "payload\n"
+    assert (new_dir / "shotwise.log.2026-05-20").read_text(encoding="utf-8") == "rotated\n"
 
 
 def test_migrate_failure_logs_error(
@@ -330,7 +330,7 @@ def test_migrate_failure_logs_error(
 
     old_dir = isolated_data_dir / "data" / "logs"
     old_dir.mkdir()
-    (old_dir / "arcreel.log").write_text("stuck\n", encoding="utf-8")
+    (old_dir / "shotwise.log").write_text("stuck\n", encoding="utf-8")
 
     def fake_move(src: str, dst: str, *args: object, **kwargs: object) -> None:
         raise PermissionError("simulated permission denied")
@@ -342,12 +342,12 @@ def test_migrate_failure_logs_error(
 
     assert any("FAILED" in rec.message and rec.levelno == logging.ERROR for rec in caplog.records)
     # 旧 dir 仍在
-    assert (old_dir / "arcreel.log").exists()
+    assert (old_dir / "shotwise.log").exists()
 
 
 def test_setup_logging_file_false_skips_file_handler(isolated_log_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """模块导入期用 file=False 时不应挂 file handler、不应 mkdir 新目录。"""
-    # 注意：isolated_log_dir 把 ARCREEL_LOG_DIR 设到 tmp_path/logs 但还没创建
+    # 注意：isolated_log_dir 把 SHOTWISE_LOG_DIR 设到 tmp_path/logs 但还没创建
     log_dir = isolated_log_dir
     assert not log_dir.exists()
 

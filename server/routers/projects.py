@@ -194,7 +194,7 @@ async def import_project_archive(
     """从 ZIP 导入项目。"""
     upload_path: str | None = None
     try:
-        fd, upload_path = tempfile.mkstemp(prefix="arcreel-upload-", suffix=".zip")
+        fd, upload_path = tempfile.mkstemp(prefix="shotwise-upload-", suffix=".zip")
         os.close(fd)
 
         # 使用底层 SpooledTemporaryFile 的同步句柄，整循环 offload 到线程，

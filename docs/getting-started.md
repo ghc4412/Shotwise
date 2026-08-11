@@ -6,7 +6,7 @@
 
 完成教程后，你将能够：
 
-1. 使用 Docker 启动 ArcReel；
+1. 使用 Docker 启动 Shotwise；
 2. 登录工作台并配置模型供应商；
 3. 创建小说、成品剧本或广告短片项目；
 4. 生成角色、场景、道具、分镜和视频片段；
@@ -18,7 +18,7 @@
 - 首次部署和配置通常需要约 10～20 分钟。
 - 视频生成耗时取决于镜头数量、供应商排队和所选模型。
 - 文本、图片、视频和 TTS 调用可能产生第三方 API 费用。
-- ArcReel 可以在生成前提供费用预估，并在生成后记录实际调用量。
+- Shotwise 可以在生成前提供费用预估，并在生成后记录实际调用量。
 
 SHOTWISE 支持多个供应商（Gemini、火山方舟、Grok、OpenAI、Vidu、阿里百炼、MiniMax、可灵 及自定义供应商），以下以 Gemini 为例：
 
@@ -45,7 +45,7 @@ SHOTWISE 支持多个供应商，**至少配置一个**即可开始使用：
 
 ### 1.2 准备模型凭据
 
-ArcReel 中有两类凭据，职责不同。
+Shotwise 中有两类凭据，职责不同。
 
 #### AI 助手凭据
 
@@ -57,7 +57,7 @@ SHOTWISE 内置基于 Claude Agent SDK 的 AI 助手，负责剧本创作、智�
 
 用于实际调用文本、图像、视频和 TTS 模型。
 
-ArcReel 当前支持的预置供应商包括：
+Shotwise 当前支持的预置供应商包括：
 
 - Gemini
 - 火山方舟
@@ -81,7 +81,7 @@ ArcReel 当前支持的预置供应商包括：
 
 > API Key 属于敏感信息。不要把真实密钥提交到 Git、Issue、日志截图或公开聊天记录中。
 
-## 2. 部署 ArcReel
+## 2. 部署 Shotwise
 
 ### 2.1 克隆项目
 
@@ -150,7 +150,7 @@ docker compose up -d
 
 ```bash
 docker compose ps
-docker compose logs --tail=100 arcreel
+docker compose logs --tail=100 shotwise
 curl http://localhost:1241/health
 ```
 
@@ -164,9 +164,9 @@ http://localhost:1241
 
 ### 2.3 使用 PostgreSQL 生产部署
 
-长期运行、并发访问或正式服务建议使用 PostgreSQL。PostgreSQL 改善并发、备份与运维能力，但不提供用户隔离；请勿让互不信任的用户共享同一 ArcReel 实例：
+长期运行、并发访问或正式服务建议使用 PostgreSQL。PostgreSQL 改善并发、备份与运维能力，但不提供用户隔离；请勿让互不信任的用户共享同一 Shotwise 实例：
 
-以下命令从 ArcReel 仓库根目录执行：
+以下命令从 Shotwise 仓库根目录执行：
 
 ```bash
 cd deploy/production
@@ -250,7 +250,7 @@ curl http://localhost:1241/health
 
 适合已经拥有台词、画外音和场景结构，希望尽量保留原稿的项目。
 
-ArcReel 会按照作者提供的内容建立角色和镜头，不应把成品剧本当作普通小说重新改写。
+Shotwise 会按照作者提供的内容建立角色和镜头，不应把成品剧本当作普通小说重新改写。
 
 #### 广告或短片
 
@@ -390,7 +390,7 @@ ArcReel 会按照作者提供的内容建立角色和镜头，不应把成品剧
 
 ### 7.1 剧集动画合成最终视频
 
-分镜路线的剧集动画（drama）项目确认所有视频片段后，可以使用 ArcReel 合成成片。分镜路线的说书和广告/短片项目请导出剪映草稿；参考生视频项目请下载生成片段继续后期。
+分镜路线的剧集动画（drama）项目确认所有视频片段后，可以使用 Shotwise 合成成片。分镜路线的说书和广告/短片项目请导出剪映草稿；参考生视频项目请下载生成片段继续后期。
 
 建议在合成前检查：
 

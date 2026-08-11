@@ -3,7 +3,7 @@
 把 agent_runtime_profile/.claude/ 和 CLAUDE.md 同步到各项目 {project}/.claude/ +
 CLAUDE.md。manifest + sha256 区分三种状态：未改的内置 skill / 用户修改 / 用户主动删除。
 
-manifest 落在 ``{project_dir}/.arcreel_profile_manifest.json``（项目根，跨 .claude
+manifest 落在 ``{project_dir}/.shotwise_profile_manifest.json``（项目根，跨 .claude
 和顶层 CLAUDE.md 一并管理）。schema 版本化，``profile_id`` 不匹配等价于 reset。
 
 决策表共 15 行覆盖 ``{P 存/缺} × {D 存/缺} × {M 无/active/tombstone}``，由
@@ -33,10 +33,10 @@ from lib.path_safety import PathTraversalError, safe_join
 
 logger = logging.getLogger(__name__)
 
-MANIFEST_FILENAME = ".arcreel_profile_manifest.json"
+MANIFEST_FILENAME = ".shotwise_profile_manifest.json"
 LOCK_FILENAME = ".profile_sync.lock"
 MANIFEST_SCHEMA_VERSION = 1
-EXPECTED_PROFILE_ID = "arcreel/builtin"
+EXPECTED_PROFILE_ID = "shotwise/builtin"
 SHA256_CHUNK_BYTES = 64 * 1024
 LOCK_TIMEOUT_SECONDS = 10
 
@@ -183,7 +183,7 @@ def _project_lock(project_dir: Path):
 
     Windows 上 ``os`` 没有 ``O_NOFOLLOW``（POSIX 专属），改用 lstat 预检 +
     无 flag 的 ``os.open`` 降级。Windows 创建 symlink 需要 SeCreateSymbolicLinkPrivilege
-    或开发者模式，攻击模型本就低；预检与 open 之间的 TOCTOU 窗口与 ArcReel
+    或开发者模式，攻击模型本就低；预检与 open 之间的 TOCTOU 窗口与 Shotwise
     本地用户、portalocker 持锁的部署模型一致。
     """
     lock_path = project_dir / LOCK_FILENAME
@@ -443,7 +443,7 @@ def _safe_copy(source: Path, dest: Path) -> None:
     本体）再写，把 file-level race 窗口压到 unlink→open 之间的微秒级。
 
     残余风险：dest 父目录（``.claude`` 或更上层）被 race 替换成指向项目外的
-    symlink 时仍跟。ArcReel 项目目录由 server 自创、普通用户无 shell + portalocker
+    symlink 时仍跟。Shotwise 项目目录由 server 自创、普通用户无 shell + portalocker
     持锁，此攻击需要外部 root 进程，接受残余风险。彻底防需要 openat +
     O_NOFOLLOW 沿路径每级验证，工程成本超出攻击模型边界。
     """

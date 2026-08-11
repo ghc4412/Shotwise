@@ -16,7 +16,7 @@ class TestGetDatabaseUrl:
             os.environ.pop("DATABASE_URL", None)
             url = get_database_url()
             assert url.startswith("sqlite+aiosqlite:///")
-            assert ".arcreel.db" in url
+            assert ".shotwise.db" in url
 
     def test_env_override(self):
         with patch.dict(os.environ, {"DATABASE_URL": "postgresql+asyncpg://localhost/test"}):

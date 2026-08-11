@@ -481,7 +481,7 @@ class API {
     await throwIfNotOk(response, `HTTP ${response.status}`);
     const disposition = response.headers.get("Content-Disposition") ?? "";
     const match = disposition.match(/filename="?([^";]+)"?/);
-    const filename = match?.[1] ?? "arcreel-diagnostics.zip";
+    const filename = match?.[1] ?? "shotwise-diagnostics.zip";
     const blob = await response.blob();
     return { blob, filename };
   }

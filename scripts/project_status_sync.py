@@ -20,8 +20,8 @@ import urllib.request
 from typing import Any
 
 API = "https://api.github.com/graphql"
-OWNER = "ArcReel"
-REPO = "ArcReel"
+OWNER = "Shotwise"
+REPO = "Shotwise"
 PROJECT_NUMBER = 2
 PROJECT_ID = "PVT_kwDOD3-zC84BQUFK"
 STATUS_FIELD_ID = "PVTSSF_lADOD3-zC84BQUFKzg-eFX8"

@@ -27,7 +27,7 @@ def _app_version() -> str:
     from importlib.metadata import PackageNotFoundError, version
 
     try:
-        return version("arcreel")
+        return version("shotwise")
     except PackageNotFoundError:
         pass
 
@@ -63,7 +63,7 @@ _SENSITIVE_QUERY_KEYS = frozenset({"password", "passwd", "pwd", "token", "secret
 
 
 def _db_url() -> str:
-    raw = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./projects/.arcreel.db")
+    raw = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./projects/.shotwise.db")
     try:
         parsed = urlparse(raw)
         netloc = parsed.netloc
@@ -119,7 +119,7 @@ def collect_diagnostics() -> str:
         ("Report generated", lambda: datetime.now(UTC).isoformat()),
     ]
 
-    lines = ["ArcReel diagnostics", "=" * 40]
+    lines = ["Shotwise diagnostics", "=" * 40]
     for label, fn in fields:
         lines.append(f"{label}: {_safe(fn, label)}")
     return "\n".join(lines) + "\n"

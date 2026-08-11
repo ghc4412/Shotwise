@@ -2,7 +2,7 @@
 视频项目管理 WebUI - FastAPI 主应用
 
 启动方式:
-    cd ArcReel
+    cd Shotwise
     uv run uvicorn server.app:app --reload --reload-dir server --reload-dir lib --port 1241
 
 注意：必须用 --reload-dir 限定监视目录，否则 watchfiles 会扫描
@@ -122,7 +122,7 @@ def _diagnose_bwrap_failure() -> str:
             "  Fix on HOST (not inside the container):\n"
             "    sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0\n"
             '    echo "kernel.apparmor_restrict_unprivileged_userns=0" '
-            "| sudo tee /etc/sysctl.d/60-arcreel-bwrap.conf"
+            "| sudo tee /etc/sysctl.d/60-shotwise-bwrap.conf"
         )
 
     userns_clone = _read_sysctl(_UNPRIV_USERNS_SYSCTL)
@@ -169,7 +169,7 @@ def check_sandbox_available() -> bool:
             raise RuntimeError(
                 "SANDBOX_UNAVAILABLE on macOS\n"
                 "  sandbox-exec: not found in PATH (should be system-installed)\n"
-                "Required for ArcReel agent runtime."
+                "Required for Shotwise agent runtime."
             )
         return True
     if system == "Linux":
@@ -180,7 +180,7 @@ def check_sandbox_available() -> bool:
             raise RuntimeError(
                 "SANDBOX_UNAVAILABLE on linux\n"
                 f"  missing in PATH: {', '.join(missing)}\n"
-                "Required for ArcReel agent runtime. Install:\n"
+                "Required for Shotwise agent runtime. Install:\n"
                 "  Ubuntu/Debian: sudo apt install bubblewrap socat\n"
                 "  Fedora:        sudo dnf install bubblewrap socat\n"
                 "  Arch:          sudo pacman -S bubblewrap socat"
@@ -208,7 +208,7 @@ def check_sandbox_available() -> bool:
             raise RuntimeError(
                 "SANDBOX_BWRAP_BROKEN on Linux\n"
                 f"  bwrap probe failed to execute: {exc}\n"
-                "Required for ArcReel agent runtime."
+                "Required for Shotwise agent runtime."
             ) from exc
         if probe.returncode != 0:
             stderr = probe.stderr.decode("utf-8", errors="replace").strip() or "(no stderr)"
@@ -276,7 +276,7 @@ async def _migrate_source_encoding_on_startup(projects_root: Path) -> dict[str, 
         return summary
 
     def _run_one(project_dir: Path) -> dict:
-        marker_dir = project_dir / ".arcreel"
+        marker_dir = project_dir / ".shotwise"
         marker = marker_dir / "source_encoding_migrated"
         if marker.exists():
             return {"skipped": True}
@@ -380,7 +380,7 @@ async def lifespan(app: FastAPI):
             await migrate_local_transcripts_to_store(
                 store,
                 projects_root=projects_root,
-                data_dir=projects_root,  # same place .arcreel.db lives, so docker volume catches it
+                data_dir=projects_root,  # same place .shotwise.db lives, so docker volume catches it
             )
         except Exception:
             logger.exception("session-store transcript migration failed (non-fatal)")

@@ -439,7 +439,7 @@ describe("OnboardingTour", () => {
     click(".driver-popover-next-btn");
     await waitFor(() => expect(popoverTitle()).toBe("配置供应商"));
 
-    click(".arc-tour-skip-btn");
+    click(".shotwise-tour-skip-btn");
 
     await waitFor(() => expect(API.markOnboardingSeen).toHaveBeenCalledTimes(1));
     expect(popoverTitle()).toBeNull();
@@ -552,7 +552,7 @@ describe("OnboardingTour", () => {
     await waitFor(() => expect(popoverTitle()).toBe("项目概览"));
     expect(history.at(-1)).toBe(DEMO_WORKBENCH);
 
-    click(".arc-tour-skip-btn");
+    click(".shotwise-tour-skip-btn");
 
     // 只读闸门对 /onboarding/seen 有窄豁免，工作台里跳过照样写得进去。
     await waitFor(() => expect(API.markOnboardingSeen).toHaveBeenCalledTimes(1));

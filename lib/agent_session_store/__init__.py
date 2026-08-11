@@ -9,14 +9,14 @@ from typing import Literal
 
 from lib.agent_session_store.models import AgentSessionEntry, AgentSessionSummary
 
-_ENV_VAR = "ARCREEL_SDK_SESSION_STORE"
+_ENV_VAR = "SHOTWISE_SDK_SESSION_STORE"
 _VALID_MODES = frozenset({"db", "off", ""})
 
-logger = logging.getLogger("arcreel.session_store.config")
+logger = logging.getLogger("shotwise.session_store.config")
 
 FlushMode = Literal["eager", "batched"]
 
-_FLUSH_ENV_VAR = "ARCREEL_SDK_SESSION_STORE_FLUSH"
+_FLUSH_ENV_VAR = "SHOTWISE_SDK_SESSION_STORE_FLUSH"
 _VALID_FLUSH_MODES = frozenset({"eager", "batched"})
 
 
@@ -34,7 +34,7 @@ def make_project_key(project_cwd: Path | str) -> str:
 
 
 def session_store_enabled() -> bool:
-    """True when ARCREEL_SDK_SESSION_STORE is anything but 'off' (case-insensitive).
+    """True when SHOTWISE_SDK_SESSION_STORE is anything but 'off' (case-insensitive).
 
     Single source of truth for the kill-switch parsed at every read site
     (lifespan migration, SessionManager). Unknown values default to enabled
@@ -58,7 +58,7 @@ def session_store_flush_mode() -> FlushMode:
 
     Defaults to "eager" so transcript writes are durable across crashes
     and visible mid-turn for reconnect snapshots. Set
-    ARCREEL_SDK_SESSION_STORE_FLUSH=batched for the legacy end-of-turn
+    SHOTWISE_SDK_SESSION_STORE_FLUSH=batched for the legacy end-of-turn
     flush behavior (rollback path).
     """
     raw = os.getenv(_FLUSH_ENV_VAR, "").strip().lower()

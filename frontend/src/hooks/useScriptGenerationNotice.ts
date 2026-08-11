@@ -9,12 +9,12 @@ import type { ContentBlock, Turn } from "@/types";
  * 卡死。本 hook 监听助手会话流，识别到剧本生成类工具调用开始时弹一条瞬时 toast
  * （过程性提示，无需持久回看），告知该步骤耗时较长。
  *
- * 工具名是 SDK 注册后的全限定名 mcp__arcreel__<id>，与 ToolCallWithResult 的解析口径
+ * 工具名是 SDK 注册后的全限定名 mcp__shotwise__<id>，与 ToolCallWithResult 的解析口径
  * 一致。仅覆盖剧本/规范化两类文本生成工具；分镜/视频等长耗时工具已有任务队列 HUD。
  */
 const SCRIPT_GENERATION_TOOL_NAMES = new Set([
-  "mcp__arcreel__generate_episode_script",
-  "mcp__arcreel__normalize_drama_script",
+  "mcp__shotwise__generate_episode_script",
+  "mcp__shotwise__normalize_drama_script",
 ]);
 
 function collectBlocks(turns: Turn[], draftTurn: Turn | null): ContentBlock[] {

@@ -45,7 +45,7 @@ const ICON_LOADERS: Record<string, IconLoader> = {
 
 /** iconKey → 本地静态资源(用于 lobehub 未收录的品牌). */
 const STATIC_ICON_SRC: Record<string, string> = {
-  ArcReel: "/shotwise-mark.svg",
+  Shotwise: "/shotwise-mark.svg",
 };
 
 interface Props {

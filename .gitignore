@@ -40,7 +40,7 @@ logs/
 !projects/.gitkeep
 
 # New unified ORM database (SQLite)
-projects/.arcreel.db
+projects/.shotwise.db
 # Old SQLite database backups (created by migration script)
 projects/.*.db.bak
 

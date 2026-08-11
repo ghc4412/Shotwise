@@ -72,7 +72,7 @@ class AgentAccessPolicy:
     # 源仓库根（已 resolve）：``.env`` / ``.env.*`` 相对此根（dotenv 从仓库根
     # 加载），也是「仓库内参考资料放行」的围栏基准。
     project_root: Path
-    # 数据根（已 resolve，生产为 app_data_dir()）：``.arcreel.db*`` /
+    # 数据根（已 resolve，生产为 app_data_dir()）：``.shotwise.db*`` /
     # ``.system_config.json*`` 所在地，也是跨项目读隔离的基准。
     projects_root: Path
     # agent profile 根（已 resolve，受调用方 env 解析控制）：
@@ -81,7 +81,7 @@ class AgentAccessPolicy:
     # 日志目录（已 resolve）：服务器日志含 HTTP 请求路径、provider 探测、异常栈，
     # 默认 read 规则会把 project_root 当成参考资料根放行，不显式 deny 会让任意
     # 项目 session 里的 agent 通过 Read/Grep 读到全局日志。无论落在 repo 内还是
-    # 外（如 /var/log/arcreel）都必须 deny。
+    # 外（如 /var/log/shotwise）都必须 deny。
     log_dir: Path
     # False 表示内核沙箱不支持当前平台（目前仅 Windows）——Bash 走代码白名单回退。
     sandbox_enabled: bool = True
@@ -190,7 +190,7 @@ class AgentAccessPolicy:
         覆盖后的真实位置（env 解析由调用方完成，本类只消费 resolve 后的根）：
 
         - ``.env`` / ``.env.*`` 总是相对源仓库根
-        - ``.arcreel.db`` / ``.system_config.json`` / ``.arcreel.db-*`` 在
+        - ``.shotwise.db`` / ``.system_config.json`` / ``.shotwise.db-*`` 在
           ``projects_root``（生产为 ``app_data_dir()``）下
         - ``vertex_keys/`` 在 ``projects_root.parent`` 下（与
           ``server.routers.providers.upload_vertex_credential`` 写入位置一致）
@@ -203,16 +203,16 @@ class AgentAccessPolicy:
         profile = self.agent_profile_root
         files: tuple[Path, ...] = (
             repo / ".env",
-            data / ".arcreel.db",
+            data / ".shotwise.db",
             data / ".system_config.json",
             data / ".system_config.json.bak",
             profile / ".claude" / "settings.json",
         )
         prefixes: tuple[Path, ...] = (data.parent / "vertex_keys", self.log_dir)
-        # ``.arcreel.db-wal`` / ``.arcreel.db-shm`` 与主 db 同目录
+        # ``.shotwise.db-wal`` / ``.shotwise.db-shm`` 与主 db 同目录
         globs: tuple[tuple[Path, str], ...] = (
             (repo, ".env.*"),
-            (data, ".arcreel.db-*"),
+            (data, ".shotwise.db-*"),
         )
         return files, prefixes, globs
 
@@ -220,7 +220,7 @@ class AgentAccessPolicy:
         """判断已 resolve 的路径是否命中敏感文件清单。
 
         覆盖 ``.env`` / ``.env.*`` / ``vertex_keys/`` 子树 / ``.system_config.json*`` /
-        ``.arcreel.db*`` / ``agent_runtime_profile/.claude/settings.json`` / 日志目录。
+        ``.shotwise.db*`` / ``agent_runtime_profile/.claude/settings.json`` / 日志目录。
         """
         files, prefixes, globs = self._sensitive_table
         for sensitive_file in files:
@@ -722,9 +722,9 @@ AgentAccessPolicy.PROTECTED_WRITE_RULES = (
         matches=AgentAccessPolicy._is_protected_project_json,
         deny_message=(
             "访问被拒绝：scripts/*.json 与 project.json 不可用 Write/Edit 直改，"
-            "请改用 MCP 工具——剧本编辑走 mcp__arcreel__patch_episode_script / "
-            "mcp__arcreel__insert_segment / mcp__arcreel__remove_segment / mcp__arcreel__split_segment，"
-            "角色/场景/道具走 mcp__arcreel__patch_project。"
+            "请改用 MCP 工具——剧本编辑走 mcp__shotwise__patch_episode_script / "
+            "mcp__shotwise__insert_segment / mcp__shotwise__remove_segment / mcp__shotwise__split_segment，"
+            "角色/场景/道具走 mcp__shotwise__patch_project。"
         ),
         sandbox_subpaths=("scripts", "project.json"),
     ),
@@ -735,8 +735,8 @@ AgentAccessPolicy.PROTECTED_WRITE_RULES = (
             f"访问被拒绝：参考生视频的 {REFERENCE_VIDEO_STEP1_FILENAME} 不可用 Write/Edit 直改。"
             "该文件与 Web 端保存、迁移读改写、重拆分共享一把文件锁，而 Write/Edit 取不到这把锁，"
             "直改会与并发的保存互相丢失更新。"
-            f'请改用 MCP 工具——mcp__arcreel__{STEP1_EDIT_TOOL_NAME}({{"episode": N}}) 取回可编辑草稿，'
-            f"改草稿的 content.units[i]，再用 mcp__arcreel__{PROMOTE_TOOL_NAME} 校验并晋升回正式文件。"
+            f'请改用 MCP 工具——mcp__shotwise__{STEP1_EDIT_TOOL_NAME}({{"episode": N}}) 取回可编辑草稿，'
+            f"改草稿的 content.units[i]，再用 mcp__shotwise__{PROMOTE_TOOL_NAME} 校验并晋升回正式文件。"
         ),
         sandbox_subpaths=("drafts",),
     ),

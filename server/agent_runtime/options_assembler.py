@@ -26,7 +26,7 @@ from lib.db.base import DEFAULT_USER_ID
 from lib.db.engine import async_session_factory as default_async_session_factory
 from lib.i18n import DEFAULT_LOCALE, LOCALE_LANGUAGE_MAP
 from server.agent_runtime.agent_access_policy import AgentAccessPolicy
-from server.agent_runtime.sdk_tools import build_arcreel_mcp_server
+from server.agent_runtime.sdk_tools import build_shotwise_mcp_server
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ async def load_provider_env_overrides() -> dict[str, str]:
 _PERSONA_PROMPT = """\
 ## 身份
 
-你是 ArcReel 智能体，一个专业的 AI 视频内容创作助手。你的职责是将小说转化为可发布的短视频内容。
+你是 Shotwise 智能体，一个专业的 AI 视频内容创作助手。你的职责是将小说转化为可发布的短视频内容。
 
 ## 行为准则
 
@@ -122,7 +122,7 @@ class OptionsAssembler:
     def _build_append_prompt(self, project_name: str, locale: str = DEFAULT_LOCALE) -> str:
         """Build the append portion for SystemPromptPreset.
 
-        Combines the ArcReel persona, the locale language regulation, and the
+        Combines the Shotwise persona, the locale language regulation, and the
         session-invariant project context (identity, cwd, operating rules).
         Mutable project metadata is not included here — it lives in project.json
         and is read on demand. The project's CLAUDE.md (mode variant projected
@@ -171,7 +171,7 @@ class OptionsAssembler:
     def build_session_store(self) -> DbSessionStore | None:
         """Return a cached per-user DbSessionStore, or None when env disables it.
 
-        Set ARCREEL_SDK_SESSION_STORE=off to roll back to SDK's filesystem path.
+        Set SHOTWISE_SDK_SESSION_STORE=off to roll back to SDK's filesystem path.
         The result is cached on first call so every session shares one instance
         instead of allocating a fresh store per ``build`` invocation.
         """
@@ -184,7 +184,7 @@ class OptionsAssembler:
             store = None
         else:
             if not is_known_session_store_mode(mode):
-                logger.warning("Unknown ARCREEL_SDK_SESSION_STORE=%r; defaulting to db", mode)
+                logger.warning("Unknown SHOTWISE_SDK_SESSION_STORE=%r; defaulting to db", mode)
             factory = self._session_factory_provider() or default_async_session_factory
             store = DbSessionStore(factory, user_id=self._user_id_provider())
         self._cached_session_store = store
@@ -260,11 +260,11 @@ class OptionsAssembler:
         # Windows 回退：sandbox 关闭时 Bash 系列被剥离出 allowed_tools，
         # 让 _can_use_tool 接管 prefix 白名单匹配。
         allowed_tools = policy.filter_allowed_tools(self._allowed_tools)
-        # 内置 ArcReel SDK MCP server — handler 跑在主进程，绕过 sandbox。
+        # 内置 Shotwise SDK MCP server — handler 跑在主进程，绕过 sandbox。
         # 通配符让后续新增 tool 不必同步改 allowed_tools。
-        allowed_tools.append("mcp__arcreel__*")
+        allowed_tools.append("mcp__shotwise__*")
 
-        arcreel_server = build_arcreel_mcp_server(
+        shotwise_server = build_shotwise_mcp_server(
             project_name=project_name,
             projects_root=self.projects_root,
         )
@@ -283,7 +283,7 @@ class OptionsAssembler:
             resume=resume_id,
             can_use_tool=can_use_tool,
             hooks=hooks,  # type: ignore[arg-type]
-            mcp_servers={"arcreel": arcreel_server},
+            mcp_servers={"shotwise": shotwise_server},
             session_store=self.build_session_store(),  # type: ignore[arg-type]
             session_store_flush=session_store_flush_mode(),
             sandbox=sandbox_typed,  # type: ignore[arg-type]

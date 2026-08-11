@@ -64,7 +64,7 @@ export function DemoAssistantPanel() {
           <Bot className="h-3.5 w-3.5" />
         </div>
         <span className="display-serif min-w-0 truncate text-[13px] font-semibold leading-[1.1]">
-          {t("dashboard:arcreel_agent")}
+          {t("dashboard:shotwise_agent")}
         </span>
       </div>
 

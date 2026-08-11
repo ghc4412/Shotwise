@@ -1,4 +1,4 @@
-name: "ArcReel CodeQL Config"
+name: "Shotwise CodeQL Config"
 
 paths-ignore:
   - alembic/versions

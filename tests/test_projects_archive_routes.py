@@ -109,7 +109,7 @@ class TestProjectArchiveRoutes:
         archive_path.write_bytes(response.content)
         with zipfile.ZipFile(archive_path) as archive:
             assert "demo/project.json" in archive.namelist()
-            assert "demo/arcreel-export.json" in archive.namelist()
+            assert "demo/shotwise-export.json" in archive.namelist()
 
     def test_import_route_returns_structured_validation_errors(self, tmp_path, monkeypatch):
         pm = ProjectManager(tmp_path / "projects")

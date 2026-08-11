@@ -1,7 +1,7 @@
 <!-- This is an auto-generated comment: summarize by coderabbit.ai -->
 <!-- review_stack_entry_start -->
 
-[![Review Change Stack](https://storage.googleapis.com/coderabbit_public_assets/review-stack-in-coderabbit-ui.svg)](https://app.coderabbit.ai/change-stack/ArcReel/ArcReel/pull/1115?utm_source=github_walkthrough&utm_medium=github&utm_campaign=change_stack)
+[![Review Change Stack](https://storage.googleapis.com/coderabbit_public_assets/review-stack-in-coderabbit-ui.svg)](https://app.coderabbit.ai/change-stack/Shotwise/Shotwise/pull/1115?utm_source=github_walkthrough&utm_medium=github&utm_campaign=change_stack)
 
 <!-- review_stack_entry_end -->
 No actionable comments were generated in the recent review. 🎉
@@ -122,7 +122,7 @@ Reviewing files that changed from the base of the PR and between 0310cbb50228987
 
 ---
 
-Thanks for using [CodeRabbit](https://coderabbit.ai?utm_source=oss&utm_medium=github&utm_campaign=ArcReel/ArcReel&utm_content=1115)! It's free for OSS, and your support helps us grow. If you like it, consider giving us a shout-out.
+Thanks for using [CodeRabbit](https://coderabbit.ai?utm_source=oss&utm_medium=github&utm_campaign=Shotwise/Shotwise&utm_content=1115)! It's free for OSS, and your support helps us grow. If you like it, consider giving us a shout-out.
 
 <details>
 <summary>❤️ Share</summary>

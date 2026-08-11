@@ -326,7 +326,7 @@ class TestModelHasAudioTrack:
             assert model_has_audio_track("kling", model) is True
 
     def test_kling_silent_models_omit_token(self):
-        """kling-v2-5-turbo 无音频开关、kling-video-o1 只能保留参考视频原声（ArcReel 不下发参考
+        """kling-v2-5-turbo 无音频开关、kling-video-o1 只能保留参考视频原声（Shotwise 不下发参考
         视频）——两档均不声明 token。"""
         for model_id in ("kling-v2-5-turbo", "kling-video-o1"):
             model = self._model("kling", model_id)

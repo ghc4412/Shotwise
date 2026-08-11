@@ -105,7 +105,7 @@ export default {
   'diagnostics_download_failed': 'Tải về thất bại: {{error}}',
   'config_issues': 'Vấn đề cấu hình',
   'config_issues_hint': 'Phát hiện các vấn đề sau trong cấu hình hiện tại, có thể ảnh hưởng tới chức năng:',
-  'arcreel_agent': '[[brand]] Agent',
+  'shotwise_agent': '[[brand]] Agent',
   'chat_role_user': 'Bạn',
   'chat_role_assistant': 'Trợ lý',
   'chat_role_system': 'Hệ thống',
@@ -1028,7 +1028,7 @@ export default {
   'reference_tab_preview': 'Video',
   'reference_tab_aria': 'Tab bảng đơn vị tham chiếu',
 
-  // ArcReel Workbench v3 — Video Tham Chiếu
+  // Shotwise Workbench v3 — Video Tham Chiếu
   'reference_main_tab_aria': 'Tab chính của workspace',
   'reference_tab_units': 'Đơn vị video',
   'reference_tab_preprocess': 'Tiền xử lý tách',
@@ -1507,7 +1507,7 @@ export default {
   'tool_call_result_label': 'Kết quả',
   'tool_call_todo_summary': 'Danh sách việc cần làm hoàn thành {{completed}}/{{total}}',
   'tool_call_todo_updated': 'Danh sách việc cần làm đã cập nhật',
-  // MCP tool display names (single source of truth: ARCREEL_MCP_TOOL_IDS in
+  // MCP tool display names (single source of truth: SHOTWISE_MCP_TOOL_IDS in
   // server/agent_runtime/sdk_tools/__init__.py; tests/test_frontend_mcp_tool_i18n.py
   // sẽ kiểm tra các ngôn ngữ đồng bộ, thêm tool backend mà thiếu zh/en/vi sẽ fail CI)
   'tool_name_list_pending_assets': 'Liệt kê tài sản chờ tạo',

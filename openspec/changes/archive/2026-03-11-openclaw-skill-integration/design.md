@@ -22,19 +22,19 @@ OpenClaw 等外部平台需要长期有效的 API Key 来调用 SHOTWISE API，�
 
 ### 1. API Key 格式与存储
 
-**决定**: 使用 `arc-` 前缀 + 32 位随机字符串，数据库只存 SHA-256 哈希。
+**决定**: 使用 `shotwise-` 前缀 + 32 位随机字符串，数据库只存 SHA-256 哈希。
 
-格式：`arc-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`（36 字符）
+格式：`shotwise-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`（36 字符）
 
 **理由**: 前缀便于用户识别来源，同时作为认证分流的判断依据；哈希存储确保数据库泄露不会暴露原始 key。参考 Zopia 的 `zopia-xxxxxxxxxxxx` 模式。
 
 ### 2. 认证层改造方式
 
-**决定**: 修改 `server/auth.py` 的 `_verify_and_get_payload`，通过 `arc-` 前缀直接判定认证模式。
+**决定**: 修改 `server/auth.py` 的 `_verify_and_get_payload`，通过 `shotwise-` 前缀直接判定认证模式。
 
 流程：
 1. 提取 Bearer token
-2. 检查 token 是否以 `arc-` 开头
+2. 检查 token 是否以 `shotwise-` 开头
 3. **是 → API Key 路径**：计算 SHA-256 哈希 → 查数据库 → 成功则返回 `{"sub": "apikey:<key_name>", "via": "apikey"}`
 4. **否 → JWT 路径**：JWT 解码验证 → 成功则返回 payload
 5. 任一路径失败 → 返回 401
@@ -75,7 +75,7 @@ OpenClaw 等外部平台需要长期有效的 API Key 来调用 SHOTWISE API，�
 - `id`: 主键
 - `name`: 用户自定义名称
 - `key_hash`: SHA-256 哈希
-- `key_prefix`: 前 8 位（`arc-xxxx`）用于列表展示
+- `key_prefix`: 前 8 位（`shotwise-xxxx`）用于列表展示
 - `created_at`: 创建时间
 - `expires_at`: 过期时间（可选，默认 30 天）
 - `last_used_at`: 最近使用时间

@@ -64,7 +64,7 @@ class TestListAvailableSkills:
             "---\nname: manga-workflow\ndescription: Drama variant\n---\n",
             encoding="utf-8",
         )
-        monkeypatch.setenv("ARCREEL_PROFILE_DIR", str(profile_root))
+        monkeypatch.setenv("SHOTWISE_PROFILE_DIR", str(profile_root))
 
         with patch.object(AssistantService, "__init__", lambda self, *a, **kw: None):
             service = AssistantService.__new__(AssistantService)
@@ -92,7 +92,7 @@ class TestListAvailableSkills:
             "---\nname: drifted-skill\ndescription: Drama\nuser-invocable: false\n---\n",
             encoding="utf-8",
         )
-        monkeypatch.setenv("ARCREEL_PROFILE_DIR", str(profile_root))
+        monkeypatch.setenv("SHOTWISE_PROFILE_DIR", str(profile_root))
 
         with patch.object(AssistantService, "__init__", lambda self, *a, **kw: None):
             service = AssistantService.__new__(AssistantService)

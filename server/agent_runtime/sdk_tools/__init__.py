@@ -1,10 +1,10 @@
-"""ArcReel SDK in-process MCP tools.
+"""Shotwise SDK in-process MCP tools.
 
 Tools registered here run **in the server main process** (not inside the
-agent sandbox), so they can read ``projects/.arcreel.db`` and call provider
+agent sandbox), so they can read ``projects/.shotwise.db`` and call provider
 HTTP without poking holes in ``filesystem.denyRead`` / network allowlist.
 
-Each session gets its own MCP server built via :func:`build_arcreel_mcp_server`
+Each session gets its own MCP server built via :func:`build_shotwise_mcp_server`
 — ``project_name`` is closure-bound, so the agent cannot redirect tools to a
 different project via prompt injection.
 """
@@ -54,16 +54,16 @@ from server.agent_runtime.sdk_tools.text_generation import (
     validate_and_promote_reference_draft_tool,
 )
 
-__all__ = ["build_arcreel_mcp_server", "ToolContext", "ARCREEL_MCP_TOOL_IDS"]
+__all__ = ["build_shotwise_mcp_server", "ToolContext", "SHOTWISE_MCP_TOOL_IDS"]
 
-# Single source of truth for the ArcReel in-process MCP tool catalogue.
-# Each id is the **short tool name** (without the ``mcp__arcreel__`` prefix the
+# Single source of truth for the Shotwise in-process MCP tool catalogue.
+# Each id is the **short tool name** (without the ``mcp__shotwise__`` prefix the
 # SDK adds at registration). Frontend display names live in
 # ``frontend/src/i18n/{zh,en,vi}/dashboard.ts`` under the ``tool_name_<id>``
 # keys; ``tests/test_frontend_mcp_tool_i18n.py`` cross-checks that every id
 # here has a translation in all locales, so adding a tool without wiring up
 # i18n fails CI.
-ARCREEL_MCP_TOOL_IDS: tuple[str, ...] = (
+SHOTWISE_MCP_TOOL_IDS: tuple[str, ...] = (
     "list_pending_assets",
     "generate_assets",
     "generate_storyboards",
@@ -93,11 +93,11 @@ ARCREEL_MCP_TOOL_IDS: tuple[str, ...] = (
 )
 
 
-def build_arcreel_mcp_server(*, project_name: str, projects_root: Path) -> Any:
-    """Build the per-session in-process MCP server with all ArcReel tools."""
+def build_shotwise_mcp_server(*, project_name: str, projects_root: Path) -> Any:
+    """Build the per-session in-process MCP server with all Shotwise tools."""
     ctx = ToolContext(project_name=project_name, projects_root=projects_root)
     return create_sdk_mcp_server(
-        name="arcreel",
+        name="shotwise",
         version="1.0.0",
         tools=[
             list_pending_assets_tool(ctx),

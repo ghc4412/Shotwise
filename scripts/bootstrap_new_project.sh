@@ -6,7 +6,7 @@ set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <target_dir> [--init-git]"
-  echo "Example: $0 ../ArcReel --init-git"
+  echo "Example: $0 ../Shotwise --init-git"
   exit 1
 fi
 

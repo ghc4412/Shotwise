@@ -44,7 +44,7 @@
   <img src="docs/assets/hero-screenshot.png" alt="SHOTWISE 工作台" width="800">
 </p>
 
-> ArcReel 不是一个简单的“提示词套壳”。它把内容分析、剧本结构化、角色与场景资产、分镜生成、视频任务、费用统计、版本回滚和成片导出组织成一条可审核、可中断恢复的生产流水线。
+> Shotwise 不是一个简单的“提示词套壳”。它把内容分析、剧本结构化、角色与场景资产、分镜生成、视频任务、费用统计、版本回滚和成片导出组织成一条可审核、可中断恢复的生产流水线。
 
 ## 界面与主题
 
@@ -102,7 +102,7 @@ flowchart LR
 - Docker 和 Docker Compose
 - 建议从 2 GB 可用内存起步
 - 完整创作流程需要：
-  - 一组用于 ArcReel AI 助手的模型凭据
+  - 一组用于 Shotwise AI 助手的模型凭据
   - 可用的文本、图像和视频生成能力（可以由一家全模态供应商提供，也可以组合多家供应商）
   - 按需配置的 TTS 能力
 - 默认使用远程模型 API，通常不要求本机 GPU；接入本地模型时，资源要求由对应服务决定
@@ -161,7 +161,7 @@ docker compose up -d
 
 ### 🔌 外部 Agent 集成
 
-ArcReel 可以签发 `arc-` 前缀 API Key，并通过同步 Agent 对话端点供 OpenClaw 等外部 Agent 平台调用。
+Shotwise 可以签发 `shotwise-` 前缀 API Key，并通过同步 Agent 对话端点供 OpenClaw 等外部 Agent 平台调用。
 
 ## 供应商支持
 
@@ -255,7 +255,7 @@ flowchart TD
 
 SHOTWISE 支持通过 [OpenClaw](https://openclaw.ai) 等外部 AI Agent 平台调用，实现自然语言驱动的视频创作：
 
-1. 在 SHOTWISE 设置页生成 API Key（`arc-` 前缀）
+1. 在 SHOTWISE 设置页生成 API Key（`shotwise-` 前缀）
 2. 在 OpenClaw 中加载 SHOTWISE 的 Skill 定义（访问 `http://your-domain/skill.md` 自动获取）
 3. 通过 OpenClaw 对话即可创建项目、生成剧本、制作视频
 
@@ -280,7 +280,7 @@ flowchart TB
 ## 使用前需要了解的边界
 
 - 媒体生成依赖第三方模型服务，生成速度、可用性、内容策略和成本受供应商影响。
-- 长篇内容仍需要人工审核分集、角色资产和关键剧情节点，ArcReel 的目标是增强创作者，而不是完全取消审核。
+- 长篇内容仍需要人工审核分集、角色资产和关键剧情节点，Shotwise 的目标是增强创作者，而不是完全取消审核。
 - 不同视频模型对参考图数量、视频时长、首尾帧、音频和地区可用性的支持不同。
 - Windows 原生环境可以运行部分基础流程，但 Agent 沙箱等 POSIX 能力会降级；优先使用 Linux、macOS、WSL2 或 Docker。
 - 生产环境应使用 PostgreSQL、HTTPS、强密码和定期备份，不建议直接把未加保护的 `1241` 端口暴露到公网。
@@ -298,7 +298,7 @@ flowchart TB
 | [部署与运维](docs/deployment.md) | SQLite、PostgreSQL、升级、备份、反向代理 |
 | [安全政策](SECURITY.md) | 支持版本、部署边界、私密漏洞报告和协调披露 |
 | [安全威胁模型](docs/security/threat-model.md) | 安全资产、信任边界、攻击面和重评触发条件 |
-| [剪映草稿导出](docs/jianying-export-guide.md) | 将 ArcReel 生成结果交给剪映继续编辑 |
+| [剪映草稿导出](docs/jianying-export-guide.md) | 将 Shotwise 生成结果交给剪映继续编辑 |
 | [架构说明](docs/architecture.md) | Agent Runtime、任务队列、供应商抽象和数据层 |
 | [常见问题](docs/FAQ.md) | 部署、费用、模型、数据和许可证问题 |
 | [贡献指南](CONTRIBUTING.md) | 本地开发、测试、代码规范和 PR 流程 |
@@ -316,11 +316,11 @@ uv run pre-commit install
 
 ## 许可证与商业使用
 
-ArcReel 采用 [GNU Affero General Public License v3.0](LICENSE)，附加条款见 [NOTICE](NOTICE)。
+Shotwise 采用 [GNU Affero General Public License v3.0](LICENSE)，附加条款见 [NOTICE](NOTICE)。
 
 如果你的组织无法采用 AGPL-3.0，或者希望在不承担 AGPL 开源义务的情况下进行商业部署、白标或再分发，请联系：
 
-**support@arc-reel.com**
+**support@shotwise.com**
 
 Copyright © 2026 Pollo3470 and SHOTWISE contributors
 

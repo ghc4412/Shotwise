@@ -16,7 +16,7 @@ body:
     id: proposal
     attributes:
       label: 期望的功能或方案
-      description: 你希望 ArcReel 提供什么样的能力来解决上面的问题？
+      description: 你希望 Shotwise 提供什么样的能力来解决上面的问题？
     validations:
       required: true
 

@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: API Key 生成
-系统 SHALL 提供 API Key 创建接口，生成格式为 `arc-` + 32 位随机字符串的密钥，返回完整密钥（仅在创建时可见），数据库仅存储 SHA-256 哈希值。
+系统 SHALL 提供 API Key 创建接口，生成格式为 `shotwise-` + 32 位随机字符串的密钥，返回完整密钥（仅在创建时可见），数据库仅存储 SHA-256 哈希值。
 
 #### Scenario: 成功创建 API Key
 - **WHEN** 已认证用户调用 `POST /api/v1/api-keys` 并提供 `name` 参数
@@ -30,10 +30,10 @@
 - **THEN** 系统返回 404
 
 ### Requirement: Bearer Token 认证分流
-系统 SHALL 在 `_verify_and_get_payload` 中根据 token 前缀判定认证模式：以 `arc-` 开头走 API Key 验证路径，否则走 JWT 验证路径。
+系统 SHALL 在 `_verify_and_get_payload` 中根据 token 前缀判定认证模式：以 `shotwise-` 开头走 API Key 验证路径，否则走 JWT 验证路径。
 
 #### Scenario: API Key 认证成功
-- **WHEN** 请求携带 `Authorization: Bearer arc-xxxxx` 且该 key 在数据库中存在且未过期
+- **WHEN** 请求携带 `Authorization: Bearer shotwise-xxxxx` 且该 key 在数据库中存在且未过期
 - **THEN** 系统返回 `{"sub": "apikey:<key_name>", "via": "apikey"}` payload，并更新 `last_used_at`
 
 #### Scenario: API Key 已过期
@@ -41,11 +41,11 @@
 - **THEN** 系统返回 401
 
 #### Scenario: API Key 不存在
-- **WHEN** 请求携带 `arc-` 前缀 token 但哈希未匹配到数据库记录
+- **WHEN** 请求携带 `shotwise-` 前缀 token 但哈希未匹配到数据库记录
 - **THEN** 系统返回 401
 
 #### Scenario: JWT 认证不受影响
-- **WHEN** 请求携带不以 `arc-` 开头的 Bearer token
+- **WHEN** 请求携带不以 `shotwise-` 开头的 Bearer token
 - **THEN** 系统按原有 JWT 验证流程处理
 
 ### Requirement: API Key 缓存

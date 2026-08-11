@@ -19,7 +19,7 @@ describe("GlassModal", () => {
       </GlassModal>,
     );
     const dialog = screen.getByRole("dialog");
-    expect(dialog.className).toContain("arc-glass-panel");
+    expect(dialog.className).toContain("shotwise-glass-panel");
     expect(dialog.className).toContain("rounded-2xl");
   });
 
@@ -31,7 +31,7 @@ describe("GlassModal", () => {
     );
     const hairline = screen
       .getByRole("dialog")
-      .querySelector(".arc-glass-hairline");
+      .querySelector(".shotwise-glass-hairline");
     expect(hairline).not.toBeNull();
     expect(hairline).toHaveAttribute("data-tone", "accent");
   });
@@ -44,7 +44,7 @@ describe("GlassModal", () => {
     );
     const hairline = screen
       .getByRole("dialog")
-      .querySelector(".arc-glass-hairline");
+      .querySelector(".shotwise-glass-hairline");
     expect(hairline).toHaveAttribute("data-tone", "warm");
   });
 

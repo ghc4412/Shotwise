@@ -45,7 +45,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     projects_root = tmp_path / "projects"
     projects_root.mkdir()
 
-    monkeypatch.setenv("ARCREEL_PROFILE_DIR", str(profile_dir))
+    monkeypatch.setenv("SHOTWISE_PROFILE_DIR", str(profile_dir))
 
     pm = ProjectManager(projects_root)
     project_dir = projects_root / "proj"
@@ -395,7 +395,7 @@ class TestForceResync:
             "../escape.txt",
             ".claude/../../etc/passwd",
             "/etc/passwd",
-            ".arcreel_profile_manifest.json",
+            ".shotwise_profile_manifest.json",
             ".profile_sync.lock",
             "",
         ],
@@ -424,7 +424,7 @@ class TestForceResync:
         other_skill.parent.mkdir(parents=True, exist_ok=True)
         other_skill.write_text("user-customized other skill")
         # 删 manifest 模拟"老项目无 manifest"
-        (project_dir / ".arcreel_profile_manifest.json").unlink()
+        (project_dir / ".shotwise_profile_manifest.json").unlink()
 
         stats = pm.force_resync_profile(project_dir, paths=[".claude/skills/demo/SKILL.md"])
 
@@ -532,7 +532,7 @@ class TestForceResync:
         assert outside.read_text() == "MUST NOT be truncated"
 
     def test_save_manifest_tmp_uses_unpredictable_name(self, tmp_path: Path):
-        """``save_manifest`` 不能用 ``.arcreel_profile_manifest.json.tmp`` 这种
+        """``save_manifest`` 不能用 ``.shotwise_profile_manifest.json.tmp`` 这种
         predictable 名字，否则攻击者预置同名 symlink → ``/etc/x`` 时 tmp.write
         会跟 symlink 截断外部文件。改用 ``tempfile.mkstemp`` 用 O_EXCL +
         不可预测名字 + same dir。
@@ -565,7 +565,7 @@ class TestForceResync:
         assert (project / MANIFEST_FILENAME).read_bytes() == manifest.normalized_bytes()
 
     def test_load_manifest_refuses_symlink_manifest(self, tmp_path: Path):
-        """``.arcreel_profile_manifest.json`` 被预置为指向项目外的 symlink → load
+        """``.shotwise_profile_manifest.json`` 被预置为指向项目外的 symlink → load
         视同损坏走 reset，不跟 symlink 读外部内容（信息泄露 + 错误 reset 决策）。
         """
         from lib.profile_manifest import MANIFEST_FILENAME, load_manifest
@@ -627,7 +627,7 @@ class TestForceResync:
         """
         empty_profile = tmp_path / "empty_profile"
         empty_profile.mkdir()
-        monkeypatch.setenv("ARCREEL_PROFILE_DIR", str(empty_profile))
+        monkeypatch.setenv("SHOTWISE_PROFILE_DIR", str(empty_profile))
         projects_root = tmp_path / "projects"
         projects_root.mkdir()
         pm = ProjectManager(projects_root)
@@ -646,7 +646,7 @@ class TestForceResync:
 class TestProfileEntryGuards:
     def test_profile_missing_raises_protective_error(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """profile 不存在 → ProfileMissingError，绝不静默 mass prune dest。"""
-        monkeypatch.setenv("ARCREEL_PROFILE_DIR", str(tmp_path / "nonexistent"))
+        monkeypatch.setenv("SHOTWISE_PROFILE_DIR", str(tmp_path / "nonexistent"))
         projects_root = tmp_path / "projects"
         projects_root.mkdir()
         pm = ProjectManager(projects_root)
@@ -664,7 +664,7 @@ class TestProfileEntryGuards:
         """profile 目录存在但无可同步文件 → ProfileEmptyError。"""
         empty_profile = tmp_path / "profile"
         empty_profile.mkdir()
-        monkeypatch.setenv("ARCREEL_PROFILE_DIR", str(empty_profile))
+        monkeypatch.setenv("SHOTWISE_PROFILE_DIR", str(empty_profile))
         projects_root = tmp_path / "projects"
         projects_root.mkdir()
         pm = ProjectManager(projects_root)
@@ -721,7 +721,7 @@ class TestRepairAllSymlinks:
 
     def test_repair_all_aborts_on_profile_missing(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """ProfileMissingError → totals.aborted=True，所有项目跳过。"""
-        monkeypatch.setenv("ARCREEL_PROFILE_DIR", str(tmp_path / "nonexistent"))
+        monkeypatch.setenv("SHOTWISE_PROFILE_DIR", str(tmp_path / "nonexistent"))
         projects_root = tmp_path / "projects"
         projects_root.mkdir()
         (projects_root / "proj1").mkdir()
@@ -744,7 +744,7 @@ class TestRepairAllSymlinks:
         profile_dir = tmp_path / "profile"
         (profile_dir / ".claude").mkdir(parents=True)
         (profile_dir / ".claude" / "x.md").write_text("v1")
-        monkeypatch.setenv("ARCREEL_PROFILE_DIR", str(profile_dir))
+        monkeypatch.setenv("SHOTWISE_PROFILE_DIR", str(profile_dir))
 
         projects_root = tmp_path / "projects"
         projects_root.mkdir()

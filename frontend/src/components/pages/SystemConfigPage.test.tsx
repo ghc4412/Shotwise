@@ -69,7 +69,7 @@ function makeVersionResponse(overrides?: Partial<GetSystemVersionResponse>): Get
       tag_name: "v0.9.1",
       name: "0.9.1",
       body: "## What's Changed\n- add about tab",
-      html_url: "https://github.com/example/ArcReel/releases/tag/v0.9.1",
+      html_url: "https://github.com/example/Shotwise/releases/tag/v0.9.1",
       published_at: "2026-04-21T08:00:00Z",
     },
     has_update: true,

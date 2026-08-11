@@ -10,7 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from server.auth import CurrentUserInfo, get_current_user
+from server.auth import API_KEY_PREFIX, CurrentUserInfo, get_current_user
 from server.routers import api_keys
 from tests.auth_deps import AUTH_DEPENDENCIES
 
@@ -27,7 +27,7 @@ def _make_client() -> TestClient:
 FAKE_ROW = {
     "id": 1,
     "name": "mykey",
-    "key_prefix": "arc-abcd",
+    "key_prefix": "shotwise-abcd",
     "created_at": "2026-03-10T00:00:00Z",
     "expires_at": "2026-04-10T00:00:00Z",
     "last_used_at": None,
@@ -59,8 +59,12 @@ class TestCreateApiKey:
         assert resp.status_code == 201
         body = resp.json()
         assert body["name"] == "mykey"
-        assert body["key"].startswith("arc-")
+        assert body["key"].startswith(API_KEY_PREFIX)
         assert "key" in body  # 完整 key 在响应中
+        # key_prefix 须为「前缀 + 4 位指纹」，与完整 key 的对应前缀一致（防止截断回归）
+        key_prefix_passed = mock_repo.create.call_args.kwargs["key_prefix"]
+        assert key_prefix_passed == body["key"][: len(API_KEY_PREFIX) + 4]
+        assert key_prefix_passed.startswith(API_KEY_PREFIX)
 
     def test_create_409_on_duplicate_name(self):
         from sqlalchemy.exc import IntegrityError

@@ -430,7 +430,7 @@ export function AgentCopilot() {
             <span
               className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[12px]"
               style={{ color: "var(--color-accent-2)" }}
-              title={t("arcreel_agent")}
+              title={t("shotwise_agent")}
             >
               <span
                 className="h-1.5 w-1.5 animate-pulse rounded-full"
@@ -440,7 +440,7 @@ export function AgentCopilot() {
             </span>
           ) : (
             <span className="display-serif min-w-0 truncate text-[13px] font-semibold leading-[1.1]">
-              {t("arcreel_agent")}
+              {t("shotwise_agent")}
             </span>
           )}
         </div>

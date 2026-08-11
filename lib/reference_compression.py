@@ -26,7 +26,7 @@ from PIL import Image
 
 from lib.image_utils import compress_image_bytes
 
-# ── 保守通用上限（ArcReel 侧安全策略常量，不声称任何一家的真实数字；被动 413 自我纠正）──
+# ── 保守通用上限（Shotwise 侧安全策略常量，不声称任何一家的真实数字；被动 413 自我纠正）──
 # 与 lib/config/service.py 的 _DEFAULT_REFERENCE_*_MAX_BYTES 数值一致（单测断言对齐）。
 DEFAULT_TOTAL_MAX_BYTES = 8 * 1024 * 1024
 DEFAULT_SINGLE_MAX_BYTES = 4 * 1024 * 1024

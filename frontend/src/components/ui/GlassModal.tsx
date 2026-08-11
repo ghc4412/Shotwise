@@ -58,11 +58,11 @@ export function GlassModal(props: GlassModalProps) {
       describedBy={describedBy}
       closeOnBackdrop={closeOnBackdrop}
       closeOnEscape={closeOnEscape}
-      className={`arc-glass-panel overflow-hidden rounded-2xl ${widthClassName} ${panelClassName}`.trim()}
+      className={`shotwise-glass-panel overflow-hidden rounded-2xl ${widthClassName} ${panelClassName}`.trim()}
       style={panelStyle}
       {...shellA11y}
     >
-      <span aria-hidden="true" className="arc-glass-hairline" data-tone={hairlineTone} />
+      <span aria-hidden="true" className="shotwise-glass-hairline" data-tone={hairlineTone} />
       {children}
     </ModalShell>
   );
