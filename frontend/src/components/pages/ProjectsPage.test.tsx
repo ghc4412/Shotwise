@@ -4,6 +4,7 @@ import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { API } from "@/api";
 import { useAppStore } from "@/stores/app-store";
+import { useAuthStore } from "@/stores/auth-store";
 import { useProjectsStore } from "@/stores/projects-store";
 import { ProjectsPage } from "@/components/pages/ProjectsPage";
 
@@ -326,6 +327,32 @@ describe("ProjectsPage", () => {
     });
     await waitFor(() => {
       expect(location.history?.at(-1)).toBe("/app/projects/demo-renamed");
+    });
+  });
+
+  describe("顶栏设置入口权限守卫", () => {
+    it("user 角色隐藏设置按钮", async () => {
+      useAuthStore.setState({ role: "user", username: "alice" });
+      vi.spyOn(API, "listProjects").mockResolvedValue({ projects: [] });
+      renderPage();
+      await screen.findByText("新建项目");
+      expect(screen.queryByRole("button", { name: "设置" })).not.toBeInTheDocument();
+    });
+
+    it("admin 角色显示设置按钮", async () => {
+      useAuthStore.setState({ role: "admin", username: "admin" });
+      vi.spyOn(API, "listProjects").mockResolvedValue({ projects: [] });
+      renderPage();
+      await screen.findByText("新建项目");
+      expect(screen.getByRole("button", { name: "设置" })).toBeInTheDocument();
+    });
+
+    it("role 未知（匿名模式）时保持显示设置按钮", async () => {
+      useAuthStore.setState({ role: null, username: null });
+      vi.spyOn(API, "listProjects").mockResolvedValue({ projects: [] });
+      renderPage();
+      await screen.findByText("新建项目");
+      expect(screen.getByRole("button", { name: "设置" })).toBeInTheDocument();
     });
   });
 });

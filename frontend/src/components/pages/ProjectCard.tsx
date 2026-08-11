@@ -23,24 +23,24 @@ interface PhaseTone {
 
 const PHASE_TONE: Record<Phase, PhaseTone> = {
   setup: {
-    dot: "oklch(0.64 0.020 265)",
-    text: "oklch(0.78 0.010 265)",
+    dot: "oklch(0.66 0.03 275)",
+    text: "oklch(0.78 0.02 275)",
     glow: "transparent",
   },
   worldbuilding: {
-    dot: "oklch(0.78 0.10 220)",
-    text: "oklch(0.86 0.06 220)",
-    glow: "oklch(0.78 0.10 220 / 0.35)",
+    dot: "oklch(0.78 0.13 210)",
+    text: "oklch(0.86 0.08 210)",
+    glow: "oklch(0.78 0.13 210 / 0.4)",
   },
   scripting: {
-    dot: "oklch(0.80 0.12 75)",
-    text: "oklch(0.90 0.08 75)",
-    glow: "oklch(0.80 0.12 75 / 0.35)",
+    dot: "oklch(0.80 0.15 75)",
+    text: "oklch(0.90 0.09 75)",
+    glow: "oklch(0.80 0.15 75 / 0.4)",
   },
   production: {
-    dot: "oklch(0.76 0.09 295)",
-    text: "oklch(0.88 0.05 295)",
-    glow: "oklch(0.76 0.09 295 / 0.40)",
+    dot: "oklch(0.76 0.20 350)",
+    text: "oklch(0.88 0.09 350)",
+    glow: "oklch(0.76 0.20 350 / 0.45)",
   },
   completed: {
     dot: "oklch(0.78 0.10 155)",
@@ -85,8 +85,8 @@ export function Poster({ project, styleLabel, large = false }: PosterProps) {
         width: "100%",
         aspectRatio: aspect,
         borderRadius: radius,
-        background: `radial-gradient(120% 80% at 30% 30%, oklch(0.55 0.15 ${hue1}) 0%, oklch(0.28 0.08 ${(hue1 + 10) % 360}) 45%, oklch(0.14 0.02 265) 100%)`,
-        boxShadow: "inset 0 0 0 1px oklch(1 0 0 / 0.06)",
+        background: `radial-gradient(120% 80% at 30% 30%, oklch(0.58 0.16 ${hue1}) 0%, oklch(0.30 0.09 ${(hue1 + 10) % 360}) 45%, oklch(0.13 0.030 275) 100%)`,
+        boxShadow: "inset 0 0 0 1px oklch(1 0 0 / 0.08)",
       }}
     >
       {project.thumbnail ? (
@@ -115,8 +115,21 @@ export function Poster({ project, styleLabel, large = false }: PosterProps) {
         style={POSTER_SPROCKET_STYLE}
       />
       <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]"
+      >
+        <span
+          className="absolute inset-y-0 w-16 rotate-[18deg]"
+          style={{
+            background:
+              "linear-gradient(90deg, transparent, oklch(1 0 0 / 0.14), transparent)",
+            animation: "lobby-poster-sweep 6.5s ease-in-out infinite",
+          }}
+        />
+      </div>
+      <div
         className="absolute left-[18px] top-[14px] font-mono font-bold uppercase tabular-nums"
-        style={{ color: "oklch(0.95 0 0 / 0.78)", fontSize: 9, letterSpacing: "0.14em" }}
+        style={{ color: "oklch(0.95 0 0 / 0.8)", fontSize: 9, letterSpacing: "0.14em" }}
       >
         {styleLabel}
       </div>
@@ -333,7 +346,7 @@ export function ProjectCard(props: ProjectCardProps) {
 
         <div
           className="mt-3 grid grid-cols-4 overflow-hidden rounded-[7px] border border-hairline-soft"
-          style={{ background: "oklch(0.16 0.010 265 / 0.5)" }}
+          style={{ background: "oklch(0.15 0.028 275 / 0.55)" }}
         >
           {(
             [
@@ -393,7 +406,7 @@ export function ProjectCard(props: ProjectCardProps) {
   );
 
   return (
-    <article className="group relative overflow-hidden rounded-[12px] border border-hairline bg-bg-grad-a/85 transition-[transform,border-color,box-shadow] duration-150 motion-safe:hover:-translate-y-0.5 hover:border-accent/45 hover:shadow-[0_18px_40px_-22px_oklch(0_0_0_/_0.6),0_0_0_1px_var(--color-accent-soft)] focus-within:border-accent/60 focus-within:shadow-[0_0_0_2px_var(--color-accent-soft)]">
+    <article className="group relative overflow-hidden rounded-[12px] border border-hairline bg-bg-grad-a/85 transition-[transform,border-color,box-shadow] duration-150 motion-safe:hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[0_18px_44px_-22px_oklch(0_0_0_/_0.6),0_0_0_1px_var(--color-accent-soft),0_0_26px_-10px_var(--color-accent-glow)] focus-within:border-accent/60 focus-within:shadow-[0_0_0_2px_var(--color-accent-soft)]">
       <Link
         href={`/app/projects/${project.name}`}
         className="block w-full text-left text-text no-underline outline-none"

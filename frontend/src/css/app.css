@@ -342,14 +342,6 @@ html.theme-light .app-panel-strong {
 .auth-film-track-left { left: 2.5%; transform: rotate(10deg); }
 .auth-film-track-right { right: 2.5%; transform: rotate(-10deg); background-image: repeating-linear-gradient(180deg, transparent 0 18px, var(--color-pink) 19px 22px, transparent 23px 42px); }
 
-.auth-status-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--color-good);
-    box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-good) 15%, transparent), 0 0 12px var(--color-good);
-}
-
 .auth-kicker-line { width: 38px; height: 1px; background: linear-gradient(90deg, var(--color-accent), transparent); }
 
 .auth-title { text-shadow: 0 20px 46px oklch(0 0 0 / 0.45); }
@@ -387,8 +379,6 @@ html.theme-light .app-panel-strong {
 .auth-submit { min-height: 48px; border-radius: 4px; }
 .auth-divider { display: flex; align-items: center; gap: 10px; margin: 24px 0 16px; color: var(--color-text-4); font-family: var(--font-mono); font-size: 9px; line-height: 1.5; text-transform: uppercase; letter-spacing: 0.08em; }
 .auth-divider::before, .auth-divider::after { content: ""; height: 1px; flex: 1; background: var(--color-hairline); }
-.auth-request-button { display: inline-flex; align-items: center; gap: 6px; color: var(--color-text-2); font-size: 12px; text-decoration: none; transition: color 160ms ease; }
-.auth-request-button:hover { color: var(--color-accent-2); }
 .auth-error { border-left: 2px solid var(--color-warm); padding-left: 10px; }
 
 @keyframes auth-sweep { 0%, 100% { transform: translateX(-18%); opacity: 0.4; } 50% { transform: translateX(18%); opacity: 0.9; } }
@@ -424,19 +414,226 @@ html.theme-light .auth-reel-stage { background: #dce9ef; }
     .auth-sweep, .auth-reel-stage::after, .auth-reel-frame, .auth-reel-progress span { animation: none; }
 }
 
-.lobby-shell { isolation: isolate; }
-.lobby-shell::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0.18; background-image: linear-gradient(to right, oklch(1 0 0 / 0.045) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 0.045) 1px, transparent 1px); background-size: 64px 64px; mask-image: linear-gradient(180deg, #000, transparent 88%); }
+/* ============================================================
+   Lobby — 霓虹赛博（Neon Cyberpunk）
+   ============================================================ */
+
+.lobby-shell {
+    isolation: isolate;
+    /* 深空底：紫蓝渐变 + 三色霓虹光斑 */
+    background:
+        radial-gradient(900px 520px at 82% -8%, oklch(0.34 0.13 312 / 0.20), transparent 58%),
+        radial-gradient(1000px 540px at 8% -12%, oklch(0.38 0.12 200 / 0.22), transparent 58%),
+        radial-gradient(700px 480px at 96% 108%, oklch(0.32 0.13 350 / 0.18), transparent 58%),
+        linear-gradient(180deg, oklch(0.165 0.040 270), oklch(0.092 0.028 264));
+    background-attachment: fixed;
+}
+
+/* 地平线网格 — 近处加密，营造纵深 */
+.lobby-shell::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.30;
+    background-image:
+        linear-gradient(to right, oklch(0.55 0.10 200 / 0.16) 1px, transparent 1px),
+        linear-gradient(to bottom, oklch(0.55 0.10 200 / 0.16) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: linear-gradient(180deg, #000 0%, transparent 92%);
+    -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 92%);
+}
+
+/* 地平线扫描光带 — 从屏幕底部向上缓慢漂移的青色光 */
+.lobby-shell::after {
+    content: "";
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: -20vh;
+    z-index: -1;
+    pointer-events: none;
+    height: 46vh;
+    background: linear-gradient(180deg, transparent, oklch(0.40 0.13 200 / 0.14) 60%, oklch(0.36 0.14 312 / 0.10));
+    filter: blur(6px);
+    animation: lobby-horizon 14s ease-in-out infinite;
+}
+
+@keyframes lobby-horizon {
+    0%, 100% { transform: translateY(6vh); opacity: 0.75; }
+    50% { transform: translateY(-2vh); opacity: 1; }
+}
+
+/* 扫描线 — 全屏缓慢扫过的霓虹细线（仅大厅） */
+.lobby-scanline {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 0;
+    z-index: 0;
+    height: 90px;
+    pointer-events: none;
+    opacity: 0.5;
+    background: linear-gradient(180deg, transparent, oklch(0.85 0.14 200 / 0.06), transparent);
+    animation: lobby-scan 9s linear infinite;
+}
+
+@keyframes lobby-scan {
+    0% { transform: translateY(-120px); }
+    100% { transform: translateY(110vh); }
+}
+
+/* 顶栏 — 玻璃拟态 + 底部霓虹渐变 hairline */
+.lobby-topbar {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background:
+        linear-gradient(180deg, oklch(0.20 0.040 275 / 0.62), oklch(0.15 0.032 270 / 0.52));
+    backdrop-filter: blur(28px) saturate(1.6);
+    -webkit-backdrop-filter: blur(28px) saturate(1.6);
+    border-bottom: 1px solid oklch(1 0 0 / 0.07);
+    box-shadow:
+        inset 0 1px 0 oklch(1 0 0 / 0.06),
+        0 10px 30px -14px oklch(0 0 0 / 0.55);
+}
+
+/* 顶栏底部霓虹线 — 青→粉→紫 */
+.lobby-topbar::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 2%, var(--color-accent), var(--color-pink), var(--color-violet), transparent 98%);
+    opacity: 0.8;
+    background-size: 220% 100%;
+    animation: lobby-hairline-flow 8s ease-in-out infinite;
+}
+
+@keyframes lobby-hairline-flow {
+    0%, 100% { background-position: 0% 0; }
+    50% { background-position: 100% 0; }
+}
+
+.lobby-filterbar {
+    position: sticky;
+    z-index: 20;
+    border-bottom: 1px solid var(--color-hairline);
+    background: linear-gradient(180deg, oklch(0.20 0.040 275 / 0.60), oklch(0.15 0.032 270 / 0.50));
+    backdrop-filter: blur(16px) saturate(1.3);
+    -webkit-backdrop-filter: blur(16px) saturate(1.3);
+}
+
 .lobby-hero-strip { position: relative; }
-.lobby-hero-strip::after { content: ""; position: absolute; left: 24px; right: 24px; bottom: 0; height: 1px; background: linear-gradient(90deg, var(--color-accent), var(--color-pink), transparent 78%); opacity: 0.55; }
-.lobby-signal { display: flex; align-items: center; gap: 12px; min-height: 24px; color: var(--color-text-4); font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; }
+
+/* Hero 底部分隔 — 青粉紫霓虹渐变 */
+.lobby-hero-strip::after {
+    content: "";
+    position: absolute;
+    left: 24px;
+    right: 24px;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg, var(--color-accent), var(--color-pink), var(--color-violet), transparent 82%);
+    opacity: 0.75;
+}
+
+/* 信号均衡器 — 霓虹三色跳动 */
+.lobby-signal {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 24px;
+    color: var(--color-text-4);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+}
+
 .lobby-signal-label { white-space: nowrap; }
-.lobby-signal-line { display: inline-flex; align-items: center; gap: 3px; height: 16px; }
-.lobby-signal-line i { display: block; width: 3px; height: 5px; background: var(--color-accent); opacity: 0.45; animation: lobby-signal 1.6s ease-in-out infinite; }
-.lobby-signal-line i:nth-child(2), .lobby-signal-line i:nth-child(7) { animation-delay: 120ms; }
-.lobby-signal-line i:nth-child(3), .lobby-signal-line i:nth-child(6) { animation-delay: 240ms; }
-.lobby-signal-line i:nth-child(4), .lobby-signal-line i:nth-child(5) { animation-delay: 360ms; }
+
+.lobby-signal-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    height: 16px;
+}
+
+.lobby-signal-line i {
+    display: block;
+    width: 3px;
+    height: 5px;
+    border-radius: 1px;
+    background: var(--color-accent);
+    box-shadow: 0 0 6px var(--color-accent-glow);
+    opacity: 0.5;
+    animation: lobby-signal 1.5s ease-in-out infinite;
+}
+
+.lobby-signal-line i:nth-child(2), .lobby-signal-line i:nth-child(7) { animation-delay: 110ms; background: var(--color-pink); box-shadow: 0 0 6px var(--color-pink-glow); }
+.lobby-signal-line i:nth-child(3), .lobby-signal-line i:nth-child(6) { animation-delay: 220ms; background: var(--color-violet); box-shadow: 0 0 6px var(--color-violet-glow); }
+.lobby-signal-line i:nth-child(4), .lobby-signal-line i:nth-child(5) { animation-delay: 330ms; }
+
+@keyframes lobby-signal {
+    0%, 100% { height: 5px; opacity: 0.45; }
+    50% { height: 15px; opacity: 1; }
+}
+
 .lobby-topbar button[data-icon-button="sparkles"] > span[aria-hidden] { display: none; }
-@keyframes lobby-signal { 0%, 100% { height: 5px; opacity: 0.4; } 50% { height: 15px; opacity: 1; background: var(--color-pink); } }
+
+/* 大厅内容入场 — 分段上浮淡入 */
+@keyframes lobby-rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to { opacity: 1; transform: none; }
+}
+
+.lobby-rise {
+    animation: lobby-rise 0.55s cubic-bezier(0.22, 0.8, 0.3, 1) both;
+}
+
+/* 霓虹描边卡 — NowEditing / ProjectCard 通用边框光 */
+@keyframes lobby-neon-border {
+    0%, 100% { border-color: oklch(0.85 0.14 200 / 0.55); }
+    33% { border-color: oklch(0.78 0.20 350 / 0.5); }
+    66% { border-color: oklch(0.76 0.19 312 / 0.5); }
+}
+
+.lobby-neon-card {
+    border: 1px solid oklch(0.85 0.14 200 / 0.5);
+    animation: lobby-neon-border 7s ease-in-out infinite;
+}
+
+/* REC 指示灯 */
+.lobby-rec {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.lobby-rec-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: oklch(0.72 0.21 25);
+    box-shadow: 0 0 10px oklch(0.72 0.21 25 / 0.85);
+    animation: lobby-rec-blink 1.4s ease-in-out infinite;
+}
+
+@keyframes lobby-rec-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.25; }
+}
+
+/* 海报斜向扫光 */
+@keyframes lobby-poster-sweep {
+    0%, 55% { transform: translateX(-160%) skewX(-8deg); opacity: 0; }
+    70% { opacity: 1; }
+    100% { transform: translateX(720%) skewX(-8deg); opacity: 0; }
+}
 
 @media (max-width: 760px) {
     .lobby-hero-strip { flex-direction: column; gap: 1rem; }
@@ -445,5 +642,12 @@ html.theme-light .auth-reel-stage { background: #dce9ef; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .lobby-signal-line i { animation: none; }
+    .lobby-signal-line i,
+    .lobby-shell::after,
+    .lobby-scanline,
+    .lobby-topbar::after,
+    .lobby-neon-card,
+    .lobby-rec-dot,
+    .lobby-rise { animation: none; }
+    .lobby-rise { opacity: 1; transform: none; }
 }

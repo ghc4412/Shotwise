@@ -15,6 +15,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { useConfigStatusStore } from "@/stores/config-status-store";
 import { ONBOARDING_ANCHORS } from "@/onboarding/anchors";
+import { UserMenu } from "@/components/layout/UserMenu";
 import { AgentConfigTab } from "./AgentConfigTab";
 import { ApiKeysTab } from "./ApiKeysTab";
 import { AboutSection } from "./settings/AboutSection";
@@ -190,6 +191,7 @@ export function SystemConfigPage() {
               {currentLang}
             </span>
           </button>
+          <UserMenu />
         </div>
       </header>
 

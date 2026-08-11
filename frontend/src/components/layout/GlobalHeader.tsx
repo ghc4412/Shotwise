@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { ChevronLeft, Activity, Settings, Bell, Download, Loader2, Package } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAppStore } from "@/stores/app-store";
+import { useAuthStore } from "@/stores/auth-store";
 import { useConfigStatusStore } from "@/stores/config-status-store";
 import { useProjectsStore } from "@/stores/projects-store";
 import { useDemoWorkbench } from "@/onboarding/use-demo-workbench";
@@ -17,6 +18,7 @@ import { ExportScopeDialog } from "./ExportScopeDialog";
 import { ProjectMenu } from "./ProjectMenu";
 import { PhaseStepper } from "./PhaseStepper";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { UserMenu } from "./UserMenu";
 
 import { API } from "@/api";
 import { ArchiveDiagnosticsDialog } from "@/components/shared/ArchiveDiagnosticsDialog";
@@ -81,6 +83,7 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
   const { taskHudOpen, setTaskHudOpen, triggerScrollTo, markWorkspaceNotificationRead } =
     useAppStore();
   const { stats: usageStats, setStats: setUsageStats } = useUsageStore();
+  const role = useAuthStore((s) => s.role);
   const [usageDrawerOpen, setUsageDrawerOpen] = useState(false);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
   const [exportingProject, setExportingProject] = useState(false);
@@ -230,7 +233,7 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
           gridTemplateColumns: "minmax(0, 256px) 1fr auto",
           gap: 14,
           background:
-            "linear-gradient(180deg, oklch(0.21 0.011 265 / 0.85), oklch(0.19 0.010 265 / 0.75))",
+            "linear-gradient(180deg, var(--color-shell-grad-a), var(--color-shell-grad-b))",
           backdropFilter: "blur(16px) saturate(1.1)",
           WebkitBackdropFilter: "blur(16px) saturate(1.1)",
           borderBottom: "1px solid var(--color-hairline)",
@@ -416,6 +419,7 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
 
           {/* Export — accent CTA */}
           <ThemeToggle compact />
+          <UserMenu compact />
 
           <div
             className="relative"
@@ -486,7 +490,8 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
             <Package className="h-4 w-4" />
           </button>
 
-          {/* Settings */}
+          {/* Settings：项目内 → 项目设置（普通用户可用）；无项目/演示 → 全局设置（admin-only） */}
+          {role === "user" && !currentProjectName && !demoMode ? null : (
           <button
             type="button"
             onClick={() =>
@@ -519,6 +524,7 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
               />
             )}
           </button>
+          )}
         </div>
       </header>
 

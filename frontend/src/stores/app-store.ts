@@ -23,6 +23,17 @@ const ALL_ENTITIES_REVISION_KEY = "__all__";
 export type AppTheme = "dark" | "light";
 const APP_THEME_STORAGE_KEY = "shotwise-theme";
 
+export type AccentThemeId = "aurora" | "jade" | "violet" | "crimson" | "amber" | "ocean";
+export const ACCENT_THEME_IDS: readonly AccentThemeId[] = [
+  "aurora",
+  "jade",
+  "violet",
+  "crimson",
+  "amber",
+  "ocean",
+];
+const ACCENT_THEME_STORAGE_KEY = "shotwise-accent-theme";
+
 export const ASSISTANT_PANEL_DEFAULT_WIDTH = 505;
 export const ASSISTANT_PANEL_MIN_WIDTH = 360;
 export const ASSISTANT_PANEL_MAX_WIDTH = 720;
@@ -65,10 +76,33 @@ function applyTheme(theme: AppTheme): void {
   document.documentElement.style.colorScheme = theme;
 }
 
+function isAccentThemeId(value: unknown): value is AccentThemeId {
+  return typeof value === "string" && (ACCENT_THEME_IDS as readonly string[]).includes(value);
+}
+
+function readPersistedAccentTheme(): AccentThemeId {
+  if (typeof window === "undefined") return "aurora";
+  try {
+    const value = window.localStorage.getItem(ACCENT_THEME_STORAGE_KEY);
+    return isAccentThemeId(value) ? value : "aurora";
+  } catch {
+    return "aurora";
+  }
+}
+
+function applyAccentTheme(accent: AccentThemeId): void {
+  if (typeof document === "undefined") return;
+  const el = document.documentElement;
+  for (const id of ACCENT_THEME_IDS) el.classList.remove(`accent-${id}`);
+  el.classList.add(`accent-${accent}`);
+}
+
 interface AppState {
   theme: AppTheme;
   setTheme: (theme: AppTheme) => void;
   toggleTheme: () => void;
+  accentTheme: AccentThemeId;
+  setAccentTheme: (accent: AccentThemeId) => void;
   initializeTheme: () => void;
 
   // Context focus (design doc "Context-Aware" feature)
@@ -187,7 +221,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     const next = get().theme === "dark" ? "light" : "dark";
     get().setTheme(next);
   },
-  initializeTheme: () => applyTheme(get().theme),
+  accentTheme: readPersistedAccentTheme(),
+  setAccentTheme: (accent) => {
+    applyAccentTheme(accent);
+    set({ accentTheme: accent });
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(ACCENT_THEME_STORAGE_KEY, accent);
+      }
+    } catch {
+      // localStorage may be unavailable; the in-memory accent theme remains active.
+    }
+  },
+  initializeTheme: () => {
+    applyTheme(get().theme);
+    applyAccentTheme(get().accentTheme);
+  },
 
   focusedContext: null,
   setFocusedContext: (ctx) => set({ focusedContext: ctx }),

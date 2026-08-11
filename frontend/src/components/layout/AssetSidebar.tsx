@@ -162,7 +162,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
         transition: "width .18s ease",
         borderRight: "1px solid var(--color-hairline)",
         background:
-          "linear-gradient(180deg, oklch(0.195 0.011 265 / 0.6), oklch(0.175 0.010 265 / 0.5))",
+          "linear-gradient(180deg, var(--color-shell-side-a), var(--color-shell-side-b))",
         boxShadow: "inset -1px 0 0 oklch(1 0 0 / 0.015)",
       }}
     >
@@ -178,7 +178,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
               onClick={() => setLocation(item.path)}
               title={collapsed ? item.label : ""}
               aria-label={collapsed ? item.label : undefined}
-              className="relative mb-px flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors focus-ring hover:bg-[oklch(0.26_0.012_265/0.5)]"
+              className="relative mb-px flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors focus-ring hover:bg-[var(--color-shell-hover)]"
               style={{
                 background: active
                   ? "linear-gradient(90deg, var(--color-accent-soft), var(--color-accent-dim) 70%, transparent)"
@@ -217,7 +217,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
                       className="num rounded-[3px] px-1.5 py-px text-[10.5px]"
                       style={{
                         color: active ? "var(--color-text-3)" : "var(--color-text-4)",
-                        background: active ? "oklch(0 0 0 / 0.2)" : "transparent",
+                        background: active ? "var(--color-shell-badge)" : "transparent",
                       }}
                     >
                       {item.meta}
@@ -259,7 +259,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
                   aria-disabled="true"
                   className="grid h-5 w-5 place-items-center rounded focus-ring disabled:cursor-not-allowed disabled:opacity-50"
                   style={{
-                    background: "oklch(0.28 0.012 250 / 0.6)",
+                    background: "var(--color-shell-btn-2)",
                     color: "var(--color-text-3)",
                   }}
                   title={t("dashboard:add_episode_unavailable")}
@@ -276,7 +276,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
               <div
                 className="flex items-center gap-1.5 rounded-md px-2 py-1.5"
                 style={{
-                  background: "oklch(0.16 0.010 250 / 0.6)",
+                  background: "var(--color-shell-field)",
                   border: "1px solid var(--color-hairline)",
                 }}
               >
@@ -358,7 +358,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
         className="flex items-center gap-2 px-2.5 py-2"
         style={{
           borderTop: "1px solid var(--color-hairline)",
-          background: "oklch(0.17 0.010 250 / 0.6)",
+          background: "var(--color-shell-footer)",
         }}
       >
         <button
@@ -367,7 +367,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
           className="grid h-7 w-7 place-items-center rounded-md focus-ring"
           aria-expanded={!collapsed}
           style={{
-            background: "oklch(0.24 0.012 250 / 0.5)",
+            background: "var(--color-shell-btn)",
             color: "var(--color-text-3)",
           }}
           title={collapsed ? t("dashboard:sidebar_expand") : t("dashboard:sidebar_collapse")}

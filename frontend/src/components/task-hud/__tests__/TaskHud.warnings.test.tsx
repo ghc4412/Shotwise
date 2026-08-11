@@ -129,8 +129,8 @@ describe("TaskHud generation warnings", () => {
     // 无详情可展开，但底色仍须标出失败，否则这行与排队行无从区分。
     const row = screen.getByText("NOMSG").parentElement as HTMLElement;
     expect(row.closest('[role="button"]')).toBeNull();
-    // jsdom 会把 oklch 的数值归一化（0.30 → 0.3），断言按归一化后的形式写。
-    expect(row.style.background).toContain("oklch(0.3 0.1 25");
+    // 失败底色走 --color-shell-hud-danger 语义变量（jsdom 不解析 CSS 变量，断言变量引用）。
+    expect(row.style.background).toContain("var(--color-shell-hud-danger)");
   });
 
   it("ignores warnings on a failed task and keeps showing the error", async () => {

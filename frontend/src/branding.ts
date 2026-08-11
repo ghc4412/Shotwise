@@ -18,6 +18,8 @@ function fallback(value: string | undefined, defaultValue: string): string {
 
 export const BRAND = {
   name: fallback(env.VITE_BRAND_NAME, "Shotwise"),
+  // 中文品牌名：与 name（英文/可配置）解耦，供界面中需要中文品牌展示的位置使用
+  nameZh: "逐镜",
   tagline: fallback(env.VITE_BRAND_TAGLINE, "AI 漫剧生产平台"),
   description: fallback(
     env.VITE_BRAND_DESCRIPTION,

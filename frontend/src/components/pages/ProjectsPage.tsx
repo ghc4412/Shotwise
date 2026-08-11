@@ -10,12 +10,13 @@ import {
 import { errMsg, voidCall, voidPromise } from "@/utils/async";
 import { formatDate } from "@/utils/date-format";
 import { Link, useLocation } from "wouter";
-import { AlertTriangle, Library, Loader2, Plus, Search, Settings, Sparkles, Upload } from "lucide-react";
+import { AlertTriangle, Clapperboard, Library, Loader2, Plus, Search, Settings, Sparkles, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { API } from "@/api";
 import { useProjectsStore } from "@/stores/projects-store";
 import { useAppStore } from "@/stores/app-store";
+import { useAuthStore } from "@/stores/auth-store";
 import { useConfigStatusStore } from "@/stores/config-status-store";
 import { ArchiveDiagnosticsDialog } from "@/components/shared/ArchiveDiagnosticsDialog";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -30,6 +31,7 @@ import { OpenClawModal } from "./OpenClawModal";
 import { rememberAssetLibraryReturnTo } from "./AssetLibraryPage";
 import { ICON_BTN_FILLED_CLS } from "@/components/ui/darkroom-tokens";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { UserMenu } from "@/components/layout/UserMenu";
 import {
   ProjectCard,
   Poster,
@@ -62,11 +64,11 @@ type GreetingKey =
   | "lobby_hero_greeting_late";
 
 const ACCENT_BUTTON_STYLE: CSSProperties = {
-  color: "oklch(0.14 0 0)",
+  color: "oklch(0.12 0.02 280)",
   background:
-    "linear-gradient(180deg, var(--color-accent-2), var(--color-accent))",
+    "linear-gradient(120deg, var(--color-accent-2), var(--color-accent) 55%, var(--color-violet))",
   boxShadow:
-    "inset 0 1px 0 oklch(1 0 0 / 0.3), 0 0 0 1px oklch(0.55 0.10 295 / 0.4), 0 4px 14px -6px var(--color-accent)",
+    "inset 0 1px 0 oklch(1 0 0 / 0.4), 0 0 0 1px oklch(0.6 0.12 210 / 0.5), 0 0 22px -6px var(--color-accent-glow), 0 8px 26px -10px var(--color-violet-glow)",
 };
 
 function projectActivityScore(p: ProjectSummary): number {
@@ -132,21 +134,43 @@ function NowEditingCard({ project, styleLabel, phaseLabels, t }: NowEditingCardP
 
   return (
     <article
-      className="grid overflow-hidden rounded-[14px] border border-hairline bg-bg-grad-a"
+      className="lobby-neon-card grid overflow-hidden rounded-[16px]"
       style={{
         gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr)",
         boxShadow:
-          "0 30px 80px -40px oklch(0 0 0 / 0.7), inset 0 1px 0 oklch(1 0 0 / 0.04)",
+          "0 30px 80px -40px oklch(0 0 0 / 0.7), 0 0 40px -18px var(--color-accent-glow), 0 0 60px -24px var(--color-violet-glow), inset 0 1px 0 oklch(1 0 0 / 0.06)",
       }}
     >
-      <div className="p-3.5">
+      <div className="relative p-3.5">
         <Poster project={project} styleLabel={styleLabel} large />
+        {/* 海报上斜向扫光 */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-3.5 overflow-hidden rounded-[8px]"
+        >
+          <span
+            className="absolute inset-y-0 w-24 rotate-[18deg]"
+            style={{
+              background:
+                "linear-gradient(90deg, transparent, oklch(1 0 0 / 0.16), transparent)",
+              animation: "lobby-poster-sweep 5.5s ease-in-out infinite",
+            }}
+          />
+        </div>
       </div>
       <div className="relative flex flex-col px-7 pb-6 pt-6">
         <span
           aria-hidden
           className="font-editorial pointer-events-none absolute right-[-6px] top-2 italic"
-          style={{ fontSize: 120, lineHeight: 1, color: "oklch(0.22 0.013 280)" }}
+          style={{
+            fontSize: 120,
+            lineHeight: 1,
+            background:
+              "linear-gradient(180deg, oklch(0.5 0.09 300), oklch(0.3 0.06 280))",
+            WebkitBackgroundClip: "text",
+            backgroundClip: "text",
+            color: "transparent",
+          }}
         >
           now
         </span>
@@ -160,10 +184,16 @@ function NowEditingCard({ project, styleLabel, phaseLabels, t }: NowEditingCardP
                 height: 5,
                 borderRadius: 3,
                 background: "var(--color-accent)",
-                boxShadow: "0 0 8px var(--color-accent-glow)",
+                boxShadow: "0 0 10px var(--color-accent-glow)",
               }}
             />
             {t("dashboard:lobby_continue_editing_chip")}
+          </span>
+          <span aria-hidden className="lobby-rec ml-auto">
+            <span className="lobby-rec-dot" />
+            <span className="font-mono text-[9px] font-bold tracking-[0.18em] text-text-3">
+              REC
+            </span>
           </span>
         </div>
         <h3
@@ -174,6 +204,7 @@ function NowEditingCard({ project, styleLabel, phaseLabels, t }: NowEditingCardP
             lineHeight: 1,
             letterSpacing: "-0.012em",
             color: "var(--color-text)",
+            textShadow: "0 0 24px oklch(0.85 0.14 200 / 0.18)",
           }}
         >
           {getProjectDisplayName(project.title, t("dashboard:untitled_project"))}
@@ -232,7 +263,7 @@ function NowEditingCard({ project, styleLabel, phaseLabels, t }: NowEditingCardP
             <div
               key={cell.k}
               className="px-3.5 py-3"
-              style={{ background: "oklch(0.16 0.010 265 / 0.6)" }}
+              style={{ background: "oklch(0.16 0.030 275 / 0.6)" }}
             >
               <div className="font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-text-3">
                 {cell.k}
@@ -249,7 +280,7 @@ function NowEditingCard({ project, styleLabel, phaseLabels, t }: NowEditingCardP
         <div className="relative mt-4 flex justify-end">
           <Link
             href={`/app/projects/${project.name}`}
-            className="inline-flex items-center gap-2 rounded-[7px] px-4 py-2.5 text-[12px] font-semibold no-underline transition-transform motion-safe:hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="inline-flex items-center gap-2 rounded-[8px] px-4 py-2.5 text-[12px] font-semibold no-underline transition-transform motion-safe:hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             style={ACCENT_BUTTON_STYLE}
           >
             {phase === "completed"
@@ -278,7 +309,7 @@ function PlaceholderTile({ onClick, title, kicker, icon, ariaLabel }: Placeholde
     <button
       type="button"
       onClick={onClick}
-      className="group relative flex h-full min-h-[380px] flex-col overflow-hidden rounded-[12px] border border-dashed border-hairline-strong bg-bg-grad-a/55 text-left transition-colors hover:border-accent/55 hover:bg-bg-grad-a/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      className="group relative flex h-full min-h-[380px] flex-col overflow-hidden rounded-[12px] border border-dashed border-hairline-strong bg-bg-grad-a/55 text-left transition-all hover:border-accent/60 hover:bg-bg-grad-a/75 hover:shadow-[0_0_28px_-8px_var(--color-accent-glow)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       aria-label={ariaLabel ?? title}
     >
       <div className="p-2.5">
@@ -287,7 +318,7 @@ function PlaceholderTile({ onClick, title, kicker, icon, ariaLabel }: Placeholde
           style={{
             aspectRatio: "2 / 1",
             background:
-              "radial-gradient(120% 80% at 30% 30%, oklch(0.26 0.04 290 / 0.5) 0%, transparent 60%), oklch(0.18 0.011 265 / 0.55)",
+              "radial-gradient(120% 80% at 30% 30%, oklch(0.30 0.09 312 / 0.45) 0%, transparent 60%), oklch(0.17 0.032 275 / 0.6)",
           }}
         >
           <div className="flex flex-col items-center gap-2.5 transition-transform motion-safe:group-hover:-translate-y-0.5">
@@ -296,10 +327,10 @@ function PlaceholderTile({ onClick, title, kicker, icon, ariaLabel }: Placeholde
               className="grid h-12 w-12 place-items-center rounded-[12px]"
               style={{
                 background:
-                  "linear-gradient(180deg, oklch(0.30 0.04 290), oklch(0.22 0.02 280))",
-                border: "1px solid oklch(0.76 0.09 295 / 0.4)",
+                  "linear-gradient(135deg, oklch(0.32 0.11 200), oklch(0.24 0.10 312))",
+                border: "1px solid oklch(0.80 0.14 200 / 0.5)",
                 boxShadow:
-                  "inset 0 1px 0 oklch(1 0 0 / 0.06), 0 8px 22px -14px var(--color-accent)",
+                  "inset 0 1px 0 oklch(1 0 0 / 0.08), 0 0 22px -6px var(--color-accent-glow), 0 0 30px -10px var(--color-violet-glow)",
                 color: "var(--color-accent-2)",
               }}
             >
@@ -330,7 +361,7 @@ function PlaceholderTile({ onClick, title, kicker, icon, ariaLabel }: Placeholde
         </div>
         <div
           className="grid grid-cols-4 overflow-hidden rounded-[7px] border border-dashed border-hairline"
-          style={{ background: "oklch(0.16 0.010 265 / 0.45)" }}
+          style={{ background: "oklch(0.15 0.028 275 / 0.5)" }}
         >
           {[0, 1, 2, 3].map((i) => (
             <div
@@ -390,6 +421,8 @@ function TopBar({
   searchInputRef,
 }: TopBarProps) {
   const { t } = useTranslation(["common", "dashboard", "assets"]);
+  // 显式 user 角色才隐藏管理入口；null（匿名模式 / verify 未完成）保持可见
+  const canManage = useAuthStore((s) => s.role !== "user");
   return (
     <div
       className="lobby-topbar sticky top-0 z-30"
@@ -409,6 +442,9 @@ function TopBar({
             src="/shotwise-mark.svg"
             alt={BRAND.name}
             className="h-8 w-8 rounded-lg"
+            style={{
+              boxShadow: "0 0 16px -2px var(--color-accent-glow)",
+            }}
           />
           <span
             className="font-sans text-[17px] font-medium tracking-[-0.012em] text-text"
@@ -418,7 +454,7 @@ function TopBar({
           </span>
         </div>
 
-        <label className="ml-2 flex w-[min(420px,100%)] items-center gap-2 rounded-lg border border-hairline-soft bg-bg/55 px-3 py-1.5 transition-colors focus-within:border-accent/60">
+        <label className="ml-2 flex w-[min(420px,100%)] items-center gap-2 rounded-lg border border-hairline-soft bg-bg/55 px-3 py-1.5 transition-all focus-within:border-accent/70 focus-within:shadow-[0_0_20px_-6px_var(--color-accent-glow)]">
             <Search className="h-3.5 w-3.5 text-text-3" />
             <input
               ref={searchInputRef}
@@ -447,7 +483,7 @@ function TopBar({
           <button
             type="button"
             onClick={onAssets}
-            className="inline-flex items-center gap-1.5 rounded-[7px] border border-accent/25 bg-accent-dim px-3 py-1.5 text-[12px] text-text-2 transition-colors hover:border-accent/50 hover:bg-accent-soft hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            className="inline-flex items-center gap-1.5 rounded-[7px] border border-accent/30 bg-accent-dim px-3 py-1.5 text-[12px] text-text-2 transition-colors hover:border-accent/60 hover:bg-accent-soft hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             title={t("assets:library_title")}
           >
             <Library className="h-3.5 w-3.5" />
@@ -489,22 +525,25 @@ function TopBar({
           >
             <Sparkles className="h-4 w-4" aria-hidden />
           </button>
-          <button
-            type="button"
-            onClick={onSettings}
-            data-onboarding={ONBOARDING_ANCHORS.lobbySettings}
-            className={`relative ${ICON_BTN_FILLED_CLS}`}
-            title={t("settings")}
-            aria-label={t("settings")}
-          >
-            <Settings className="h-4 w-4" aria-hidden />
-            {configIncomplete ? (
-              <span
-                aria-label={t("config_incomplete")}
-                className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-warm-bright"
-              />
-            ) : null}
-          </button>
+          {canManage && (
+            <button
+              type="button"
+              onClick={onSettings}
+              data-onboarding={ONBOARDING_ANCHORS.lobbySettings}
+              className={`relative ${ICON_BTN_FILLED_CLS}`}
+              title={t("settings")}
+              aria-label={t("settings")}
+            >
+              <Settings className="h-4 w-4" aria-hidden />
+              {configIncomplete ? (
+                <span
+                  aria-label={t("config_incomplete")}
+                  className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-warm-bright"
+                />
+              ) : null}
+            </button>
+          )}
+          <UserMenu />
         </div>
       </div>
     </div>
@@ -584,8 +623,26 @@ function HeroStrip({ totals, t }: HeroStripProps) {
   ];
 
   return (
-    <div className="lobby-hero-strip mx-auto flex max-w-[1320px] items-stretch justify-between gap-6 px-6 pb-5 pt-6">
+    <div className="lobby-hero-strip lobby-rise mx-auto flex max-w-[1320px] items-stretch justify-between gap-6 px-6 pb-5 pt-6">
       <div className="min-w-0 flex-1">
+        <div className="mb-3 flex items-center gap-2.5">
+          <span
+            aria-hidden
+            className="grid h-7 w-7 place-items-center rounded-[8px]"
+            style={{
+              background:
+                "linear-gradient(135deg, var(--color-accent-dim), var(--color-violet-dim))",
+              border: "1px solid oklch(0.75 0.13 210 / 0.4)",
+              boxShadow: "0 0 18px -4px var(--color-accent-glow)",
+              color: "var(--color-accent-2)",
+            }}
+          >
+            <Clapperboard className="h-4 w-4" aria-hidden />
+          </span>
+          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-text-3">
+            {t("dashboard:lobby_hero_eyebrow")} — {dateLine}
+          </span>
+        </div>
         <h1
           className="font-editorial m-0"
           style={{
@@ -594,6 +651,7 @@ function HeroStrip({ totals, t }: HeroStripProps) {
             lineHeight: 1.22,
             letterSpacing: "-0.012em",
             color: "var(--color-text)",
+            textShadow: "0 0 30px oklch(0.85 0.14 200 / 0.14)",
           }}
         >
           <Typewriter
@@ -603,7 +661,14 @@ function HeroStrip({ totals, t }: HeroStripProps) {
                 { text: t(`dashboard:${greetingKey}`), after: <br /> },
                 {
                   text: subtitle,
-                  style: { fontStyle: "italic", color: "var(--color-accent-2)" },
+                  style: {
+                    fontStyle: "italic",
+                    background:
+                      "linear-gradient(120deg, var(--color-accent-2), var(--color-pink) 60%, var(--color-violet-2))",
+                    WebkitBackgroundClip: "text",
+                    backgroundClip: "text",
+                    color: "transparent",
+                  },
                 },
               ] satisfies TypewriterSegment[]
             }
@@ -614,21 +679,22 @@ function HeroStrip({ totals, t }: HeroStripProps) {
         </p>
       </div>
       <div className="flex flex-col items-end justify-between gap-2.5">
-        <div className="mt-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-accent-2">
-          {t("dashboard:lobby_hero_eyebrow")} — {dateLine}
-        </div>
         <div className="lobby-signal" aria-hidden>
           <span className="lobby-signal-line"><i /><i /><i /><i /><i /><i /><i /><i /></span>
         </div>
         <div
-          className="flex items-stretch overflow-hidden rounded-[10px] border border-hairline-soft"
-          style={{ background: "oklch(0.16 0.010 265 / 0.4)" }}
+          className="flex items-stretch overflow-hidden rounded-[10px]"
+          style={{
+            border: "1px solid oklch(0.7 0.12 210 / 0.35)",
+            background: "oklch(0.15 0.030 275 / 0.55)",
+            boxShadow: "0 0 26px -12px var(--color-accent-glow)",
+          }}
         >
           {stats.map((s, i) => (
             <div
               key={s.key}
               className={
-                "px-4 py-2.5" +
+                "relative px-4 py-2.5" +
                 (i < stats.length - 1 ? " border-r border-hairline-soft" : "")
               }
             >
@@ -643,6 +709,7 @@ function HeroStrip({ totals, t }: HeroStripProps) {
                   lineHeight: 1,
                   letterSpacing: "-0.012em",
                   ...s.tone,
+                  textShadow: "0 0 18px var(--color-accent-glow)",
                 }}
               >
                 {s.value}
@@ -677,12 +744,9 @@ function FilterPills({ active, onChange, counts, phaseLabels, t }: FilterPillsPr
 
   return (
     <div
-      className="lobby-filterbar sticky z-20 border-b border-hairline backdrop-blur-md"
+      className="lobby-filterbar sticky z-20 border-b border-hairline"
       style={{
         top: "var(--lobby-topbar-h, 57px)",
-        background:
-          "linear-gradient(180deg, oklch(0.20 0.011 265 / 0.55), oklch(0.15 0.010 265 / 0.45))",
-        backdropFilter: "blur(16px) saturate(1.1)",
         borderTopWidth: 1,
         borderTopColor: "var(--color-hairline-soft)",
       }}
@@ -697,10 +761,10 @@ function FilterPills({ active, onChange, counts, phaseLabels, t }: FilterPillsPr
               onClick={() => onChange(c.key)}
               aria-pressed={isActive}
               className={
-                "inline-flex items-center rounded-full px-3 py-1 text-[11.5px] font-medium backdrop-blur-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent " +
+                "inline-flex items-center rounded-full px-3 py-1 text-[11.5px] font-medium backdrop-blur-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent " +
                 (isActive
-                  ? "border border-accent/40 bg-accent/45 text-text"
-                  : "border border-hairline-soft bg-[oklch(0.22_0.012_265_/_0.7)] text-text-3 hover:border-hairline hover:bg-[oklch(0.24_0.012_265_/_0.78)] hover:text-text-2")
+                  ? "border border-accent/60 bg-accent/25 text-text shadow-[0_0_16px_-4px_var(--color-accent-glow),inset_0_1px_0_oklch(1_0_0_/_0.08)]"
+                  : "border border-hairline-soft bg-[oklch(0.22_0.035_275_/_0.7)] text-text-3 hover:border-hairline hover:bg-[oklch(0.26_0.040_275_/_0.78)] hover:text-text-2")
               }
             >
               {c.label}
@@ -967,6 +1031,7 @@ export function ProjectsPage() {
         } as CSSProperties
       }
     >
+      <div aria-hidden className="lobby-scanline" />
       <TopBar
         searchValue={searchQuery}
         onSearch={setSearchQuery}
@@ -1019,11 +1084,11 @@ export function ProjectsPage() {
         ) : (
           <>
             {featured ? (
-              <section className="mb-7" aria-labelledby="lobby-now-editing-heading">
+              <section className="lobby-rise mb-7" aria-labelledby="lobby-now-editing-heading">
                 <div className="mb-3 flex items-baseline justify-between">
                   <h2
                     id="lobby-now-editing-heading"
-                    className="m-0 font-mono text-[12.5px] font-semibold uppercase tracking-[0.06em] text-text-2"
+                    className="m-0 font-mono text-[12.5px] font-semibold uppercase tracking-[0.06em] text-accent-2"
                   >
                     {t("dashboard:lobby_now_editing_eyebrow")}
                   </h2>
@@ -1053,11 +1118,11 @@ export function ProjectsPage() {
                 </button>
               </div>
             ) : (
-              <section aria-labelledby="lobby-library-heading">
+              <section className="lobby-rise" aria-labelledby="lobby-library-heading">
                 <div className="mb-3 flex items-baseline justify-between">
                   <h2
                     id="lobby-library-heading"
-                    className="m-0 font-mono text-[12.5px] font-semibold uppercase tracking-[0.06em] text-text-2"
+                    className="m-0 font-mono text-[12.5px] font-semibold uppercase tracking-[0.06em] text-accent-2"
                   >
                     {t("dashboard:lobby_library_eyebrow")}
                   </h2>
