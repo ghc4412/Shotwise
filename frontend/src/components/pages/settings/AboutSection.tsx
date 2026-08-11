@@ -298,16 +298,16 @@ export function AboutSection() {
           {t("about_legal_title")}
         </div>
         <div className="space-y-1 text-[12.5px] text-text-3">
-          <p>Copyright © 2026 Pollo3470 and ArcReel contributors</p>
+          <p>Copyright © 2026 Pollo3470 and Shotwise contributors</p>
           <p>
-            Powered by ArcReel —{" "}
+            Powered by Shotwise —{" "}
             <a
-              href="https://github.com/ArcReel/ArcReel"
+              href="https://github.com/Shotwise/Shotwise"
               target="_blank"
               rel="noreferrer"
               className="break-all text-accent-2 transition-colors hover:text-accent"
             >
-              https://github.com/ArcReel/ArcReel
+              https://github.com/Shotwise/Shotwise
             </a>
           </p>
         </div>

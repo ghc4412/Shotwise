@@ -119,9 +119,9 @@ jobs:
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: arcreel
-          POSTGRES_PASSWORD: arcreel
-          POSTGRES_DB: arcreel_test
+          POSTGRES_USER: shotwise
+          POSTGRES_PASSWORD: shotwise
+          POSTGRES_DB: shotwise_test
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -130,7 +130,7 @@ jobs:
         ports:
           - 5432:5432
     env:
-      DATABASE_URL: postgresql+asyncpg://arcreel:arcreel@localhost:5432/arcreel_test
+      DATABASE_URL: postgresql+asyncpg://shotwise:shotwise@localhost:5432/shotwise_test
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -236,7 +236,7 @@ jobs:
           context: .
           platforms: linux/amd64
           load: true
-          tags: arcreel-ci:verify
+          tags: shotwise-ci:verify
           cache-from: type=gha
 
       - name: Allow unprivileged user namespaces on runner host
@@ -249,14 +249,14 @@ jobs:
         run: |
           # 沙箱运行参数与官方 Compose 一致（docs/deployment.md）：容器内 bwrap
           # 需要这些权限，缺失时 server 按沙箱红线启动硬失败
-          docker run -d --name arcreel-ci \
+          docker run -d --name shotwise-ci \
             --security-opt seccomp=unconfined \
             --security-opt apparmor=unconfined \
             --cap-add NET_ADMIN \
             -e AUTH_USERNAME=ci \
             -e AUTH_PASSWORD=ci-password \
             -e AUTH_TOKEN_SECRET=ci-token-secret \
-            -p 1241:1241 arcreel-ci:verify
+            -p 1241:1241 shotwise-ci:verify
           for _ in $(seq 1 30); do
             if curl -fsS http://localhost:1241/health >/dev/null 2>&1; then
               echo "health check passed"
@@ -265,7 +265,7 @@ jobs:
             sleep 3
           done
           echo "container failed to become healthy"
-          docker logs arcreel-ci
+          docker logs shotwise-ci
           exit 1
 
       - name: Trivy vulnerability scan (report only)
@@ -273,7 +273,7 @@ jobs:
         env:
           TRIVY_DB_REPOSITORY: ghcr.io/aquasecurity/trivy-db
         with:
-          image-ref: arcreel-ci:verify
+          image-ref: shotwise-ci:verify
           format: table
           severity: CRITICAL,HIGH
           ignore-unfixed: true

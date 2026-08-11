@@ -11,17 +11,17 @@ from pathlib import Path
 from lib.app_data_dir import app_data_dir
 from lib.env_init import PROJECT_ROOT
 
-_HANDLER_ATTR = "_arcreel_logging"
-_FILE_HANDLER_ATTR = "_arcreel_file_logging"
+_HANDLER_ATTR = "_shotwise_logging"
+_FILE_HANDLER_ATTR = "_shotwise_file_logging"
 _DISABLED_TRUTHY = frozenset({"1", "true", "yes"})
 
 
 def _file_logging_disabled() -> bool:
-    return os.environ.get("ARCREEL_LOG_FILE_DISABLED", "").strip().lower() in _DISABLED_TRUTHY
+    return os.environ.get("SHOTWISE_LOG_FILE_DISABLED", "").strip().lower() in _DISABLED_TRUTHY
 
 
 def resolve_log_dir() -> Path:
-    """日志目录解析：ARCREEL_LOG_DIR > PROJECT_ROOT/logs。
+    """日志目录解析：SHOTWISE_LOG_DIR > PROJECT_ROOT/logs。
 
     相对路径基于 PROJECT_ROOT。
 
@@ -29,7 +29,7 @@ def resolve_log_dir() -> Path:
     的身份，project 枚举走的是 `.`/`_` 前缀负向过滤，任何无前缀的兄弟目录都会被
     当作项目暴露给前端。logs 走独立的 PROJECT_ROOT/logs，从源头消除这条歧义。
     """
-    raw = os.environ.get("ARCREEL_LOG_DIR", "").strip()
+    raw = os.environ.get("SHOTWISE_LOG_DIR", "").strip()
     if raw:
         path = Path(raw)
         if not path.is_absolute():
@@ -44,11 +44,11 @@ def legacy_log_dir() -> Path:
 
 
 def migrate_legacy_log_dir() -> None:
-    """将旧默认位置的日志迁到新位置；只在 ARCREEL_LOG_DIR 未显式覆盖时进行。
+    """将旧默认位置的日志迁到新位置；只在 SHOTWISE_LOG_DIR 未显式覆盖时进行。
 
     策略：
-    - 用户显式设了 ARCREEL_LOG_DIR → 不动（用户已自主决定路径）
-    - 新旧路径解析到同一处 → no-op（例如 ARCREEL_DATA_DIR == PROJECT_ROOT）
+    - 用户显式设了 SHOTWISE_LOG_DIR → 不动（用户已自主决定路径）
+    - 新旧路径解析到同一处 → no-op（例如 SHOTWISE_DATA_DIR == PROJECT_ROOT）
     - 旧目录不存在 → no-op
     - 新目录不存在，或存在但为空 → 用 shutil.move 平移旧→新（跨设备自动
       fallback 到 copy+unlink，专门覆盖 docker bind-mount 等典型升级路径）。
@@ -59,7 +59,7 @@ def migrate_legacy_log_dir() -> None:
     - OSError 升级为 ERROR：迁移失败常意味着 logs 仍卡在旧路径下，会以
       伪项目形式出现在 UI，operator 必须看到这条
     """
-    if os.environ.get("ARCREEL_LOG_DIR", "").strip():
+    if os.environ.get("SHOTWISE_LOG_DIR", "").strip():
         return
 
     logger = logging.getLogger(__name__)
@@ -176,7 +176,7 @@ def attach_file_handler(formatter: logging.Formatter | None = None) -> None:
         log_dir = resolve_log_dir()
         log_dir.mkdir(parents=True, exist_ok=True)
         file_handler = TimedRotatingFileHandler(
-            filename=str(log_dir / "arcreel.log"),
+            filename=str(log_dir / "shotwise.log"),
             when="midnight",
             backupCount=7,
             encoding="utf-8",

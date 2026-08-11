@@ -105,7 +105,7 @@ export default {
   'diagnostics_download_failed': '下载失败：{{error}}',
   'config_issues': '配置问题',
   'config_issues_hint': '当前配置存在以下问题，可能会影响部分功能：',
-  'arcreel_agent': '[[brand]] 智能体',
+  'shotwise_agent': '[[brand]] 智能体',
   'chat_role_user': '你',
   'chat_role_assistant': '助手',
   'chat_role_system': '系统',
@@ -1046,7 +1046,7 @@ export default {
   'reference_tab_preview': '视频',
   'reference_tab_aria': '参考 Unit 面板切换',
 
-  // ArcReel 工作台 v3 — 参考视频
+  // Shotwise 工作台 v3 — 参考视频
   'reference_main_tab_aria': '工作台主面板切换',
   'grid_canvas_tab_aria': '宫格工作台主面板切换',
   'list_source_files_failed': '读取源文件列表失败：{{message}}',
@@ -1384,7 +1384,7 @@ export default {
   // 时间线 typed 条目（interrupt / AskUserQuestion 答复）
   'chat_interrupt_notice': '用户中断了会话',
   'chat_question_answer_label': '已答复',
-  // MCP tool display names (single source of truth: ARCREEL_MCP_TOOL_IDS in
+  // MCP tool display names (single source of truth: SHOTWISE_MCP_TOOL_IDS in
   // server/agent_runtime/sdk_tools/__init__.py; tests/test_frontend_mcp_tool_i18n.py
   // 会校验缺漏，新增 backend tool 必须同步补全 zh/en/vi)
   'tool_name_list_pending_assets': '查询待生成资产',

@@ -103,7 +103,7 @@ class MiniMaxImageBackend:
             "height": height,
             "response_format": "url",
             "n": 1,
-            # ArcReel 剧本 prompt 已是 LLM 精炼描述，关闭智能改写保留原意。
+            # Shotwise 剧本 prompt 已是 LLM 精炼描述，关闭智能改写保留原意。
             "prompt_optimizer": False,
         }
         if request.seed is not None:

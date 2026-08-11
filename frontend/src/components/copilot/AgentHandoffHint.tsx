@@ -28,7 +28,7 @@ export function AgentHandoffHint({ triggerKey, storageScope }: AgentHandoffHintP
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const sessionKey = `arc:agent-handoff:${storageScope}`;
+  const sessionKey = `shotwise:agent-handoff:${storageScope}`;
 
   const clearTimers = useCallback(() => {
     if (dismissTimer.current) {

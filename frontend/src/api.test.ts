@@ -859,7 +859,7 @@ describe("API", () => {
           mockResponse({
             blobData: blob,
             headers: {
-              "Content-Disposition": 'attachment; filename="arcreel-diagnostics-2026-05-19-0700Z.zip"',
+              "Content-Disposition": 'attachment; filename="shotwise-diagnostics-2026-05-19-0700Z.zip"',
             },
           }),
         );
@@ -867,7 +867,7 @@ describe("API", () => {
 
         const result = await API.downloadDiagnostics();
 
-        expect(result.filename).toBe("arcreel-diagnostics-2026-05-19-0700Z.zip");
+        expect(result.filename).toBe("shotwise-diagnostics-2026-05-19-0700Z.zip");
         expect(result.blob).toBe(blob);
         expect(fetchMock).toHaveBeenCalledWith(
           "/api/v1/system/logs/download",
@@ -882,7 +882,7 @@ describe("API", () => {
         vi.stubGlobal("fetch", fetchMock);
 
         const result = await API.downloadDiagnostics();
-        expect(result.filename).toBe("arcreel-diagnostics.zip");
+        expect(result.filename).toBe("shotwise-diagnostics.zip");
       });
 
       it("triggers unauthorized handling on 401", async () => {

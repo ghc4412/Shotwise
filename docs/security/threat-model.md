@@ -1,26 +1,26 @@
-# ArcReel Security Threat Model
+# Shotwise Security Threat Model
 
 **Last security review:** 2026-08-06
 
-**Assessment baseline:** ArcReel commit `6fb9bb1ee9dc19cd45712b47220b3d2a3f1d8b98`
+**Assessment baseline:** Shotwise commit `6fb9bb1ee9dc19cd45712b47220b3d2a3f1d8b98`
 
 ## 1. Purpose and interpretation
 
-This document describes ArcReel's current security model, trust boundaries, attacker capabilities, existing controls, and severity rules. It is intentionally written as an **as-is model** rather than a target architecture or a patch history.
+This document describes Shotwise's current security model, trust boundaries, attacker capabilities, existing controls, and severity rules. It is intentionally written as an **as-is model** rather than a target architecture or a patch history.
 
 Current vulnerabilities, control gaps, validation tasks, and remediation acceptance criteria are maintained privately through GitHub Security Advisories. Keeping the stable public threat model separate from the changing private finding register reduces duplicate conclusions and avoids disclosing unresolved vulnerabilities before coordinated remediation.
 
-ArcReel is currently a **single-operator administrative application**, not a multi-tenant SaaS platform. Authentication separates the trusted operator from unauthenticated callers. It does not provide meaningful role-based access control, tenant isolation, or least-privilege API scopes:
+Shotwise is currently a **single-operator administrative application**, not a multi-tenant SaaS platform. Authentication separates the trusted operator from unauthenticated callers. It does not provide meaningful role-based access control, tenant isolation, or least-privilege API scopes:
 
 - `CurrentUserInfo.role` is always `admin`.
 - A login JWT normally authorizes the complete administrative application surface, including API-key management. A configured login username beginning with `apikey:` is currently misclassified as an API key and denied by API-key management routes.
-- An `arc-` API key is a broad automation credential. It authorizes most business and configuration APIs but cannot create, list, or revoke API keys.
+- An `shotwise-` API key is a broad automation credential. It authorizes most business and configuration APIs but cannot create, list, or revoke API keys.
 - Repositories generally operate on the default user.
 - A stolen login JWT is therefore treated as complete administrator compromise. A stolen API key or download JWT is a high-impact compromise of the broad surface that credential can access.
 
 ## 2. System overview
 
-ArcReel is a self-hosted AI video production workspace with the following principal components:
+Shotwise is a self-hosted AI video production workspace with the following principal components:
 
 - A FastAPI backend that exposes authenticated APIs, public/static routes, self-authenticating event/download routes, and serves the React SPA.
 - A React frontend that stores its bearer token in browser `localStorage` and sends it in `Authorization: Bearer ...` headers for normal API calls.
@@ -50,7 +50,7 @@ The service is reachable from the public Internet. This profile is not currently
 
 ### 3.4 Shared or multi-user profile
 
-This profile is not currently supported. If mutually untrusted people use the same ArcReel instance, cross-user project access, default-user repositories, shared administrative API keys, project enumeration, and the absence of RBAC become high or critical concerns. Such use requires a new authorization model and a revised threat model.
+This profile is not currently supported. If mutually untrusted people use the same Shotwise instance, cross-user project access, default-user repositories, shared administrative API keys, project enumeration, and the absence of RBAC become high or critical concerns. Such use requires a new authorization model and a revised threat model.
 
 ## 4. Sensitive assets
 
@@ -58,7 +58,7 @@ This profile is not currently supported. If mutually untrusted people use the sa
 
 - Provider API keys, access keys, secret keys, custom-provider secrets, and Vertex JSON credential files.
 - Anthropic and Claude agent credentials, SDK session data, and any secrets injected into agent execution.
-- JWT bearer tokens, `arc-` API keys, download tokens, event-stream tokens, authentication passwords, and token-signing secrets.
+- JWT bearer tokens, `shotwise-` API keys, download tokens, event-stream tokens, authentication passwords, and token-signing secrets.
 - Database credentials, reverse-proxy credentials, and deployment secrets.
 
 ### 4.2 Project and user content
@@ -70,7 +70,7 @@ This profile is not currently supported. If mutually untrusted people use the sa
 
 ### 4.3 Persistent system data
 
-- `.arcreel.db`, external SQL databases, WAL/SHM files, backups, snapshots, and migrations.
+- `.shotwise.db`, external SQL databases, WAL/SHM files, backups, snapshots, and migrations.
 - Provider configuration, custom endpoints, task records, usage records, API-key hashes, and system settings.
 - Server logs, reverse-proxy logs, exception traces, and diagnostic artifacts.
 
@@ -87,11 +87,11 @@ This profile is not currently supported. If mutually untrusted people use the sa
 
 ## 5. Security objectives and invariants
 
-ArcReel should preserve the following properties.
+Shotwise should preserve the following properties.
 
 1. **Administrative authorization:** Only an authenticated administrator may read private project data or mutate projects, credentials, providers, tasks, generation state, API keys, agent configuration, and system settings, except for explicitly documented public or self-authenticating routes.
 2. **Narrow public delivery:** Browser-native media delivery must expose only the intended media resource, not arbitrary files within the project root.
-3. **No same-origin active content from untrusted files:** Public or same-origin project-file delivery must not execute attacker-controlled HTML, SVG, XML, JavaScript, or equivalent active content in the ArcReel origin.
+3. **No same-origin active content from untrusted files:** Public or same-origin project-file delivery must not execute attacker-controlled HTML, SVG, XML, JavaScript, or equivalent active content in the Shotwise origin.
 4. **Path confinement:** Untrusted names, paths, archive members, references, and tool arguments must remain within their approved project or application roots.
 5. **Agent isolation:** The assistant must not read sensitive files, cross project boundaries, write outside the active project, bypass protected-file workflows, execute unrestricted host commands, or silently fall back to unsandboxed execution.
 6. **MCP confinement:** In-process MCP tools must remain closure-bound to the active project and validate every identifier, path, field, and state transition because they run outside the OS sandbox.
@@ -109,7 +109,7 @@ An unauthenticated caller can reach public endpoints, submit login attempts, ins
 
 ### 6.2 Attacker with a stolen JWT or API key
 
-A stolen login JWT normally provides complete administrator access, including API-key management. A stolen `arc-` API key authorizes most project, provider, generation, task, agent, and system APIs, but the API-key management router explicitly requires a subject that does not begin with `apikey:`. The same API key can enumerate custom providers and retrieve each stored custom-provider `api_key` verbatim from `GET /api/v1/custom-providers/{provider_id}/credentials`, creating a credential-escalation path. API keys otherwise have no scopes or RBAC boundaries that materially reduce their impact.
+A stolen login JWT normally provides complete administrator access, including API-key management. A stolen `shotwise-` API key authorizes most project, provider, generation, task, agent, and system APIs, but the API-key management router explicitly requires a subject that does not begin with `apikey:`. The same API key can enumerate custom providers and retrieve each stored custom-provider `api_key` verbatim from `GET /api/v1/custom-providers/{provider_id}/credentials`, creating a credential-escalation path. API keys otherwise have no scopes or RBAC boundaries that materially reduce their impact.
 
 ### 6.3 Malicious content author or project supplier
 
@@ -130,7 +130,7 @@ Prompt injection does not need to escape the sandbox to cause harm. It may abuse
 
 ### 6.5 Malicious or compromised provider
 
-A configured AI provider, custom endpoint, or upstream service may return malicious text, malformed responses, internal URLs, oversized artifacts, slow streams, invalid media, or parser-targeting content. Providers are trusted recipients of submitted prompts and media, but their responses remain untrusted input to ArcReel.
+A configured AI provider, custom endpoint, or upstream service may return malicious text, malformed responses, internal URLs, oversized artifacts, slow streams, invalid media, or parser-targeting content. Providers are trusted recipients of submitted prompts and media, but their responses remain untrusted input to Shotwise.
 
 ### 6.6 Operator or administrator
 
@@ -149,7 +149,7 @@ A compromised Python package, Node package, container image, SDK, ffmpeg build, 
 | FastAPI → database | Secrets, hashes, configuration, task and usage state | ORM parameterization, API masking, DB permissions | Credential and state disclosure, persistence tampering |
 | FastAPI → project filesystem | Names, paths, archives, generated files, agent writes | Name normalization, `safe_join`, project locks, atomic writes, schema validation | Traversal, cross-project access, overwrite, persistent malicious content |
 | FastAPI → external providers | Credentials, prompts, media, base URLs, job IDs | Authentication, provider registry, configured endpoints, path-specific HTTP timeouts | SSRF, secret forwarding, malformed responses, unexpected cost |
-| Provider → ArcReel download/parser pipeline | URLs, response headers, media bytes | Path-specific HTTP timeouts, artifact-path handling, downstream format checks; Vertex Gemini URI downloads currently lack an explicit deadline | SSRF, memory/disk exhaustion, parser compromise |
+| Provider → Shotwise download/parser pipeline | URLs, response headers, media bytes | Path-specific HTTP timeouts, artifact-path handling, downstream format checks; Vertex Gemini URI downloads currently lack an explicit deadline | SSRF, memory/disk exhaustion, parser compromise |
 | Application → SDK built-in file tools | LLM-selected `Read`, `Write`, `Edit`, `Glob`, and `Grep` paths | Main-process `PreToolUse` hooks backed by `AgentAccessPolicy` | Sensitive-file access, cross-project access, protected-file modification |
 | Application → sandboxed Bash | Commands, paths, environment, and network destinations | Kernel sandbox profile, `AgentAccessPolicy`, command policy, environment scrubbing | Sensitive-file access, cross-project access, command execution, network abuse |
 | Application → in-process MCP tools | LLM-selected structured arguments | Closure-bound project context, strict validation, protected workflows | Sandbox bypass through main-process capability |
@@ -159,14 +159,14 @@ A compromised Python package, Node package, container image, SDK, ffmpeg build, 
 
 ## 8. Current design assumptions and constraints
 
-- ArcReel is operated by one trusted administrator.
+- Shotwise is operated by one trusted administrator.
 - Authentication is enabled by default. Authentication-disabled operation is intended only for a trusted local environment.
 - Remote deployments are expected to use TLS through a reverse proxy, VPN, or secure tunnel.
 - Host permissions and database access controls protect application data, logs, credential files, and backups.
 - The operator accepts that configured AI providers receive submitted prompts and media.
 - Custom-provider endpoints are an intentional administrative capability with SSRF implications.
 - Browser authentication uses explicit bearer tokens rather than authentication cookies. Traditional CSRF is therefore lower priority than XSS, token theft, URL leakage, and active same-origin content.
-- Tokens stored in `localStorage` are readable by any JavaScript executing in the ArcReel origin.
+- Tokens stored in `localStorage` are readable by any JavaScript executing in the Shotwise origin.
 - Docker is not assumed to provide a strong independent second sandbox under the current runtime configuration.
 - Provider responses, model Markdown, project files, archive members, downloaded media, and LLM-selected tool arguments remain untrusted regardless of source.
 
@@ -181,7 +181,7 @@ A compromised Python package, Node package, container image, SDK, ffmpeg build, 
 - Generated administrative passwords when none is configured.
 - Seven-day HS256 JWTs.
 - Five-minute project-bound download tokens. Export routes enforce their purpose and project binding, but general JWT authentication currently accepts them as administrator bearer credentials during their validity. Their subjects are copied from the caller, so tokens minted through API keys retain the `apikey:` prefix and remain excluded from API-key management.
-- Random `arc-` API keys stored as SHA-256 hashes.
+- Random `shotwise-` API keys stored as SHA-256 hashes.
 - API-key expiration checks and bounded cache behavior.
 
 There is no account-level RBAC, scoped API key, MFA, JWT revocation list, centralized session inventory, or built-in login throttling. JWTs normally authorize the complete administrative surface. API keys authorize most business and configuration APIs but are rejected by API-key management endpoints. That distinction currently relies on `CurrentUserInfo.sub.startswith("apikey:")`, not on an explicit credential-type claim: because login JWT subjects copy `AUTH_USERNAME`, a configured username beginning with `apikey:` is also rejected by those endpoints.
@@ -199,7 +199,7 @@ Public routes include authentication bootstrap/login, project/global file delive
 
 ### 9.2 Secret handling
 
-- API responses generally mask stored secrets. The custom-provider credentials endpoint is a material exception: it returns the stored `api_key` in plaintext to any caller accepted by the generic authentication dependency, including an `arc-` API key.
+- API responses generally mask stored secrets. The custom-provider credentials endpoint is a material exception: it returns the stored `api_key` in plaintext to any caller accepted by the generic authentication dependency, including an `shotwise-` API key.
 - The server fails fast when provider secrets are present in the parent process environment, reducing automatic inheritance by sandboxed child processes.
 - Agent policy denies sensitive-file reads and scrubs secret-like environment variables from sandboxed Bash execution.
 - Vertex credential files are written with restrictive permissions where supported.
@@ -230,7 +230,7 @@ Extraction occurs in a temporary staging directory. Imported project data is rep
 
 ### 9.5 Agent controls
 
-On supported Linux and macOS deployments, ArcReel verifies sandbox tooling at startup rather than silently running without it. `AgentAccessPolicy` centralizes rules that are projected into both application-level SDK hooks and the kernel sandbox:
+On supported Linux and macOS deployments, Shotwise verifies sandbox tooling at startup rather than silently running without it. `AgentAccessPolicy` centralizes rules that are projected into both application-level SDK hooks and the kernel sandbox:
 
 - Current-project read and write boundaries.
 - Cross-project read denial.
@@ -254,7 +254,7 @@ SDK built-in `Read`, `Write`, `Edit`, `Glob`, and `Grep` tools execute in the ma
 
 ### 9.7 CORS and logging
 
-When `CORS_ORIGINS` is absent, empty, or contains `*`, ArcReel uses wildcard origins with credentials disabled. This does not independently bypass bearer authentication because an attacker-controlled origin does not know the token.
+When `CORS_ORIGINS` is absent, empty, or contains `*`, Shotwise uses wildcard origins with credentials disabled. This does not independently bypass bearer authentication because an attacker-controlled origin does not know the token.
 
 Application request logging records URL paths rather than complete query strings. Reverse proxies, ingress controllers, monitoring systems, and diagnostic middleware may still record query parameters.
 
@@ -263,7 +263,7 @@ Application request logging records URL paths rather than complete query strings
 ### 10.1 Authentication and bearer tokens
 
 - Automated login attempts may be sent without built-in rate limiting.
-- A stolen login JWT normally provides full administrative access; a stolen API key provides broad access except to API-key management. A login username beginning with `apikey:` collides with the current subject-prefix check and is also denied by API-key management routes. A stolen API key can read custom-provider API keys in plaintext and use them independently of ArcReel.
+- A stolen login JWT normally provides full administrative access; a stolen API key provides broad access except to API-key management. A login username beginning with `apikey:` collides with the current subject-prefix check and is also denied by API-key management routes. A stolen API key can read custom-provider API keys in plaintext and use them independently of Shotwise.
 - A leaked download token can be replayed and used as a broad administrator bearer credential during its five-minute validity; if minted through an API key, its inherited `apikey:` subject remains excluded from API-key management.
 - Seven-day JWT lifetime increases the useful period of a stolen token.
 - Event-stream routes may accept a full JWT or API key in a query parameter.
@@ -396,7 +396,7 @@ Use Low for conditions such as:
 
 ## 12. Out of scope, accepted trust, and non-findings
 
-- ArcReel does not currently claim adversarial multi-user or tenant isolation. This limitation must be revisited if the product adds users, teams, sharing, or roles.
+- Shotwise does not currently claim adversarial multi-user or tenant isolation. This limitation must be revisited if the product adds users, teams, sharing, or roles.
 - Configured AI providers are trusted recipients of submitted prompts and media. Malicious responses, URLs, and artifacts remain in scope.
 - Operator-configured custom endpoints are intentional administrative functionality. They must not be described as anonymously attacker-controlled without an authentication bypass or stolen-token path.
 - Built-in provider routes are centrally authenticated. The absence of `CurrentUser` in individual route signatures is not evidence of missing authentication.
@@ -419,12 +419,12 @@ Use Low for conditions such as:
 10. **Review all three agent boundaries.** Inspect the main-process `PreToolUse` hooks for SDK file tools, the kernel sandbox and command policy for Bash descendants, and the independent project binding and validation of in-process MCP tools.
 11. **Consider authorized capability abuse.** Prompt injection can be security-relevant without RCE when allowed tools can alter project state, incur cost, create active content, or mislead the operator.
 12. **Avoid duplicate or inflated findings.** Prefer the most specific root cause and describe its consequences rather than reporting architectural context as multiple vulnerabilities.
-13. **Require concrete bypasses for generic checklist claims.** CORS, CSRF, SQL injection, and masking reports require an actual exploit path in ArcReel.
+13. **Require concrete bypasses for generic checklist claims.** CORS, CSRF, SQL injection, and masking reports require an actual exploit path in Shotwise.
 14. **Use the private finding register.** Do not re-report an unchanged known gap as a new issue unless reachability, impact, or bypass conditions have materially changed.
 
 ## 14. Reassessment triggers
 
-Rebuild or materially revise this threat model when ArcReel:
+Rebuild or materially revise this threat model when Shotwise:
 
 - Adds real users, invitations, roles, teams, public sharing, or tenant-specific data.
 - Introduces cookie authentication, OAuth/OIDC, refresh tokens, or browser session cookies.

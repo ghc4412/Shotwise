@@ -7,7 +7,7 @@
 
 ## 2. 认证层改造 — API Key 认证分流
 
-- [x] 2.1 修改 `server/auth.py` 的 `_verify_and_get_payload`，以 `arc-` 前缀判定走 API Key 或 JWT 路径
+- [x] 2.1 修改 `server/auth.py` 的 `_verify_and_get_payload`，以 `shotwise-` 前缀判定走 API Key 或 JWT 路径
 - [x] 2.2 实现 API Key 验证逻辑（SHA-256 哈希 → 查库 → 检查过期 → 返回 payload）
 - [x] 2.3 添加 API Key 查询结果的 LRU 内存缓存（TTL 5 分钟）
 - [x] 2.4 编写认证分流的单元测试（API Key 成功/过期/不存在、JWT 不受影响）
@@ -15,7 +15,7 @@
 ## 3. API Key 管理路由
 
 - [x] 3.1 创建 `server/routers/api_keys.py`（POST 创建、GET 列表、DELETE 删除）
-- [x] 3.2 实现 API Key 生成逻辑（`arc-` + 32 位随机字符串，哈希存储，创建时返回完整 key）
+- [x] 3.2 实现 API Key 生成逻辑（`shotwise-` + 32 位随机字符串，哈希存储，创建时返回完整 key）
 - [x] 3.3 在 `server/app.py` 中注册路由
 - [x] 3.4 删除 key 时清除缓存
 - [x] 3.5 编写 API Key 管理端点的集成测试

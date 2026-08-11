@@ -81,18 +81,18 @@ description: 从剧本中提取角色 / 场景 / 道具三类资产定义，分�
 
 ### Step 4: 调用工具写入 project.json
 
-**调用前先按 Step 1 记下的"已有名称列表"过滤 entries，只发送本次新提取出的资产**（核心原则 #2）。每个资产表（characters / scenes / props）调用一次 `mcp__arcreel__patch_project`：
+**调用前先按 Step 1 记下的"已有名称列表"过滤 entries，只发送本次新提取出的资产**（核心原则 #2）。每个资产表（characters / scenes / props）调用一次 `mcp__shotwise__patch_project`：
 
 ```text
-mcp__arcreel__patch_project({
+mcp__shotwise__patch_project({
   "table": "characters",
   "entries": {
     "角色名1": {"description": "视觉描述...", "voice_style": "声音风格..."},
     "角色名2": {"description": "视觉描述...", "voice_style": "声音风格..."}
   }
 })
-mcp__arcreel__patch_project({"table": "scenes", "entries": {"庙宇": {"description": "空间描述..."}}})
-mcp__arcreel__patch_project({"table": "props", "entries": {"玉佩": {"description": "外观描述..."}}})
+mcp__shotwise__patch_project({"table": "scenes", "entries": {"庙宇": {"description": "空间描述..."}}})
+mcp__shotwise__patch_project({"table": "props", "entries": {"玉佩": {"description": "外观描述..."}}})
 ```
 
 - 工具返回值会区分**新增 N 个 / 合并改字段 N 个**——若按 Step 4 过滤策略，合并数应为 0；出现合并数说明过滤遗漏，需在摘要里如实反映

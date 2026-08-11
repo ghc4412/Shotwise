@@ -36,7 +36,7 @@ API_KEY_DEFAULT_EXPIRY_DAYS = 30
 
 
 def _generate_api_key() -> str:
-    """生成格式为 arc-<32位随机字符> 的 API Key。"""
+    """生成格式为 shotwise-<32位随机字符> 的 API Key。"""
     random_part = secrets.token_hex(16)  # 32 hex chars
     return f"{API_KEY_PREFIX}{random_part}"
 
@@ -78,7 +78,7 @@ async def create_api_key(
     _require_jwt_auth(user, _t)
     key = _generate_api_key()
     key_hash = _hash_api_key(key)
-    key_prefix = key[:8]  # e.g. "arc-abcd"
+    key_prefix = key[: len(API_KEY_PREFIX) + 4]  # e.g. "shotwise-abcd"
 
     if body.expires_days == 0:
         expires_at: datetime | None = None

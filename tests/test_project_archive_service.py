@@ -149,7 +149,7 @@ def _add_agent_runtime_symlinks(project_dir: Path) -> None:
         (project_dir / "CLAUDE.md").unlink()
     # legacy symlink 部署不会有 manifest，留着会让导入/导出逻辑读到 manifest 把
     # "旧 symlink + 新 manifest" 当成正常态而非 legacy。
-    manifest_path = project_dir / ".arcreel_profile_manifest.json"
+    manifest_path = project_dir / ".shotwise_profile_manifest.json"
     if manifest_path.exists() or manifest_path.is_symlink():
         manifest_path.unlink()
 
@@ -704,7 +704,7 @@ class TestProjectArchiveService:
         (profile_dir / ".claude" / "skills" / "demo").mkdir(parents=True)
         (profile_dir / ".claude" / "skills" / "demo" / "SKILL.md").write_text("demo")
         (profile_dir / "CLAUDE.md").write_text("prompt")
-        monkeypatch.setenv("ARCREEL_PROFILE_DIR", str(profile_dir))
+        monkeypatch.setenv("SHOTWISE_PROFILE_DIR", str(profile_dir))
 
         pm = ProjectManager(tmp_path / "projects")
         _create_project(pm)

@@ -19,7 +19,7 @@ router = APIRouter()
 
 _MAX_FILE_BYTES = 100 * 1024 * 1024
 _SPOOL_MAX = 50 * 1024 * 1024
-_LOG_GLOB = "arcreel.log*"
+_LOG_GLOB = "shotwise.log*"
 
 
 @router.get("/system/logs/download")
@@ -54,7 +54,7 @@ async def download_logs(_t: Translator, _user: AdminUser) -> StreamingResponse:
         raise
 
     ts = datetime.now(UTC).strftime("%Y-%m-%d-%H%MZ")
-    filename = f"arcreel-diagnostics-{ts}.zip"
+    filename = f"shotwise-diagnostics-{ts}.zip"
 
     def _iter() -> Iterator[bytes]:
         try:

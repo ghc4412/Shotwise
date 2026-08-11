@@ -1,4 +1,4 @@
-const TOKEN_KEY = "arcreel_auth_token";
+const TOKEN_KEY = "shotwise_auth_token";
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);

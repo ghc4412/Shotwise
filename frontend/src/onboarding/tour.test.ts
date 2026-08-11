@@ -126,7 +126,7 @@ describe("startTour", () => {
   it("renders one filmstrip cell per step, filled up to the current step", () => {
     const handle = startTour(TWO_STEPS, LABELS, { onExit: vi.fn() });
 
-    const cells = () => Array.from(popover().querySelectorAll<HTMLElement>(".arc-tour-filmstrip span"));
+    const cells = () => Array.from(popover().querySelectorAll<HTMLElement>(".shotwise-tour-filmstrip span"));
     expect(cells().map((c) => c.dataset.on)).toEqual(["1", "0"]);
 
     click(".driver-popover-next-btn");
@@ -138,7 +138,7 @@ describe("startTour", () => {
   it("states the step position in text for screen readers", () => {
     const handle = startTour(TWO_STEPS, LABELS, { onExit: vi.fn() });
 
-    expect(popover().querySelector(".arc-tour-sr-only")?.textContent).toBe("第 1 步，共 2 步");
+    expect(popover().querySelector(".shotwise-tour-sr-only")?.textContent).toBe("第 1 步，共 2 步");
 
     handle.dispose();
   });
@@ -154,10 +154,10 @@ describe("startTour", () => {
   it("offers skip on every step but the last", () => {
     const handle = startTour(TWO_STEPS, LABELS, { onExit: vi.fn() });
 
-    expect(popover().querySelector(".arc-tour-skip-btn")?.textContent).toBe("跳过");
+    expect(popover().querySelector(".shotwise-tour-skip-btn")?.textContent).toBe("跳过");
 
     click(".driver-popover-next-btn");
-    expect(popover().querySelector(".arc-tour-skip-btn")).toBeNull();
+    expect(popover().querySelector(".shotwise-tour-skip-btn")).toBeNull();
 
     handle.dispose();
   });
@@ -166,7 +166,7 @@ describe("startTour", () => {
     const onExit = vi.fn();
     startTour(TWO_STEPS, LABELS, { onExit });
 
-    click(".arc-tour-skip-btn");
+    click(".shotwise-tour-skip-btn");
 
     expect(onExit).toHaveBeenCalledTimes(1);
     expect(document.querySelector(".driver-popover")).toBeNull();

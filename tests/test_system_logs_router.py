@@ -25,8 +25,8 @@ def auth_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
 async def _client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, auth_disabled: None):
     log_dir = tmp_path / "logs"
     log_dir.mkdir()
-    monkeypatch.setenv("ARCREEL_LOG_DIR", str(log_dir))
-    monkeypatch.setenv("ARCREEL_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("SHOTWISE_LOG_DIR", str(log_dir))
+    monkeypatch.setenv("SHOTWISE_DATA_DIR", str(tmp_path / "data"))
     from lib.app_data_dir import _reset_for_tests
 
     _reset_for_tests()
@@ -44,7 +44,7 @@ async def _client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, auth_disabled
 
 async def test_download_returns_zip(_client) -> None:
     client, log_dir = _client
-    (log_dir / "arcreel.log").write_text("test log line\n", encoding="utf-8")
+    (log_dir / "shotwise.log").write_text("test log line\n", encoding="utf-8")
     res = await client.get("/api/v1/system/logs/download")
     assert res.status_code == 200
     assert res.headers["content-type"] == "application/zip"
@@ -62,13 +62,13 @@ async def test_zip_contains_diagnostics(_client) -> None:
 
 async def test_zip_includes_log_files(_client) -> None:
     client, log_dir = _client
-    (log_dir / "arcreel.log").write_text("active log\n", encoding="utf-8")
-    (log_dir / "arcreel.log.2026-05-15").write_text("archived log\n", encoding="utf-8")
+    (log_dir / "shotwise.log").write_text("active log\n", encoding="utf-8")
+    (log_dir / "shotwise.log.2026-05-15").write_text("archived log\n", encoding="utf-8")
     res = await client.get("/api/v1/system/logs/download")
     z = zipfile.ZipFile(io.BytesIO(res.content))
     names = z.namelist()
-    assert any(n.endswith("arcreel.log") for n in names)
-    assert any(n.endswith("arcreel.log.2026-05-15") for n in names)
+    assert any(n.endswith("shotwise.log") for n in names)
+    assert any(n.endswith("shotwise.log.2026-05-15") for n in names)
 
 
 async def test_empty_logs_dir(_client) -> None:
@@ -81,7 +81,7 @@ async def test_empty_logs_dir(_client) -> None:
 
 async def test_oversized_file_skipped(_client) -> None:
     client, log_dir = _client
-    big = log_dir / "arcreel.log.2026-05-10"
+    big = log_dir / "shotwise.log.2026-05-10"
     with big.open("wb") as f:
         f.seek(101 * 1024 * 1024 - 1)
         f.write(b"\0")
@@ -98,8 +98,8 @@ async def test_missing_logs_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
     # log_dir 故意不创建
     log_dir = tmp_path / "logs"
     assert not log_dir.exists()
-    monkeypatch.setenv("ARCREEL_LOG_DIR", str(log_dir))
-    monkeypatch.setenv("ARCREEL_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("SHOTWISE_LOG_DIR", str(log_dir))
+    monkeypatch.setenv("SHOTWISE_DATA_DIR", str(tmp_path / "data"))
     from lib.app_data_dir import _reset_for_tests
 
     _reset_for_tests()
@@ -123,8 +123,8 @@ async def test_download_requires_auth(monkeypatch: pytest.MonkeyPatch, tmp_path:
     monkeypatch.setenv("AUTH_USERNAME", "admin")
     monkeypatch.setenv("AUTH_PASSWORD", "hunter2")
     monkeypatch.setenv("AUTH_TOKEN_SECRET", "test-secret-32-chars-long-xxxxx")
-    monkeypatch.setenv("ARCREEL_LOG_DIR", str(tmp_path / "logs"))
-    monkeypatch.setenv("ARCREEL_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("SHOTWISE_LOG_DIR", str(tmp_path / "logs"))
+    monkeypatch.setenv("SHOTWISE_DATA_DIR", str(tmp_path / "data"))
     from lib.app_data_dir import _reset_for_tests
 
     _reset_for_tests()

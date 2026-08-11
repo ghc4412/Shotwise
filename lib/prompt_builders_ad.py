@@ -2,7 +2,7 @@
 
 产出平铺 ``shots[]`` 的带货镜头脚本 prompt：按目标总时长选择带货八段框架的
 时长配比档位（15/30/60/90 秒，经维护者审定的配比表，数字依据见
-docs/research/arcreel-ad-section-timing-research.md），非四档整数取最近档位
+docs/research/shotwise-ad-section-timing-research.md），非四档整数取最近档位
 按比例适配。``products`` 为空时自动分流为通用短片 prompt（无带货框架）。
 
 设计原则与 narration/drama 构建器一致：

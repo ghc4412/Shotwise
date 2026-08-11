@@ -1,4 +1,4 @@
-"""Per-session context shared by ArcReel SDK MCP tool handlers."""
+"""Per-session context shared by Shotwise SDK MCP tool handlers."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ class ToolContext:
     """Bind a tool handler to one agent session's project + projects_root.
 
     The agent never names the project explicitly — every tool is closure-bound
-    to ``project_name`` via ``build_arcreel_mcp_server(project_name=...)``.
+    to ``project_name`` via ``build_shotwise_mcp_server(project_name=...)``.
     """
 
     def __init__(self, project_name: str, projects_root: Path, pm: ProjectManager | None = None):

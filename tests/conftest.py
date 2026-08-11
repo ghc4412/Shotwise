@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for the ArcReel test suite."""
+"""Shared pytest fixtures for the Shotwise test suite."""
 
 from __future__ import annotations
 
@@ -90,7 +90,7 @@ def make_test_audio(path: Path, *, duration_sec: float = 1.0) -> None:
 @pytest.fixture(autouse=True)
 def _reset_app_data_dir_cache():
     """``app_data_dir()`` uses ``functools.cache`` for production; reset it between
-    tests so per-test monkeypatching of ARCREEL_DATA_DIR / AI_ANIME_PROJECTS takes
+    tests so per-test monkeypatching of SHOTWISE_DATA_DIR / AI_ANIME_PROJECTS takes
     effect immediately."""
     from lib.app_data_dir import _reset_for_tests
 
@@ -134,7 +134,7 @@ def _profile_env(monkeypatch, tmp_path):
     # 不预创建 ``.claude/`` —— 让需要自己 mkdir(".claude", parents=True) 的下游测试
     # 不撞 FileExistsError；那些测试自己会构造完整 profile 内容。
     (profile_dir / "CLAUDE.md").write_text("")
-    monkeypatch.setenv("ARCREEL_PROFILE_DIR", str(profile_dir))
+    monkeypatch.setenv("SHOTWISE_PROFILE_DIR", str(profile_dir))
 
 
 @pytest.fixture()

@@ -21,7 +21,7 @@ from claude_agent_sdk import (
 
 from lib.agent_session_store.store import DbSessionStore
 
-logger = logging.getLogger("arcreel.session_store.import")
+logger = logging.getLogger("shotwise.session_store.import")
 
 MARKER_FILENAME = ".session_store_migration_done"
 

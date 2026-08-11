@@ -81,18 +81,18 @@ class _FakeQueue:
 class TestReadIntEnv:
     @pytest.mark.unit
     def test_default_when_unset(self, monkeypatch):
-        monkeypatch.delenv("ARCREEL_INT", raising=False)
-        assert _read_int_env("ARCREEL_INT", 3, minimum=1) == 3
+        monkeypatch.delenv("SHOTWISE_INT", raising=False)
+        assert _read_int_env("SHOTWISE_INT", 3, minimum=1) == 3
 
     @pytest.mark.unit
     def test_default_when_bad(self, monkeypatch):
-        monkeypatch.setenv("ARCREEL_INT", "bad")
-        assert _read_int_env("ARCREEL_INT", 3, minimum=1) == 3
+        monkeypatch.setenv("SHOTWISE_INT", "bad")
+        assert _read_int_env("SHOTWISE_INT", 3, minimum=1) == 3
 
     @pytest.mark.unit
     def test_minimum_enforced(self, monkeypatch):
-        monkeypatch.setenv("ARCREEL_INT", "0")
-        assert _read_int_env("ARCREEL_INT", 3, minimum=2) == 2
+        monkeypatch.setenv("SHOTWISE_INT", "0")
+        assert _read_int_env("SHOTWISE_INT", 3, minimum=2) == 2
 
 
 def _patch_pm(monkeypatch, project: dict | None):

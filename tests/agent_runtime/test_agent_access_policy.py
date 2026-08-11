@@ -338,10 +338,10 @@ def test_agent_profile_settings_denied(policy: AgentAccessPolicy, tool: str) -> 
     assert reason and "敏感文件" in reason
 
 
-def test_arcreel_db_in_sensitive_list(policy: AgentAccessPolicy) -> None:
+def test_shotwise_db_in_sensitive_list(policy: AgentAccessPolicy) -> None:
     """入队链路已迁到 in-process MCP tool，sandbox 内 agent 不再需要直读 db。"""
     cwd = _cwd(policy)
-    db = policy.projects_root / ".arcreel.db"
+    db = policy.projects_root / ".shotwise.db"
     db.parent.mkdir(parents=True, exist_ok=True)
     db.write_bytes(b"sqlite-fake")
     allowed, reason = policy.check_path_access(str(db), "Read", cwd)
@@ -387,14 +387,14 @@ def test_logs_dir_is_sensitive_prefix(tmp_path: Path) -> None:
     root.mkdir()
     logs_dir = root / "logs"
     logs_dir.mkdir()
-    (logs_dir / "arcreel.log").write_text("payload\n", encoding="utf-8")
-    (logs_dir / "arcreel.log.2026-05-20").write_text("rotated\n", encoding="utf-8")
+    (logs_dir / "shotwise.log").write_text("payload\n", encoding="utf-8")
+    (logs_dir / "shotwise.log.2026-05-20").write_text("rotated\n", encoding="utf-8")
 
     policy = _make_policy(tmp_path, log_dir=logs_dir.resolve())
 
     # 当前 + 历史 log 文件都被认定为敏感
-    assert policy.is_sensitive_path((logs_dir / "arcreel.log").resolve())
-    assert policy.is_sensitive_path((logs_dir / "arcreel.log.2026-05-20").resolve())
+    assert policy.is_sensitive_path((logs_dir / "shotwise.log").resolve())
+    assert policy.is_sensitive_path((logs_dir / "shotwise.log.2026-05-20").resolve())
     # 整目录本身也是敏感（Glob/listdir 拒）
     assert policy.is_sensitive_path(logs_dir.resolve())
 
@@ -483,8 +483,8 @@ def test_build_sensitive_abs_paths_includes_existing_files(tmp_path: Path) -> No
     (root / ".env").write_text("X=1", encoding="utf-8")
     (root / ".env.local").write_text("Y=2", encoding="utf-8")
     (root / "projects").mkdir()
-    (root / "projects" / ".arcreel.db").write_bytes(b"sqlite-fake")
-    (root / "projects" / ".arcreel.db-shm").write_bytes(b"shm")
+    (root / "projects" / ".shotwise.db").write_bytes(b"sqlite-fake")
+    (root / "projects" / ".shotwise.db-shm").write_bytes(b"shm")
     profile_dir = tmp_path / "agent_runtime_profile"
     (profile_dir / ".claude").mkdir(parents=True)
     (profile_dir / ".claude" / "settings.json").write_text("{}", encoding="utf-8")
@@ -501,9 +501,9 @@ def test_build_sensitive_abs_paths_includes_existing_files(tmp_path: Path) -> No
 
     # 不存在的 system_config.json 不应出现（SDK 会跳过 non-existent path）
     assert all(".system_config.json" not in p for p in paths)
-    # .arcreel.db + WAL 辅助文件在敏感清单（入队走 MCP tool，agent 不直读 db）
-    assert str(root.resolve() / "projects" / ".arcreel.db") in paths
-    assert str(root.resolve() / "projects" / ".arcreel.db-shm") in paths
+    # .shotwise.db + WAL 辅助文件在敏感清单（入队走 MCP tool，agent 不直读 db）
+    assert str(root.resolve() / "projects" / ".shotwise.db") in paths
+    assert str(root.resolve() / "projects" / ".shotwise.db-shm") in paths
 
 
 def test_build_sensitive_abs_paths_follows_constructed_roots(tmp_path: Path) -> None:
@@ -514,8 +514,8 @@ def test_build_sensitive_abs_paths_follows_constructed_roots(tmp_path: Path) -> 
     # 数据目录搬到 repo 之外
     external_data = tmp_path / "external_data" / "projects"
     external_data.mkdir(parents=True)
-    (external_data / ".arcreel.db").write_bytes(b"db")
-    (external_data / ".arcreel.db-wal").write_bytes(b"wal")
+    (external_data / ".shotwise.db").write_bytes(b"db")
+    (external_data / ".shotwise.db-wal").write_bytes(b"wal")
     (external_data / ".system_config.json").write_text("{}", encoding="utf-8")
     (external_data.parent / "vertex_keys").mkdir()
     # profile 目录搬到 repo 之外
@@ -530,16 +530,16 @@ def test_build_sensitive_abs_paths_follows_constructed_roots(tmp_path: Path) -> 
     )
     paths = policy._build_sensitive_abs_paths()
 
-    assert str(external_data / ".arcreel.db") in paths
-    assert str(external_data / ".arcreel.db-wal") in paths
+    assert str(external_data / ".shotwise.db") in paths
+    assert str(external_data / ".shotwise.db-wal") in paths
     assert str(external_data / ".system_config.json") in paths
     assert str(external_data.parent / "vertex_keys") in paths
     assert str(external_profile.resolve() / ".claude" / "settings.json") in paths
-    # 旧的 ``repo/projects/.arcreel.db`` 路径已不复存在 — 不再误指 deny 到空位置
+    # 旧的 ``repo/projects/.shotwise.db`` 路径已不复存在 — 不再误指 deny 到空位置
     assert not any(str(repo) + "/projects/" in p for p in paths)
 
     # is_sensitive_path 也必须能识别新位置
-    assert policy.is_sensitive_path((external_data / ".arcreel.db").resolve())
+    assert policy.is_sensitive_path((external_data / ".shotwise.db").resolve())
     assert policy.is_sensitive_path((external_profile / ".claude" / "settings.json").resolve())
     assert policy.is_sensitive_path((external_data.parent / "vertex_keys" / "k.json").resolve())
 
@@ -549,7 +549,7 @@ def test_build_sensitive_abs_paths_includes_log_dir(tmp_path: Path) -> None:
     root = tmp_path / "repo"
     logs_dir = root / "logs"
     logs_dir.mkdir(parents=True)
-    (logs_dir / "arcreel.log").write_text("payload\n", encoding="utf-8")
+    (logs_dir / "shotwise.log").write_text("payload\n", encoding="utf-8")
 
     policy = _make_policy(tmp_path, log_dir=logs_dir.resolve())
     assert str(logs_dir.resolve()) in policy._build_sensitive_abs_paths()
@@ -635,14 +635,14 @@ def test_logs_dir_outside_repo_is_sensitive(tmp_path: Path) -> None:
     硬编码 repo/logs 会让 agent 仍能 Read/Grep 真实 log_dir 下的日志。"""
     repo = tmp_path / "repo"
     repo.mkdir()
-    external_logs = tmp_path / "external" / "arcreel_logs"
+    external_logs = tmp_path / "external" / "shotwise_logs"
     external_logs.mkdir(parents=True)
-    (external_logs / "arcreel.log").write_text("secret\n", encoding="utf-8")
+    (external_logs / "shotwise.log").write_text("secret\n", encoding="utf-8")
 
     policy = _make_policy(tmp_path, log_dir=external_logs.resolve())
 
     # repo 外的自定义 log_dir 也要被 deny
-    assert policy.is_sensitive_path((external_logs / "arcreel.log").resolve())
+    assert policy.is_sensitive_path((external_logs / "shotwise.log").resolve())
     assert policy.is_sensitive_path(external_logs.resolve())
     # repo/logs 在此场景下不应被默认 deny（避免误覆盖）
     assert not policy.is_sensitive_path((repo / "logs" / "anything.txt").resolve())

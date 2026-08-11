@@ -2,7 +2,7 @@
 认证核心模块
 
 提供密码生成、JWT token 创建/验证、凭据校验等功能。
-同时支持 API Key 认证（`arc-` 前缀的 Bearer token）。
+同时支持 API Key 认证（`shotwise-` 前缀的 Bearer token）。
 """
 
 import hashlib
@@ -277,7 +277,7 @@ def ensure_auth_password(env_path: str | None = None) -> str:
 # API Key 认证支持
 # ---------------------------------------------------------------------------
 
-API_KEY_PREFIX = "arc-"
+API_KEY_PREFIX = "shotwise-"
 API_KEY_CACHE_TTL = 300  # 5 分钟
 
 # LRU 缓存：key_hash → (payload_dict | None, expires_at_timestamp)
@@ -413,7 +413,7 @@ def _verify_and_get_payload(token: str) -> dict:
 
 
 async def _verify_and_get_payload_async(token: str) -> dict:
-    """异步验证 token，支持 API Key（arc- 前缀）和 JWT 两种模式。"""
+    """异步验证 token，支持 API Key（shotwise- 前缀）和 JWT 两种模式。"""
     if token.startswith(API_KEY_PREFIX):
         payload = await _verify_api_key(token)
         if payload is None:

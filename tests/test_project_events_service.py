@@ -919,7 +919,7 @@ class TestProjectEventService:
     def test_projects_root_kwarg_overrides_default_subdir(self, tmp_path):
         """显式传 projects_root 时，service.pm 走该目录而非 project_root/'projects'。
 
-        覆盖 ARCREEL_DATA_DIR 场景：app.py 启动时传 ``app_data_dir()`` 进来，
+        覆盖 SHOTWISE_DATA_DIR 场景：app.py 启动时传 ``app_data_dir()`` 进来，
         事件监听应跟着切换，不能继续指向旧的 ``project_root/projects``。
         """
         custom_projects = tmp_path / "external-data"

@@ -1,6 +1,6 @@
 """剪映草稿导出服务
 
-将 ArcReel 单集已生成的视频片段导出为剪映草稿 ZIP。
+将 Shotwise 单集已生成的视频片段导出为剪映草稿 ZIP。
 使用 pyJianYingDraft 库生成 draft_content.json，
 后处理路径替换使草稿指向用户本地剪映目录。
 """
@@ -501,7 +501,7 @@ class JianyingDraftService:
         # create_draft(allow_replace=True) 把 rmtree 落到上层临时目录，这里回退项目名兜底
         if not draft_name.replace(".", "").strip():
             draft_name = project_name
-        tmp_dir = Path(tempfile.mkdtemp(prefix="arcreel_jy_"))
+        tmp_dir = Path(tempfile.mkdtemp(prefix="shotwise_jy_"))
         try:
             staging_dir = tmp_dir / "staging"
             staging_dir.mkdir()

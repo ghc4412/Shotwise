@@ -31,7 +31,7 @@ def get_database_url() -> str:
         return url
     from lib.app_data_dir import app_data_dir
 
-    db_path = app_data_dir() / ".arcreel.db"
+    db_path = app_data_dir() / ".shotwise.db"
     return f"sqlite+aiosqlite:///{db_path}"
 
 

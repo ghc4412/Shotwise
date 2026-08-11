@@ -26,21 +26,21 @@ def test_anthropic_official_present() -> None:
     assert p.is_recommended is False
 
 
-def test_arcreel_is_only_recommended() -> None:
-    """ArcReel 是用户表格中唯一标推荐的预设;其他全部不推荐."""
+def test_shotwise_is_only_recommended() -> None:
+    """Shotwise 是用户表格中唯一标推荐的预设;其他全部不推荐."""
     recommended = [p for p in list_presets() if p.is_recommended]
-    assert [p.id for p in recommended] == ["arcreel"]
+    assert [p.id for p in recommended] == ["shotwise"]
 
 
 def test_get_preset_unknown_returns_none() -> None:
     assert get_preset("does-not-exist") is None
 
 
-def test_anthropic_official_first_arcreel_second() -> None:
-    """显示顺序:官方第一,ArcReel API 第二."""
+def test_anthropic_official_first_shotwise_second() -> None:
+    """显示顺序:官方第一,Shotwise API 第二."""
     presets = list_presets()
     assert presets[0].id == "anthropic-official"
-    assert presets[1].id == "arcreel"
+    assert presets[1].id == "shotwise"
 
 
 def test_no_duplicate_ids() -> None:
@@ -59,7 +59,7 @@ def test_curated_preset_set() -> None:
     """目录与用户提供的表格保持一致;11 条预设."""
     expected = {
         "anthropic-official",
-        "arcreel",
+        "shotwise",
         "glm-cn",
         "glm-intl",
         "xiaomi-mimo",
@@ -78,7 +78,7 @@ def test_default_models_match_table() -> None:
     """用户表格指定的默认模型."""
     expected = {
         "anthropic-official": "",
-        "arcreel": "gpt-5.5",
+        "shotwise": "gpt-5.5",
         "glm-cn": "glm-5.1",
         "glm-intl": "glm-5.1",
         "xiaomi-mimo": "mimo-v2.5-pro",

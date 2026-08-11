@@ -60,21 +60,21 @@ async def test_build_options_includes_sandbox_settings(
 
 
 def test_session_manager_wires_env_resolved_roots_into_policy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """SessionManager 负责 env 解析（ARCREEL_LOG_DIR / ARCREEL_PROFILE_DIR /
+    """SessionManager 负责 env 解析（SHOTWISE_LOG_DIR / SHOTWISE_PROFILE_DIR /
     projects_root 参数），把 resolve 后的根路径喂给 AgentAccessPolicy——用户把
     日志/数据/profile 目录搬到任意位置（含 repo 外）时，deny 必须跟着指过去。"""
     repo = tmp_path / "repo"
     repo.mkdir()
-    external_logs = tmp_path / "external" / "arcreel_logs"
+    external_logs = tmp_path / "external" / "shotwise_logs"
     external_logs.mkdir(parents=True)
-    (external_logs / "arcreel.log").write_text("secret\n", encoding="utf-8")
+    (external_logs / "shotwise.log").write_text("secret\n", encoding="utf-8")
     external_data = tmp_path / "external_data" / "projects"
     external_data.mkdir(parents=True)
     external_profile = tmp_path / "external_profile"
     (external_profile / ".claude").mkdir(parents=True)
 
-    monkeypatch.setenv("ARCREEL_LOG_DIR", str(external_logs))
-    monkeypatch.setenv("ARCREEL_PROFILE_DIR", str(external_profile))
+    monkeypatch.setenv("SHOTWISE_LOG_DIR", str(external_logs))
+    monkeypatch.setenv("SHOTWISE_PROFILE_DIR", str(external_profile))
 
     sm = SessionManager(repo, SessionMetaStore(), projects_root=external_data)
     policy = sm.access_policy
@@ -84,7 +84,7 @@ def test_session_manager_wires_env_resolved_roots_into_policy(tmp_path: Path, mo
     assert policy.projects_root == external_data.resolve()
     assert policy.project_root == repo.resolve()
     # 端到端：env 覆盖后的真实位置被认定为敏感
-    assert policy.is_sensitive_path((external_logs / "arcreel.log").resolve())
+    assert policy.is_sensitive_path((external_logs / "shotwise.log").resolve())
     assert policy.is_sensitive_path((external_profile / ".claude" / "settings.json").resolve())
     # repo/logs 在此场景下不应被默认 deny（避免误覆盖）
     assert not policy.is_sensitive_path((repo / "logs" / "anything.txt").resolve())
@@ -249,7 +249,7 @@ async def test_windows_bash_whitelist_matches_main_behavior(tmp_path: Path, comm
         # 路径穿越：满足 python .claude/skills/ 前缀且不含 metachar，但 .. 逃出
         # skills 目录跑任意脚本——Windows 回退无 sandbox 兜底，必须拒
         "python .claude/skills/../../../tmp/evil.py",
-        "python .claude/skills/../../arcreel_secrets_dumper.py",
+        "python .claude/skills/../../shotwise_secrets_dumper.py",
         "ffmpeg -i ../../other_project/secret.mp4 out.mp4",
         # 路径穿越混淆绕过：shell 会把 ".." / .\. 还原成 ..，归一化后必须拒
         'python .claude/skills/dir/".."/".."/evil.py',

@@ -21,7 +21,7 @@ export const SecondaryButton = forwardRef<HTMLButtonElement, SecondaryButtonProp
       <button
         ref={ref}
         type={type}
-        className={`arc-btn-secondary focus-ring inline-flex items-center justify-center gap-1.5 rounded-md ${SIZE_CLS[size]} ${className}`.trim()}
+        className={`shotwise-btn-secondary focus-ring inline-flex items-center justify-center gap-1.5 rounded-md ${SIZE_CLS[size]} ${className}`.trim()}
         {...rest}
       >
         {leadingIcon}

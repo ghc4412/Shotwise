@@ -197,7 +197,7 @@ MESSAGES = {
     "arch_zip_traversal_entry": "ZIP chứa mục vượt cấp thư mục: {name}",
     "arch_zip_symlink_entry": "ZIP chứa mục là liên kết tượng trưng: {name}",
     "arch_zip_unparsable_member": "Không phân tích được {label}: {path}",
-    "arch_multiple_manifests": "ZIP chứa nhiều tệp arcreel-export.json nên không xác định được thư mục gốc dự án",
+    "arch_multiple_manifests": "ZIP chứa nhiều tệp shotwise-export.json nên không xác định được thư mục gốc dự án",
     "arch_manifest_missing_project_json": "Gói xuất chính thức thiếu project.json",
     "arch_no_project_json": "Không tìm thấy project.json trong ZIP",
     "arch_multiple_project_json": "ZIP chứa nhiều tệp project.json nên không xác định được thư mục gốc dự án",

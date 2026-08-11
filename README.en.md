@@ -44,7 +44,7 @@
   <img src="docs/assets/hero-screenshot.png" alt="SHOTWISE Workspace" width="800">
 </p>
 
-> ArcReel is not a thin prompt wrapper. It organizes content analysis, screenplay structuring, character and scene assets, storyboards, media generation tasks, cost tracking, version history, and export into an inspectable and resumable production pipeline.
+> Shotwise is not a thin prompt wrapper. It organizes content analysis, screenplay structuring, character and scene assets, storyboards, media generation tasks, cost tracking, version history, and export into an inspectable and resumable production pipeline.
 
 ## Interface and Themes
 
@@ -102,7 +102,7 @@ Every stage can be orchestrated by the AI assistant while remaining reviewable a
 - Docker and Docker Compose
 - Start with at least 2 GB of available memory
 - A complete workflow requires:
-  - model credentials for the ArcReel AI assistant
+  - model credentials for the Shotwise AI assistant
   - working text, image, and video generation capabilities, provided by one multimodal provider or a combination of providers
   - optional TTS capability when narration is needed
 - The default setup uses remote model APIs and normally does not require a local GPU; local model deployments have their own requirements
@@ -131,7 +131,7 @@ See [Deployment and Operations](docs/deployment.md) for upgrades, backups, and r
 
 ### 🤖 Agent-driven, resumable workflow
 
-ArcReel uses an orchestration Skill and focused Subagents built on the Claude Agent SDK. The main Agent detects the current project stage and delegates character extraction, episode planning, screenplay normalization, and asset generation to focused workers.
+Shotwise uses an orchestration Skill and focused Subagents built on the Claude Agent SDK. The main Agent detects the current project stage and delegates character extraction, episode planning, screenplay normalization, and asset generation to focused workers.
 
 ### 🎨 Reusable character, scene, and prop assets
 
@@ -161,11 +161,11 @@ Generate and audition narration tracks, fill an episode in bulk, and export CapC
 
 ### 🔌 External Agent integration
 
-ArcReel can issue `arc-` API keys and expose a synchronous Agent chat endpoint for platforms such as OpenClaw.
+Shotwise can issue `shotwise-` API keys and expose a synchronous Agent chat endpoint for platforms such as OpenClaw.
 
 SHOTWISE's AI assistant is built on the Claude Agent SDK, using an **Orchestration Skill + Focused Subagent** multi-agent architecture:
 
-ArcReel hides provider differences behind `TextBackend`, `ImageBackend`, and `VideoBackend` protocols. Models, parameters, availability, and pricing change over time, so the **ArcReel Settings page and provider documentation are the source of truth**.
+Shotwise hides provider differences behind `TextBackend`, `ImageBackend`, and `VideoBackend` protocols. Models, parameters, availability, and pricing change over time, so the **Shotwise Settings page and provider documentation are the source of truth**.
 
 | Provider | Text | Image | Video | TTS |
 |---|:---:|:---:|:---:|:---:|
@@ -186,7 +186,7 @@ Global defaults, project-level overrides, and multiple API keys per provider are
 
 SHOTWISE supports invocation through external AI Agent platforms like [OpenClaw](https://openclaw.ai), enabling natural language-driven video creation:
 
-1. Generate an API Key in SHOTWISE's Settings page (`arc-` prefix)
+1. Generate an API Key in SHOTWISE's Settings page (`shotwise-` prefix)
 2. Load SHOTWISE's Skill definition in OpenClaw (access `http://your-domain/skill.md` to auto-fetch)
 3. Create projects, generate scripts, and produce videos through OpenClaw conversations
 
@@ -231,7 +231,7 @@ Detailed documentation is currently maintained in Chinese; English documentation
 | [Deployment and Operations](docs/deployment.md) | SQLite, PostgreSQL, upgrades, backups, and reverse proxies |
 | [Security Policy](SECURITY.md) | Supported versions, deployment boundaries, private reporting, and coordinated disclosure |
 | [Security Threat Model](docs/security/threat-model.md) | Security assets, trust boundaries, attack surfaces, and reassessment triggers |
-| [CapCut Draft Export](docs/jianying-export-guide.md) | Continue editing ArcReel output in CapCut |
+| [CapCut Draft Export](docs/jianying-export-guide.md) | Continue editing Shotwise output in CapCut |
 | [Architecture](docs/architecture.md) | Agent runtime, queue, provider abstraction, and data layer |
 | [FAQ](docs/FAQ.md) | Deployment, cost, data, model, and licensing questions |
 | [Contributing](CONTRIBUTING.md) | Local development, tests, conventions, and pull requests |
@@ -249,16 +249,16 @@ uv run pre-commit install
 
 ## License and commercial use
 
-ArcReel is licensed under the [GNU Affero General Public License v3.0](LICENSE). Additional terms are available in [NOTICE](NOTICE).
+Shotwise is licensed under the [GNU Affero General Public License v3.0](LICENSE). Additional terms are available in [NOTICE](NOTICE).
 
 For organizations that cannot use AGPL-3.0, or need commercial deployment, white-labeling, or redistribution without AGPL obligations, contact:
 
-**support@arc-reel.com**
+**support@shotwise.com**
 
 Copyright © 2026 Pollo3470 and SHOTWISE contributors
 
 ---
 
 <p align="center">
-  If ArcReel helps your work, consider giving the project a ⭐ Star.
+  If Shotwise helps your work, consider giving the project a ⭐ Star.
 </p>

@@ -198,7 +198,7 @@ MESSAGES = {
     "arch_zip_symlink_entry": "The ZIP contains a symlink entry: {name}",
     "arch_zip_unparsable_member": "Cannot parse {label}: {path}",
     "arch_multiple_manifests": (
-        "The ZIP contains multiple arcreel-export.json files; the project root cannot be determined"
+        "The ZIP contains multiple shotwise-export.json files; the project root cannot be determined"
     ),
     "arch_manifest_missing_project_json": "The official export package is missing project.json",
     "arch_no_project_json": "No project.json found in the ZIP",

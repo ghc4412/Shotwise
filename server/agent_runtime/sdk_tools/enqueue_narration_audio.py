@@ -1,6 +1,6 @@
 """SDK MCP tool for narration audio (TTS) generation.
 
-工具返回文本是 agent-facing（免 i18n）；显示名在 ``ARCREEL_MCP_TOOL_IDS`` 注册、补三语。
+工具返回文本是 agent-facing（免 i18n）；显示名在 ``SHOTWISE_MCP_TOOL_IDS`` 注册、补三语。
 """
 
 from __future__ import annotations

@@ -256,7 +256,7 @@ class TestAssistantRoutes:
         bearer = "bearer-token-must-not-leak"
         cookie = "session-cookie-must-not-leak"
         signature = "signed-url-secret-must-not-leak"
-        original = RuntimeError(f"{long_detail} at /opt/arcreel/runtime.py?line=42")
+        original = RuntimeError(f"{long_detail} at /opt/shotwise/runtime.py?line=42")
         startup_err = AgentStartupError(
             "wrapper",
             sdk_stderr=(
@@ -281,11 +281,11 @@ class TestAssistantRoutes:
         assert cookie not in body
         assert signature not in body
         assert long_detail in body
-        assert "/opt/arcreel/runtime.py?line=42" in body
+        assert "/opt/shotwise/runtime.py?line=42" in body
 
         failure = response.json()["detail"]["failure"]
         raw_exception = failure["raw"]["exception"]
         assert set(raw_exception) == {"type", "module", "message", "traceback"}
         assert long_detail in raw_exception["message"]
-        assert "/opt/arcreel/runtime.py?line=42" in raw_exception["message"]
+        assert "/opt/shotwise/runtime.py?line=42" in raw_exception["message"]
         assert failure["raw"]["sdk_stderr"].splitlines()[3].endswith("part=1&X-Amz-Signature=••••")

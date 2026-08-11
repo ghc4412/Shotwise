@@ -16,7 +16,7 @@ import { WARM_TONE } from "@/utils/severity-tone";
 
 export type ExportScope = "current" | "full" | "jianying-draft";
 
-const DRAFT_PATH_STORAGE_KEY = "arcreel_jianying_draft_path";
+const DRAFT_PATH_STORAGE_KEY = "shotwise_jianying_draft_path";
 
 interface ExportScopeDialogProps {
   open: boolean;
@@ -160,7 +160,7 @@ export function ExportScopeDialog({
             <button
               type="button"
               onClick={() => setMode("select")}
-              className="arc-close-btn focus-ring grid h-6 w-6 place-items-center rounded-md"
+              className="shotwise-close-btn focus-ring grid h-6 w-6 place-items-center rounded-md"
               aria-label={t("common:back")}
             >
               <ArrowLeft className="h-3.5 w-3.5" />

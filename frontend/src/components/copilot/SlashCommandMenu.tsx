@@ -114,7 +114,7 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
         id={MENU_ID}
         role="listbox"
         aria-label="技能命令菜单"
-        className="arc-glass-panel absolute bottom-full left-0 right-0 mb-1 max-h-52 overflow-y-auto rounded-lg py-1"
+        className="shotwise-glass-panel absolute bottom-full left-0 right-0 mb-1 max-h-52 overflow-y-auto rounded-lg py-1"
       >
         {filtered.map((skill, i) => {
           const Icon = (skill.icon && ICON_MAP[skill.icon]) || Zap;

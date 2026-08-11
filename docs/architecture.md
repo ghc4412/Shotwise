@@ -1,10 +1,10 @@
 # 架构说明
 
-本文档描述 ArcReel 的稳定架构边界、主要数据流和扩展点。它不替代代码级 API 文档，也不记录临时实现计划。
+本文档描述 Shotwise 的稳定架构边界、主要数据流和扩展点。它不替代代码级 API 文档，也不记录临时实现计划。
 
 ## 1. 架构目标
 
-ArcReel 的核心目标不是绑定某个模型，而是提供一条：
+Shotwise 的核心目标不是绑定某个模型，而是提供一条：
 
 - 可编排；
 - 可审核；
@@ -159,7 +159,7 @@ flowchart TD
 
 ## 7. 供应商抽象
 
-ArcReel 使用：
+Shotwise 使用：
 
 - `TextBackend`
 - `ImageBackend`
@@ -241,7 +241,7 @@ flowchart LR
 
 ## 9. 项目和资产模型
 
-ArcReel 的项目不仅是一条数据库记录，还包括文件系统中的媒体资产。
+Shotwise 的项目不仅是一条数据库记录，还包括文件系统中的媒体资产。
 
 典型内容：
 
@@ -258,7 +258,7 @@ ArcReel 的项目不仅是一条数据库记录，还包括文件系统中的媒
 
 应用数据根目录解析顺序：
 
-1. `ARCREEL_DATA_DIR`
+1. `SHOTWISE_DATA_DIR`
 2. 兼容变量 `AI_ANIME_PROJECTS`
 3. 默认 `projects/`
 
@@ -266,7 +266,7 @@ ArcReel 的项目不仅是一条数据库记录，还包括文件系统中的媒
 
 ## 10. 数据库
 
-ArcReel 使用 SQLAlchemy 2.0 异步 ORM。
+Shotwise 使用 SQLAlchemy 2.0 异步 ORM。
 
 ### SQLite
 
@@ -321,7 +321,7 @@ ArcReel 使用 SQLAlchemy 2.0 异步 ORM。
 - 费用策略负责转换；
 - 不同币种默认分开统计；
 - 失败任务是否计费按供应商语义处理；
-- ArcReel 记录不替代供应商官方账单。
+- Shotwise 记录不替代供应商官方账单。
 
 ## 13. 视频合成与剪映导出
 
@@ -347,15 +347,15 @@ ArcReel 使用 SQLAlchemy 2.0 异步 ORM。
 - 修改转场；
 - 人工精修。
 
-“可继续编辑”是 ArcReel 与只输出单个视频文件的生成工具之间的重要差异。
+“可继续编辑”是 Shotwise 与只输出单个视频文件的生成工具之间的重要差异。
 
 ## 14. 认证和外部集成
 
-ArcReel 提供：
+Shotwise 提供：
 
 - 用户名和密码登录；
 - JWT；
-- `arc-` 前缀 API Key；
+- `shotwise-` 前缀 API Key；
 - 外部 Agent 同步对话端点。
 
 API Key 应使用哈希存储，不应在创建后以明文持续返回。
@@ -378,7 +378,7 @@ Agent 工具可能访问：
 - FFmpeg；
 - Bash 工具。
 
-ArcReel 在支持的环境中使用 `bwrap` 等机制限制这些能力。Docker Compose 为沙箱配置了额外权限，因此生产部署需要在功能和宿主机隔离之间做清晰取舍。
+Shotwise 在支持的环境中使用 `bwrap` 等机制限制这些能力。Docker Compose 为沙箱配置了额外权限，因此生产部署需要在功能和宿主机隔离之间做清晰取舍。
 
 安全原则：
 

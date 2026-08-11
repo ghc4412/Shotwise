@@ -142,7 +142,7 @@ async def test_build_append_prompt_carries_locale_language(tmp_path: Path) -> No
     prompt = assembler._build_append_prompt("demo", locale="vi")
     assert "Tiếng Việt" in prompt or "vi" in prompt.lower()
     # persona 恒在
-    assert "ArcReel 智能体" in prompt
+    assert "Shotwise 智能体" in prompt
 
 
 @pytest.mark.asyncio

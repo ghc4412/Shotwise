@@ -397,7 +397,7 @@ _Avoid_: 把开场白生产塞进组件——缓冲回放与扫描快照无一�
 ### 认证与凭证
 
 **会话 JWT（session JWT）**：
-交互式登录签发的管理员凭证，通常可访问 ArcReel 的全部管理能力，包括 API Key 管理。API Key 管理路由当前以 `sub` 的 `apikey:` 前缀区分凭证；若运维人员把 `AUTH_USERNAME` 配置成以该前缀开头，真实会话 JWT 也会被误判并在这些路由收到 403。会话 JWT 泄漏仍视为完整管理员身份失陷。
+交互式登录签发的管理员凭证，通常可访问 Shotwise 的全部管理能力，包括 API Key 管理。API Key 管理路由当前以 `sub` 的 `apikey:` 前缀区分凭证；若运维人员把 `AUTH_USERNAME` 配置成以该前缀开头，真实会话 JWT 也会被误判并在这些路由收到 403。会话 JWT 泄漏仍视为完整管理员身份失陷。
 _Avoid_: 把所有 bearer token 都叫 API Key；把 `apikey:` subject 前缀当作不可碰撞的显式凭证类型；把下载 token 当作已与管理员权限隔离的凭证（当前通用 JWT 认证路径仍接受它）。
 
 **API Key**：

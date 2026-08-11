@@ -450,21 +450,21 @@ body {
 }
 
 /* 条件呈现的从属条滑入 — 表达「随上方选择展开」的从属关系 */
-@keyframes arc-slide-in {
+@keyframes shotwise-slide-in {
     from { opacity: 0; transform: translateY(-4px); }
     to { opacity: 1; transform: none; }
 }
 
-@utility arc-slide-in {
+@utility shotwise-slide-in {
     @media (prefers-reduced-motion: no-preference) {
-        animation: arc-slide-in 0.25s ease-out;
+        animation: shotwise-slide-in 0.25s ease-out;
     }
 }
 
 /* === Modal / Glass panel chrome — 收拢弹窗 chrome 的重复样式 === */
 
 /* 玻璃面板 — GlassModal / GlassPopover 的内容容器样式 */
-.arc-glass-panel {
+.shotwise-glass-panel {
     background: linear-gradient(180deg, oklch(0.21 0.012 265 / 0.96), oklch(0.18 0.010 265 / 0.96));
     border: 1px solid var(--color-hairline);
     backdrop-filter: blur(14px);
@@ -475,7 +475,7 @@ body {
 }
 
 /* 顶部 hairline 渐变线（accent 默认 / warm 用 data-tone="warm"） */
-.arc-glass-hairline {
+.shotwise-glass-hairline {
     pointer-events: none;
     position: absolute;
     inset-inline: 0;
@@ -483,39 +483,39 @@ body {
     height: 1px;
     background: linear-gradient(90deg, transparent, var(--color-accent-soft), transparent);
 }
-.arc-glass-hairline[data-tone="warm"] {
+.shotwise-glass-hairline[data-tone="warm"] {
     background: linear-gradient(90deg, transparent, var(--color-warm-fade), transparent);
 }
 
 /* 玻璃 X 关闭按钮 */
-.arc-close-btn {
+.shotwise-close-btn {
     color: var(--color-text-3);
     transition: color 150ms, background 150ms;
 }
-.arc-close-btn:hover {
+.shotwise-close-btn:hover {
     color: var(--color-text);
     background: oklch(1 0 0 / 0.05);
 }
 
 /* 玻璃次按钮（Cancel / 普通操作） */
-.arc-btn-secondary {
+.shotwise-btn-secondary {
     color: var(--color-text-3);
     border: 1px solid var(--color-hairline);
     background: oklch(0.22 0.011 265 / 0.5);
     transition: color 150ms, background 150ms, border-color 150ms;
 }
-.arc-btn-secondary:hover:not(:disabled) {
+.shotwise-btn-secondary:hover:not(:disabled) {
     color: var(--color-text);
     background: oklch(0.26 0.013 265 / 0.7);
     border-color: var(--color-hairline-strong);
 }
-.arc-btn-secondary:disabled {
+.shotwise-btn-secondary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
 
 /* 主按钮 CTA — accent 默认，warm/danger 用 data-tone */
-.arc-btn-primary {
+.shotwise-btn-primary {
     color: oklch(0.14 0 0);
     background: linear-gradient(135deg, var(--color-accent-2), var(--color-accent));
     box-shadow:
@@ -524,24 +524,24 @@ body {
         0 0 0 1px var(--color-accent-soft);
     transition: transform 150ms, opacity 150ms;
 }
-.arc-btn-primary[data-tone="warm"] {
+.shotwise-btn-primary[data-tone="warm"] {
     background: linear-gradient(135deg, var(--color-warm-bright), var(--color-warm));
     box-shadow:
         inset 0 1px 0 oklch(1 0 0 / 0.35),
         0 6px 18px -6px var(--color-warm-glow),
         0 0 0 1px var(--color-warm-ring);
 }
-.arc-btn-primary[data-tone="danger"] {
+.shotwise-btn-primary[data-tone="danger"] {
     background: linear-gradient(135deg, var(--color-danger-bright), var(--color-danger-2));
     box-shadow:
         inset 0 1px 0 oklch(1 0 0 / 0.35),
         0 6px 18px -6px var(--color-danger-glow),
         0 0 0 1px var(--color-danger-ring);
 }
-.arc-btn-primary:hover:not(:disabled) {
+.shotwise-btn-primary:hover:not(:disabled) {
     transform: translateY(-1px);
 }
-.arc-btn-primary:disabled {
+.shotwise-btn-primary:disabled {
     opacity: 0.4;
     cursor: not-allowed;
     transform: none;

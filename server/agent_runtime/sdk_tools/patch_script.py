@@ -7,7 +7,7 @@
 dict，退出时经写盘统一入口 ``_write_script_unlocked`` 写回——继承「不更坏」结构校验、metadata
 重算、加锁与 filename↔episode 一致性。结构错误当场以「不更坏」语义挡下并返回明确错误。
 
-工具返回文本是 agent-facing（免 i18n）；显示名在 ``ARCREEL_MCP_TOOL_IDS`` 注册、补三语。
+工具返回文本是 agent-facing（免 i18n）；显示名在 ``SHOTWISE_MCP_TOOL_IDS`` 注册、补三语。
 """
 
 from __future__ import annotations

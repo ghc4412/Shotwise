@@ -1,4 +1,4 @@
-"""SessionManager._build_session_store reads ARCREEL_SDK_SESSION_STORE env."""
+"""SessionManager._build_session_store reads SHOTWISE_SDK_SESSION_STORE env."""
 
 from __future__ import annotations
 
@@ -37,21 +37,21 @@ def _build_sm(tmp_path: Path) -> SessionManager:
 
 
 def test_store_enabled_by_default(monkeypatch, tmp_path):
-    monkeypatch.delenv("ARCREEL_SDK_SESSION_STORE", raising=False)
+    monkeypatch.delenv("SHOTWISE_SDK_SESSION_STORE", raising=False)
     sm = _build_sm(tmp_path)
     store = sm._build_session_store()
     assert isinstance(store, DbSessionStore)
 
 
 def test_store_off_returns_none(monkeypatch, tmp_path):
-    monkeypatch.setenv("ARCREEL_SDK_SESSION_STORE", "off")
+    monkeypatch.setenv("SHOTWISE_SDK_SESSION_STORE", "off")
     sm = _build_sm(tmp_path)
     store = sm._build_session_store()
     assert store is None
 
 
 def test_store_db_explicit_returns_store(monkeypatch, tmp_path):
-    monkeypatch.setenv("ARCREEL_SDK_SESSION_STORE", "db")
+    monkeypatch.setenv("SHOTWISE_SDK_SESSION_STORE", "db")
     sm = _build_sm(tmp_path)
     store = sm._build_session_store()
     assert isinstance(store, DbSessionStore)
@@ -60,7 +60,7 @@ def test_store_db_explicit_returns_store(monkeypatch, tmp_path):
 def test_store_uses_session_factory_seam(monkeypatch, tmp_path):
     """SessionManager 的 _session_factory / _user_id 经装配器 provider 现取生效于
     build_session_store（store 首次构建时按当时属性值取，与析出前时点一致）。"""
-    monkeypatch.delenv("ARCREEL_SDK_SESSION_STORE", raising=False)
+    monkeypatch.delenv("SHOTWISE_SDK_SESSION_STORE", raising=False)
     sm = _build_sm(tmp_path)
 
     sentinel = object()
@@ -76,7 +76,7 @@ def test_store_uses_session_factory_seam(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_flush_mode_passed_to_options_default(monkeypatch, tmp_path):
     """No env → ClaudeAgentOptions.session_store_flush == 'eager'."""
-    monkeypatch.delenv("ARCREEL_SDK_SESSION_STORE_FLUSH", raising=False)
+    monkeypatch.delenv("SHOTWISE_SDK_SESSION_STORE_FLUSH", raising=False)
     monkeypatch.setattr("server.agent_runtime.options_assembler.load_provider_env_overrides", _fake_provider_env)
     sm = _build_sm(tmp_path)
 
@@ -90,7 +90,7 @@ async def test_flush_mode_passed_to_options_default(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_flush_mode_passed_to_options_batched(monkeypatch, tmp_path):
     """env=batched → options.session_store_flush == 'batched'."""
-    monkeypatch.setenv("ARCREEL_SDK_SESSION_STORE_FLUSH", "batched")
+    monkeypatch.setenv("SHOTWISE_SDK_SESSION_STORE_FLUSH", "batched")
     monkeypatch.setattr("server.agent_runtime.options_assembler.load_provider_env_overrides", _fake_provider_env)
     sm = _build_sm(tmp_path)
     project_cwd = tmp_path / "projects" / "demo"
@@ -108,8 +108,8 @@ async def test_flush_mode_passed_to_options_when_store_off(monkeypatch, tmp_path
     options construction, and flush mode is still propagated (SDK 0.1.73 accepts
     the field regardless of store presence).
     """
-    monkeypatch.setenv("ARCREEL_SDK_SESSION_STORE", "off")
-    monkeypatch.delenv("ARCREEL_SDK_SESSION_STORE_FLUSH", raising=False)
+    monkeypatch.setenv("SHOTWISE_SDK_SESSION_STORE", "off")
+    monkeypatch.delenv("SHOTWISE_SDK_SESSION_STORE_FLUSH", raising=False)
     monkeypatch.setattr("server.agent_runtime.options_assembler.load_provider_env_overrides", _fake_provider_env)
     sm = _build_sm(tmp_path)
 

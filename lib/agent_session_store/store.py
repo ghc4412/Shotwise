@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from lib.agent_session_store.models import AgentSessionEntry, AgentSessionSummary
 from lib.db.base import DEFAULT_USER_ID, utc_now
 
-logger = logging.getLogger("arcreel.session_store")
+logger = logging.getLogger("shotwise.session_store")
 
 _MAX_APPEND_RETRY = 16
 _APPEND_BACKOFF_CAP_S = 0.05

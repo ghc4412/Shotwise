@@ -27,7 +27,7 @@ SHOTWISE 启动会进行严格的安全检查 — sandbox 工具缺失即拒绝�
 - 不把 Docker Socket 挂载到容器；
 - 不额外挂载不必要的宿主机目录；
 - 限制管理页面访问范围；
-- 及时更新 ArcReel 和基础镜像；
+- 及时更新 Shotwise 和基础镜像；
 - 只为 Agent 配置必要的网络和文件访问权限；
 - 对未知来源的项目输入保持谨慎。
 
@@ -54,7 +54,7 @@ Docker 镜像虽然已包含 `bwrap` 和 `socat`，宿主机的 user namespace �
 
 ```bash
 docker compose ps
-docker compose logs --tail=300 arcreel
+docker compose logs --tail=300 shotwise
 ```
 
 检查：
@@ -69,7 +69,7 @@ docker compose logs --tail=300 arcreel
 
 ```bash
 curl -v http://localhost:1241/health
-docker compose logs --tail=300 arcreel
+docker compose logs --tail=300 shotwise
 ```
 
 如果容器刚启动，先确认是否仍在执行数据库迁移。

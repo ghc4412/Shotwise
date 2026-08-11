@@ -7,7 +7,7 @@ Shotwise（逐镜）是一个 AI 漫剧生产平台，将小说和剧本转化�
 所有 API 请求需要在 Header 中传递 API Key：
 
 ```
-Authorization: Bearer arc-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Authorization: Bearer shotwise-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 API Key 可从 Shotwise 设置页面的「API Keys」管理区获取。

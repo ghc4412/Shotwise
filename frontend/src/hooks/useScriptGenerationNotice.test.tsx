@@ -28,8 +28,8 @@ function assistantTurn(...content: ContentBlock[]): Turn {
   return { type: "assistant", content };
 }
 
-const SCRIPT_TOOL = "mcp__arcreel__generate_episode_script";
-const NORMALIZE_TOOL = "mcp__arcreel__normalize_drama_script";
+const SCRIPT_TOOL = "mcp__shotwise__generate_episode_script";
+const NORMALIZE_TOOL = "mcp__shotwise__normalize_drama_script";
 
 describe("useScriptGenerationNotice", () => {
   beforeEach(() => {
@@ -74,7 +74,7 @@ describe("useScriptGenerationNotice", () => {
     act(() => {
       useAssistantStore.setState({
         draftTurn: assistantTurn(
-          toolUse("mcp__arcreel__generate_storyboards", "tu-sb"),
+          toolUse("mcp__shotwise__generate_storyboards", "tu-sb"),
           toolUse("Bash", "tu-bash"),
         ),
       });

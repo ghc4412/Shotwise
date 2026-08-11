@@ -1,7 +1,7 @@
 """AgentStartupError 透传 SDK stderr 的回归覆盖。
 
 修这条路径的动机：SDK 子进程退出非 0 时 ProcessError.stderr 写死为占位符，
-之前 ArcReel 没传 stderr 回调，前端只看到 "Check stderr output for details"。
+之前 Shotwise 没传 stderr 回调，前端只看到 "Check stderr output for details"。
 此处覆盖：
   1. AgentStartupError __str__ 自动拼 message + stderr，所有 except Exception:
      str(exc) 路径都能透传；

@@ -145,7 +145,7 @@ class DashScopeImageBackend:
         parameters: dict = {
             "n": 1,
             "watermark": False,
-            # ArcReel 剧本 prompt 已是 LLM 精炼描述，关闭智能改写保留原意
+            # Shotwise 剧本 prompt 已是 LLM 精炼描述，关闭智能改写保留原意
             "prompt_extend": False,
             "size": size,
         }
