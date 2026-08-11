@@ -314,16 +314,6 @@ flowchart TB
 uv run pre-commit install
 ```
 
-## 许可证与商业使用
-
-Shotwise 采用 [GNU Affero General Public License v3.0](LICENSE)，附加条款见 [NOTICE](NOTICE)。
-
-如果你的组织无法采用 AGPL-3.0，或者希望在不承担 AGPL 开源义务的情况下进行商业部署、白标或再分发，请联系：
-
-**support@shotwise.com**
-
-Copyright © 2026 Pollo3470 and SHOTWISE contributors
-
 ---
 
 <p align="center">
