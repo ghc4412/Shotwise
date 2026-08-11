@@ -23,6 +23,7 @@ from pwdlib import PasswordHash
 from pydantic import BaseModel, ConfigDict
 
 from lib import PROJECT_ROOT
+from lib.i18n import Translator
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,10 @@ class CurrentUserInfo(BaseModel):
 
     id: str
     sub: str
-    role: str = "admin"
+    role: str = "user"
+    # 认证来源："jwt"（登录）或 "apikey"（API Key）；关闭认证的匿名模式为 "jwt"。
+    # 不能从 sub 前缀推断——sub 对 API Key 保留 apikey: 前缀，但 JWT 路径可能查库改写。
+    auth_via: str = "jwt"
 
     model_config = ConfigDict(frozen=True)
 
@@ -341,6 +345,7 @@ async def _verify_api_key(token: str) -> dict | None:
 
     # 数据库查询
     from lib.db import async_session_factory
+    from lib.db.base import DEFAULT_USER_ID
     from lib.db.repositories.api_key_repository import ApiKeyRepository
 
     async with async_session_factory() as session:
@@ -371,7 +376,11 @@ async def _verify_api_key(token: str) -> dict | None:
         except (ValueError, TypeError):
             logger.warning("API Key expires_at 值格式无法解析，忽略过期检查: %r", expires_at)
 
-    payload = {"sub": f"apikey:{row['name']}", "via": "apikey"}
+    payload = {
+        "sub": f"apikey:{row['name']}",
+        "via": "apikey",
+        "user_id": row.get("user_id") or DEFAULT_USER_ID,
+    }
     _set_api_key_cache(key_hash, payload, expires_at_ts=expires_at_monotonic)
 
     # 异步更新 last_used_at（不阻塞，保存引用防止 GC）
@@ -418,12 +427,40 @@ async def _verify_and_get_payload_async(token: str) -> dict:
     return _verify_and_get_payload(token)
 
 
-def _payload_to_user(payload: dict) -> CurrentUserInfo:
-    """Convert a verified JWT/API-key payload to CurrentUserInfo."""
+async def _payload_to_user(payload: dict) -> CurrentUserInfo:
+    """Convert a verified JWT/API-key payload to CurrentUserInfo.
+
+    Role and user id are resolved from the ``users`` table so permission checks
+    follow the DB record; a missing record or a lookup failure resolves to
+    ``role="user"`` (fail-closed) rather than silently granting admin.
+    ``sub`` keeps the original payload value (``apikey:<name>`` for API keys)
+    so callers can still identify the auth origin; ``auth_via`` marks it
+    explicitly for JWT-vs-API-key decisions.
+    """
+    from lib.db import async_session_factory
     from lib.db.base import DEFAULT_USER_ID
+    from lib.db.repositories.user_repository import UserRepository
 
     sub = payload.get("sub", "")
-    return CurrentUserInfo(id=DEFAULT_USER_ID, sub=sub, role="admin")
+    via: str = payload.get("via") or "jwt"
+    user_id: str = DEFAULT_USER_ID
+    if via == "apikey":
+        user_id = payload.get("user_id") or DEFAULT_USER_ID
+
+    user: dict | None = None
+    try:
+        async with async_session_factory() as session:
+            repo = UserRepository(session)
+            if via == "apikey":
+                user = await repo.get_by_id(user_id)
+            elif sub:
+                user = await repo.get_by_username(sub)
+    except Exception:
+        logger.exception("读取用户角色失败，按普通用户处理（sub=%s）", sub)
+
+    if user is None:
+        return CurrentUserInfo(id=user_id, sub=sub, role="user", auth_via=via)
+    return CurrentUserInfo(id=user["id"], sub=sub, role=user["role"], auth_via=via)
 
 
 async def get_current_user(
@@ -443,7 +480,7 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     payload = await _verify_and_get_payload_async(token)
-    return _payload_to_user(payload)
+    return await _payload_to_user(payload)
 
 
 async def get_current_user_flexible(
@@ -464,9 +501,49 @@ async def get_current_user_flexible(
             headers={"WWW-Authenticate": "Bearer"},
         )
     payload = await _verify_and_get_payload_async(raw)
-    return _payload_to_user(payload)
+    return await _payload_to_user(payload)
 
 
 # Type aliases for FastAPI dependency injection
 CurrentUser = Annotated[CurrentUserInfo, Depends(get_current_user)]
 CurrentUserFlexible = Annotated[CurrentUserInfo, Depends(get_current_user_flexible)]
+
+
+async def require_admin(
+    current_user: Annotated[CurrentUserInfo, Depends(get_current_user)],
+    _t: Translator,
+) -> CurrentUserInfo:
+    """Admin-only 依赖：非 admin 角色一律 403。
+
+    API Key 认证（``auth_via == "apikey"``）也会走到这里，其角色按
+    ``users`` 表解析（默认 admin），是否放行由角色决定；API Key 管理端点
+    另有 ``_require_jwt_auth`` 额外拦截 API Key 自身。
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail=_t("forbidden"))
+    return current_user
+
+
+AdminUser = Annotated[CurrentUserInfo, Depends(require_admin)]
+
+
+async def ensure_default_user() -> None:
+    """启动时把 env 配置的登录用户同步到 users 表（id="default"）。
+
+    认证凭据仍完全由 ``AUTH_USERNAME`` / ``AUTH_PASSWORD`` 驱动，这里只保证
+    ``users`` 表存在与当前登录用户对应的记录，权限判断才能读到真实角色。
+    ``AUTH_ENABLED=false``（匿名模式）时无需用户记录，直接跳过。
+    """
+    if not is_auth_enabled():
+        return
+    from lib.db import async_session_factory
+    from lib.db.repositories.user_repository import UserRepository
+
+    username = os.environ.get("AUTH_USERNAME", "admin")
+    try:
+        async with async_session_factory() as session:
+            async with session.begin():
+                await UserRepository(session).ensure_default_user(username)
+        logger.info("已同步默认用户到 users 表: %s", username)
+    except Exception:
+        logger.exception("同步默认用户到 users 表失败（非致命）")

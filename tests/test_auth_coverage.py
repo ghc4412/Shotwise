@@ -25,6 +25,10 @@ PUBLIC_OPERATIONS = frozenset(
         "GET /health",
         "GET /api/v1/auth/status",
         "POST /api/v1/auth/token",
+        # GitHub OAuth 登录链路：发起授权 / 回调 / 配置探测都必须在拿 token 之前可达
+        "GET /api/v1/auth/github/config",
+        "GET /api/v1/auth/github/authorize",
+        "GET /api/v1/auth/github/callback",
         "GET /api/v1/files/{project_name}/{path}",
         "GET /api/v1/global-assets/{asset_type}/{filename}",
     }
@@ -67,6 +71,12 @@ def _auth_env():
             "AUTH_USERNAME": "testuser",
             "AUTH_PASSWORD": "testpass",
             "AUTH_TOKEN_SECRET": "test-auth-coverage-secret-key-at-least-32-bytes",
+            # uv run 会把开发 .env 注入测试进程；GitHub 相关键必须显式清空，
+            # 否则"未配置时 authorize 409"的断言受开发者本地 .env 污染。
+            "GITHUB_CLIENT_ID": "",
+            "GITHUB_CLIENT_SECRET": "",
+            "GITHUB_REDIRECT_URI": "",
+            "PUBLIC_FRONTEND_URL": "",
         },
     ):
         yield
@@ -127,6 +137,10 @@ def test_public_endpoints_stay_reachable(client):
     """公开端点不被 router 级依赖误伤。"""
     assert client.get("/health").status_code == 200
     assert client.get("/api/v1/auth/status").status_code == 200
+    # GitHub OAuth 登录链路匿名可达：config 探测 200；未配置时 authorize 409、callback 缺参 422
+    assert client.get("/api/v1/auth/github/config").status_code == 200
+    assert client.get("/api/v1/auth/github/authorize").status_code == 409
+    assert client.get("/api/v1/auth/github/callback").status_code == 422
     assert (
         client.post(
             "/api/v1/auth/token",

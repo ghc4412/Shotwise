@@ -17,7 +17,7 @@ from lib.db.repositories.api_key_repository import ApiKeyRepository
 from lib.i18n import Translator
 from server.auth import (
     API_KEY_PREFIX,
-    CurrentUser,
+    AdminUser,
     CurrentUserInfo,
     _hash_api_key,
     invalidate_api_key_cache,
@@ -28,7 +28,7 @@ router = APIRouter()
 
 def _require_jwt_auth(user: CurrentUserInfo, _t: Callable[..., str]) -> None:
     """确保请求通过 JWT 认证（非 API Key）。API Key 管理操作不允许由 API Key 本身执行。"""
-    if user.sub.startswith("apikey:"):
+    if user.auth_via == "apikey":
         raise HTTPException(status_code=403, detail=_t("jwt_auth_required"))
 
 
@@ -71,7 +71,7 @@ class ApiKeyInfo(BaseModel):
 @router.post("/api-keys", status_code=201)
 async def create_api_key(
     body: CreateApiKeyRequest,
-    user: CurrentUser,
+    user: AdminUser,
     _t: Translator,
 ) -> CreateApiKeyResponse:
     """创建新 API Key。完整 key 仅在响应中出现一次，之后无法再查看。"""
@@ -112,7 +112,7 @@ async def create_api_key(
 
 @router.get("/api-keys")
 async def list_api_keys(
-    user: CurrentUser,
+    user: AdminUser,
     _t: Translator,
 ) -> list[ApiKeyInfo]:
     """查询所有 API Key 的元数据（不含完整 key）。"""
@@ -128,7 +128,7 @@ async def list_api_keys(
 @router.delete("/api-keys/{key_id}", status_code=204)
 async def delete_api_key(
     key_id: int,
-    user: CurrentUser,
+    user: AdminUser,
     _t: Translator,
 ) -> None:
     """删除（吊销）指定 API Key，并立即清除内存缓存。"""

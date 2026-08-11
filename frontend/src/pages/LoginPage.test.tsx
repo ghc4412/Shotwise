@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
@@ -82,5 +82,38 @@ describe("LoginPage returnTo consumption", () => {
     await waitFor(() => {
       expect(history.at(-1)).toBe("/app/projects");
     });
+  });
+});
+
+describe("LoginPage GitHub sign-in", () => {
+  it("renders the GitHub button when OAuth is configured", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ configured: true }),
+      } as unknown as Response),
+    );
+    renderLoginAt("/login");
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "使用 GitHub 登录" })).toBeInTheDocument();
+    });
+  });
+
+  it("hides the GitHub button and shows no admin-request link when unconfigured", () => {
+    renderLoginAt("/login");
+    expect(screen.queryByRole("button", { name: "使用 GitHub 登录" })).not.toBeInTheDocument();
+    expect(screen.queryByText("申请开通")).not.toBeInTheDocument();
+  });
+});
+
+describe("LoginPage footer", () => {
+  it("shows the bilingual brand and no build line", () => {
+    renderLoginAt("/login");
+    // footer 品牌显示「Shotwise / 逐镜」双语名，无「叙事智能」与构建信息行
+    expect(screen.getByText("Shotwise / 逐镜")).toBeInTheDocument();
+    expect(screen.queryByText(/叙事智能/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/构建 0.25/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/安全工作区/)).not.toBeInTheDocument();
   });
 });

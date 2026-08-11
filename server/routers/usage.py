@@ -11,6 +11,7 @@ from fastapi import APIRouter, Query
 from lib.db import async_session_factory
 from lib.db.repositories.usage_repo import UsageRepository
 from lib.providers import CallType
+from server.auth import AdminUser
 
 router = APIRouter()
 
@@ -72,7 +73,7 @@ async def get_calls(
 
 
 @router.get("/usage/projects")
-async def get_projects_list():
+async def get_projects_list(_user: AdminUser):
     async with async_session_factory() as session:
         projects = await UsageRepository(session).get_projects_list()
     return {"projects": projects}

@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from "react";
-import { ArrowUpRight, Eye, EyeOff, Film, Loader2, Sparkles } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { Eye, EyeOff, Film, Loader2, Sparkles } from "lucide-react";
 import { useAutoFocus } from "@/hooks/useAutoFocus";
 import { errMsg, voidPromise } from "@/utils/async";
 import { useLocation, useSearch } from "wouter";
@@ -10,23 +10,63 @@ import { BRAND } from "@/branding";
 import type { LoginResponse, ErrorResponse } from "@/api";
 import { FieldLabel } from "@/components/ui/FieldLabel";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { ThemeAccentPicker } from "@/components/ui/ThemeAccentPicker";
 import {
   ACCENT_BTN_CLS,
   ACCENT_BUTTON_STYLE,
   INPUT_CLS,
 } from "@/components/ui/darkroom-tokens";
 
+/** GitHub OAuth 回调失败时 hash 中携带的错误码 → 文案 key */
+const OAUTH_ERROR_KEYS: Record<string, string> = {
+  invalid_state: "oauth_error_invalid_state",
+  auth_failed: "oauth_error_auth_failed",
+  username_taken: "oauth_error_username_taken",
+};
+
 export function LoginPage() {
   const { t, i18n } = useTranslation(["common", "auth"]);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
+  // GitHub 回调失败（#oauth_error=<code>）：mount 时一次性读取并清掉 hash
+  const [error, setError] = useState<string>(() => {
+    const match = window.location.hash.match(/^#oauth_error=([^&]+)/);
+    if (!match) return "";
+    const key = OAUTH_ERROR_KEYS[decodeURIComponent(match[1])];
+    return key ? t(`auth:${key}`) : "";
+  });
   const [loading, setLoading] = useState(false);
+  const [githubConfigured, setGithubConfigured] = useState(false);
   const [, setLocation] = useLocation();
   const search = useSearch();
   const login = useAuthStore((s) => s.login);
   const usernameRef = useAutoFocus<HTMLInputElement>();
+
+  // 探测 GitHub OAuth 是否已配置，决定是否渲染 GitHub 登录入口
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/v1/auth/github/config")
+      .then(async (res) => {
+        if (!res.ok) return;
+        const payload = (await res.json()) as { configured?: unknown };
+        if (!cancelled) setGithubConfigured(payload.configured === true);
+      })
+      .catch(() => {
+        // 网络异常时按未配置处理，隐藏 GitHub 入口
+        if (!cancelled) setGithubConfigured(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 消费 GitHub 回调错误 hash（error 已由 useState 惰性初始化读取，这里只清理 URL）
+  useEffect(() => {
+    if (/^#oauth_error=/.test(window.location.hash)) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }, []);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -48,7 +88,7 @@ export function LoginPage() {
       }
 
       const data = (await resp.json()) as LoginResponse;
-      login(data.access_token, username);
+      login(data.access_token, username, data.role ?? "admin");
       const returnTo = safeReturnPath(new URLSearchParams(search).get("from"));
       setLocation(returnTo ?? "/app/projects");
     } catch (err) {
@@ -73,12 +113,9 @@ export function LoginPage() {
             <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-text-4">{t("auth:login_brand_label")}</div>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="hidden items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-good sm:inline-flex">
-            <span className="auth-status-dot" />
-            {t("auth:login_system_status")}
-          </span>
-          <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <ThemeToggle compact />
+          <ThemeAccentPicker />
         </div>
       </header>
 
@@ -88,7 +125,7 @@ export function LoginPage() {
             <span className="auth-kicker-line" />
             {t("auth:login_kicker")}
           </div>
-          <h1 className="auth-title max-w-[720px] text-balance font-editorial text-[clamp(3.2rem,6.8vw,6.8rem)] font-normal leading-[0.9] tracking-[-0.035em] text-text">
+          <h1 className="auth-title max-w-[720px] whitespace-pre-line text-balance font-editorial text-[clamp(3.2rem,6.8vw,6rem)] font-normal leading-[1.05] tracking-[-0.035em] text-text">
             {t("auth:login_hero_title")}
           </h1>
           <p className="mt-7 max-w-[560px] text-[15px] leading-7 text-text-2 lg:text-[17px]">{t("auth:login_hero_body")}</p>
@@ -144,20 +181,47 @@ export function LoginPage() {
 
               {error && <p role="alert" aria-live="polite" className="auth-error text-sm text-warm-bright">{error}</p>}
 
-              <button type="submit" disabled={loading} className={`${ACCENT_BTN_CLS} auth-submit w-full justify-between`} style={ACCENT_BUTTON_STYLE}>
-                <span className="flex items-center gap-2">{loading && <Loader2 aria-hidden className="h-4 w-4 motion-safe:animate-spin" />}{loading ? t("auth:logging_in") : t("auth:login")}</span>
-                {!loading && <ArrowUpRight aria-hidden className="h-4 w-4" />}
+              <button
+                type="submit"
+                disabled={loading}
+                className={`${ACCENT_BTN_CLS} auth-submit w-full justify-center`}
+                style={{ ...ACCENT_BUTTON_STYLE, fontSize: 15 }}
+              >
+                {loading && <Loader2 aria-hidden className="h-4 w-4 motion-safe:animate-spin" />}
+                {loading ? t("auth:logging_in") : t("auth:login")}
               </button>
-            </form>
 
-            <div className="auth-divider"><span>{t("auth:login_admin_note")}</span></div>
-            <a className="auth-request-button" href="mailto:admin@shotwise.local">{t("auth:login_contact_admin")}<ArrowUpRight aria-hidden className="h-3.5 w-3.5" /></a>
+              {githubConfigured && (
+                <>
+                  <div className="auth-divider">
+                    <span>{t("auth:login_or_github")}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.location.href = "/api/v1/auth/github/authorize";
+                    }}
+                    className="focus-ring flex w-full items-center justify-center gap-2.5 rounded-md border px-4 py-2.5 text-[14px] font-semibold transition-colors hover:border-hairline-strong"
+                    style={{
+                      borderColor: "var(--color-hairline-strong)",
+                      background:
+                        "color-mix(in oklab, var(--color-surface-2) 62%, transparent)",
+                      color: "var(--color-text)",
+                    }}
+                  >
+                    <svg viewBox="0 0 16 16" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+                      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z" />
+                    </svg>
+                    {t("auth:login_with_github")}
+                  </button>
+                </>
+              )}
+            </form>
           </div>
         </section>
       </main>
       <footer className="relative z-10 flex justify-between px-6 pb-5 font-mono text-[9px] uppercase tracking-[0.16em] text-text-4 lg:px-10">
-        <span>{BRAND.name} / {t("auth:login_footer")}</span>
-        <span className="hidden sm:inline">{t("auth:login_build")}</span>
+        <span>{BRAND.name} / {BRAND.nameZh}</span>
       </footer>
     </div>
   );

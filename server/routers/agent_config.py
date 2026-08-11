@@ -21,6 +21,7 @@ from lib.db import get_async_session
 from lib.db.base import dt_to_iso
 from lib.db.repositories.agent_credential_repo import AgentCredentialRepository
 from lib.i18n import Translator
+from server.auth import AdminUser
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class PresetProvidersResponse(BaseModel):
 
 
 @router.get("/preset-providers", response_model=PresetProvidersResponse)
-async def list_preset_providers(_t: Translator) -> PresetProvidersResponse:
+async def list_preset_providers(_t: Translator, _user: AdminUser) -> PresetProvidersResponse:
     return PresetProvidersResponse(
         providers=[
             PresetProviderResponse(
@@ -149,6 +150,7 @@ def _cred_to_response(cred) -> CredentialResponse:
 @router.get("/credentials", response_model=CredentialListResponse)
 async def list_credentials(
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> CredentialListResponse:
     repo = AgentCredentialRepository(session)
@@ -160,6 +162,7 @@ async def list_credentials(
 async def create_credential(
     body: CreateCredentialRequest,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> CredentialResponse:
     if body.preset_id != CUSTOM_SENTINEL_ID:
@@ -206,6 +209,7 @@ async def update_credential(
     cred_id: int,
     body: UpdateCredentialRequest,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> CredentialResponse:
     repo = AgentCredentialRepository(session)
@@ -228,6 +232,7 @@ async def update_credential(
 async def delete_credential(
     cred_id: int,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> None:
     repo = AgentCredentialRepository(session)
@@ -251,6 +256,7 @@ class ActivateResponse(BaseModel):
 async def activate_credential(
     cred_id: int,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> ActivateResponse:
     repo = AgentCredentialRepository(session)
@@ -333,6 +339,7 @@ async def _run_and_serialize(
 async def test_connection_draft(
     body: TestConnectionRequest,
     _t: Translator,
+    _user: AdminUser,
 ) -> TestConnectionResponseModel:
     return await _run_and_serialize(
         preset_id=body.preset_id,
@@ -347,6 +354,7 @@ async def test_connection_draft(
 async def test_credential(
     cred_id: int,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> TestConnectionResponseModel:
     repo = AgentCredentialRepository(session)

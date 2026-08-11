@@ -44,6 +44,7 @@ from lib.db.repositories.custom_provider_repo import CustomProviderRepository
 from lib.i18n import Translator
 from lib.image_backends.base import ImageCapability
 from lib.video_backends.base import ReferenceAudioMode
+from server.auth import AdminUser
 
 
 def _validate_endpoint(value: str) -> str:
@@ -605,6 +606,7 @@ async def create_provider(
     body: CreateProviderRequest,
     request: Request,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ):
     """创建自定义供应商，可同时创建模型列表。"""
@@ -650,12 +652,13 @@ async def get_provider(
 async def get_provider_credentials(
     provider_id: int,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ):
     """返回明文 base_url + api_key，供智能体配置导入复用。
 
-    仅 CurrentUser 鉴权,与现有 PATCH 接口对齐;日志不打印 body。
-    多用户场景需重新评估细粒度授权。
+    admin-only：明文凭证仅系统设置页可读，普通用户流程无此需要。
+    日志不打印 body。
     """
     repo = CustomProviderRepository(session)
     provider = await repo.get_provider(provider_id)
@@ -673,6 +676,7 @@ async def update_provider(
     body: UpdateProviderRequest,
     request: Request,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ):
     """更新自定义供应商配置。"""
@@ -705,6 +709,7 @@ async def full_update_provider(
     body: FullUpdateProviderRequest,
     request: Request,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ):
     """原子更新供应商元数据 + 模型列表（单一事务）。"""
@@ -739,6 +744,7 @@ async def delete_provider(
     provider_id: int,
     request: Request,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ):
     """删除自定义供应商（级联删除模型，清理悬空默认配置）。"""
@@ -773,6 +779,7 @@ async def replace_models(
     body: ReplaceModelsRequest,
     request: Request,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ):
     """替换供应商的整个模型列表。"""
@@ -819,6 +826,7 @@ async def replace_models(
 async def discover_models_endpoint(
     body: ProviderConnectionRequest,
     _t: Translator,
+    _user: AdminUser,
 ):
     """模型发现：根据 discovery_format + base_url + api_key 查询可用模型。"""
     return await _run_discover(body.discovery_format, body.base_url, body.api_key, _t)
@@ -828,6 +836,7 @@ async def discover_models_endpoint(
 async def discover_anthropic_models_endpoint(
     body: DiscoverAnthropicRequest,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ):
     """Anthropic 协议模型发现：智能体配置专用。
@@ -857,6 +866,7 @@ async def discover_anthropic_models_endpoint(
 async def discover_models_by_id(
     provider_id: int,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ):
     """使用已存储凭证发现指定供应商的可用模型。"""
@@ -871,13 +881,19 @@ async def discover_models_by_id(
 async def test_connection(
     body: ProviderConnectionRequest,
     _t: Translator,
+    _user: AdminUser,
 ):
     """连接测试：验证 discovery_format + base_url + api_key 的连通性。"""
     return await _run_connection_test(body.discovery_format, body.base_url, body.api_key, _t)
 
 
 @router.post("/{provider_id}/test")
-async def test_connection_by_id(provider_id: int, _t: Translator, session: AsyncSession = Depends(get_async_session)):
+async def test_connection_by_id(
+    provider_id: int,
+    _t: Translator,
+    _user: AdminUser,
+    session: AsyncSession = Depends(get_async_session),
+):
     """使用已存储凭证测试指定供应商的连通性。"""
     repo = CustomProviderRepository(session)
     provider = await repo.get_provider(provider_id)

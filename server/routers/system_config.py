@@ -35,6 +35,7 @@ from lib.config.service import ConfigService
 from lib.db import get_async_session
 from lib.httpx_shared import get_http_client
 from lib.i18n import Translator
+from server.auth import AdminUser
 from server.dependencies import get_config_service
 from server.routers._validators import validate_backend_value
 
@@ -422,6 +423,7 @@ async def patch_system_config(
     req: SystemConfigPatchRequest,
     svc: Annotated[ConfigService, Depends(get_config_service)],
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, Any]:
     patch: dict[str, Any] = {}

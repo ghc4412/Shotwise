@@ -46,6 +46,7 @@ MESSAGES = {
     "file_too_large": "Kích thước tệp vượt quá giới hạn (tối đa khoảng {max_chars} ký tự)",
     "invalid_encoding": "Lỗi mã hóa tệp, vui lòng dùng tệp văn bản mã hóa UTF-8",
     "unauthorized": "Tên đăng nhập hoặc mật khẩu không đúng",
+    "forbidden": "Không đủ quyền: thao tác này yêu cầu quyền quản trị viên",
     "task_not_found": "Tác vụ '{id}' không tồn tại",
     # Lý do tác vụ thất bại (GenerationWorker lưu mã lỗi + tham số; tasks API kết xuất theo ngôn ngữ khi đọc)
     "task_fail_provider_unsupported_media": "Nhà cung cấp {provider_id} không hỗ trợ tạo {media_type}",

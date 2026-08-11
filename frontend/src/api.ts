@@ -84,6 +84,8 @@ import i18n from "./i18n";
 export interface LoginResponse {
   access_token: string;
   token_type: string;
+  /** 登录用户的角色（admin/user）；旧后端可能不返回，默认按 admin 处理。 */
+  role?: string;
 }
 
 /** Standard error response body from backend (mirrors FastAPI HTTPException detail). */

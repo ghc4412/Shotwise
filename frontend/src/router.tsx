@@ -105,6 +105,19 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 }
 
 // ---------------------------------------------------------------------------
+// AdminGuard — 非 admin 用户访问系统设置页时重定向回项目列表
+// ---------------------------------------------------------------------------
+
+function AdminGuard({ children }: { children: React.ReactNode }) {
+  const role = useAuthStore((s) => s.role);
+  // 显式 user 角色才拦截；null（匿名模式 / role 尚未恢复）保持原行为
+  if (role === "user") {
+    return <Redirect to={ROUTE_APP_PROJECTS} />;
+  }
+  return <>{children}</>;
+}
+
+// ---------------------------------------------------------------------------
 // StudioWorkspace — loads project data and renders three-column layout
 // ---------------------------------------------------------------------------
 
@@ -216,7 +229,9 @@ export function AppRoutes() {
         {/* System settings */}
         <Route path={ROUTE_APP_SETTINGS}>
           <AuthGuard>
-            <SystemConfigPage />
+            <AdminGuard>
+              <SystemConfigPage />
+            </AdminGuard>
           </AuthGuard>
         </Route>
 

@@ -46,6 +46,7 @@ MESSAGES = {
     "file_too_large": "File size exceeds limit (max approx {max_chars} characters)",
     "invalid_encoding": "File encoding error, please use UTF-8 encoded text file",
     "unauthorized": "Invalid username or password",
+    "forbidden": "Insufficient permissions: this action requires administrator access",
     "task_not_found": "Task '{id}' does not exist",
     # Task failure reasons (GenerationWorker stores a code + params; tasks API renders per locale on read)
     "task_fail_provider_unsupported_media": "Provider {provider_id} does not support {media_type} generation",

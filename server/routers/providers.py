@@ -32,6 +32,7 @@ from lib.db.repositories.credential_repository import CredentialRepository
 from lib.gemini_shared import VERTEX_SCOPES
 from lib.i18n import Translator
 from lib.video_backends.registry import video_capabilities_for_model as builtin_video_capabilities_for_model
+from server.auth import AdminUser
 from server.dependencies import get_config_service
 
 if TYPE_CHECKING:
@@ -404,6 +405,7 @@ async def list_providers(
 async def get_provider_config(
     provider_id: str,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> ProviderConfigResponse:
     """返回单个供应商的配置字段（registry 元数据与 DB 值合并）。"""
@@ -462,6 +464,7 @@ async def patch_provider_config(
     body: dict[str, str | None],
     request: Request,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> Response:
     """更新供应商配置。值为 null 表示删除该键。"""
@@ -499,6 +502,7 @@ async def patch_provider_config(
 async def list_credentials(
     provider_id: str,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> CredentialListResponse:
     _validate_provider(provider_id, _t)
@@ -513,6 +517,7 @@ async def create_credential(
     body: CreateCredentialRequest,
     request: Request,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> CredentialResponse:
     _validate_provider(provider_id, _t)
@@ -539,6 +544,7 @@ async def update_credential(
     body: UpdateCredentialRequest,
     request: Request,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> Response:
     _validate_provider(provider_id, _t)
@@ -581,6 +587,7 @@ async def delete_credential(
     cred_id: int,
     request: Request,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> Response:
     _validate_provider(provider_id, _t)
@@ -608,6 +615,7 @@ async def activate_credential(
     cred_id: int,
     request: Request,
     _t: Translator,
+    _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> Response:
     _validate_provider(provider_id, _t)
@@ -623,6 +631,7 @@ async def activate_credential(
 async def upload_vertex_credential(
     request: Request,
     _t: Translator,
+    _user: AdminUser,
     name: str = "Vertex Credentials",
     session: AsyncSession = Depends(get_async_session),
     file: UploadFile = File(...),
@@ -942,6 +951,7 @@ _TEST_DISPATCH: dict[str, Callable[[dict[str, str], Any], ConnectionTestResponse
 async def test_provider_connection(
     provider_id: str,
     _t: Translator,
+    _user: AdminUser,
     credential_id: int | None = None,
     session: AsyncSession = Depends(get_async_session),
 ) -> ConnectionTestResponse:

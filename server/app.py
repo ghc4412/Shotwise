@@ -40,7 +40,7 @@ from lib.logging_config import attach_file_handler, migrate_legacy_log_dir, setu
 from lib.path_safety import try_safe_join
 from lib.project_migrations import cleanup_stale_backups, run_project_migrations
 from lib.source_loader.migration import migrate_project_source_encoding
-from server.auth import ensure_auth_password, get_current_user
+from server.auth import ensure_auth_password, ensure_default_user, get_current_user
 from server.error_handlers import register_error_handlers
 from server.routers import (
     agent_chat,
@@ -340,6 +340,9 @@ async def lifespan(app: FastAPI):
 
     # Run Alembic migrations (auto-creates tables on first start)
     await init_db()
+
+    # 把 env 登录用户同步到 users 表（幂等；失败不阻塞启动）
+    await ensure_default_user()
 
     projects_root = app_data_dir()
 

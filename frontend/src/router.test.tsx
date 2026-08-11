@@ -323,4 +323,40 @@ describe("AppRoutes", () => {
     await vi.advanceTimersByTimeAsync(1600);
     expect(API.getProviders).toHaveBeenCalledTimes(3);
   });
+
+  describe("AdminGuard（/app/settings 权限守卫）", () => {
+    it("user 角色访问 /app/settings 重定向到项目列表", async () => {
+      useAuthStore.setState({
+        isAuthenticated: true,
+        isLoading: false,
+        username: "alice",
+        role: "user",
+      });
+      renderAt("/app/settings");
+      expect(await screen.findByTestId("projects-page")).toBeInTheDocument();
+      expect(screen.queryByTestId("system-config-page")).not.toBeInTheDocument();
+    });
+
+    it("admin 角色可访问 /app/settings", async () => {
+      useAuthStore.setState({
+        isAuthenticated: true,
+        isLoading: false,
+        username: "admin",
+        role: "admin",
+      });
+      renderAt("/app/settings");
+      expect(await screen.findByTestId("system-config-page")).toBeInTheDocument();
+    });
+
+    it("role 未恢复（匿名模式）时保持原行为可访问", async () => {
+      useAuthStore.setState({
+        isAuthenticated: true,
+        isLoading: false,
+        username: null,
+        role: null,
+      });
+      renderAt("/app/settings");
+      expect(await screen.findByTestId("system-config-page")).toBeInTheDocument();
+    });
+  });
 });
