@@ -279,12 +279,6 @@ Shotwise 是自托管 Web 应用，目前没有独立的 iOS 或 Android 原生 
 
 服务器推荐 Linux、macOS、WSL2 或 Docker。Windows 原生环境只保证项目创建与基础流程，正式部署建议 WSL2 或 Docker Desktop。
 
-### 可以商用或二次开发吗？
-
-Shotwise 按 [AGPL-3.0](../LICENSE) 发布，并附带 [NOTICE](../NOTICE) 中的署名和修改声明要求。Shotwise 名称与 Logo 不在 AGPL-3.0 授权范围内。
-
-如果希望在不承担 AGPL 开源义务的前提下进行商业使用，请联系 [support@shotwise.com](mailto:support@shotwise.com) 了解商业授权。具体项目是否合规应由使用者根据实际分发和部署方式自行评估；本说明不构成法律意见。
-
 ## 故障诊断与求助
 
 ### 只显示“服务器内部错误”，怎样找到真正原因？

@@ -247,16 +247,6 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before starting. After cloning the repos
 uv run pre-commit install
 ```
 
-## License and commercial use
-
-Shotwise is licensed under the [GNU Affero General Public License v3.0](LICENSE). Additional terms are available in [NOTICE](NOTICE).
-
-For organizations that cannot use AGPL-3.0, or need commercial deployment, white-labeling, or redistribution without AGPL obligations, contact:
-
-**support@shotwise.com**
-
-Copyright © 2026 Pollo3470 and SHOTWISE contributors
-
 ---
 
 <p align="center">
