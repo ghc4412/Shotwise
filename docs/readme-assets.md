@@ -5,7 +5,6 @@
 当前 README 已使用：
 
 - `docs/assets/hero-screenshot.png`
-- `docs/assets/feishu-qr.png`
 
 产品型开源项目的首页转化主要依赖真实成果展示。ArcReel 尤其需要同时展示“工作台”和“最终成片”，不能只展示设置页或功能清单。
 
@@ -25,7 +24,6 @@ docs/assets/
 │   ├── novel-final.mp4
 │   ├── narration-final.mp4
 │   └── ad-final.mp4
-└── feishu-qr.png
 ```
 
 GitHub README 不适合直接托管超大视频。最终视频可以：

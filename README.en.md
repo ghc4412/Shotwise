@@ -38,8 +38,6 @@
   <a href="docs/getting-started.md">Getting Started</a>
   ·
   <a href="docs/README.md">Documentation</a>
-  ·
-  <a href="#community">Community</a>
 </p>
 
 <p align="center">
@@ -238,16 +236,6 @@ Detailed documentation is currently maintained in Chinese; English documentation
 | [FAQ](docs/FAQ.md) | Deployment, cost, data, model, and licensing questions |
 | [Contributing](CONTRIBUTING.md) | Local development, tests, conventions, and pull requests |
 | [Changelog](CHANGELOG.md) | Release history |
-
-## Community
-
-Scan the QR code to join the ArcReel Feishu community for help, release updates, and workflow discussions:
-
-<p align="center">
-  <img src="docs/assets/feishu-qr.png" alt="ArcReel Feishu Community QR Code" width="280">
-</p>
-
-Reproducible bugs and focused feature requests are welcome in [GitHub Issues](https://github.com/ArcReel/ArcReel/issues).
 
 ## Contributing
 

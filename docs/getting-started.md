@@ -314,7 +314,6 @@ ArcReel 会按照作者提供的内容建立角色和镜头，不应把成品剧
 
 - 💰 查看 [Google GenAI 费用说明](google-genai-docs/pricing.md) 和 [火山方舟费用说明](ark-docs/火山方舟费用参考.md) 了解详细定价
 - 🐛 遇到问题？提交 [Issue](https://github.com/ghc4412/Shotwise/issues) 反馈
-- 💬 扫码加入飞书交流群，获取帮助和最新动态：
 
 不要在角色资产尚未确认时批量生成全部分镜，否则后续返工会放大。
 

@@ -38,8 +38,6 @@
   <a href="docs/getting-started.md">入门教程</a>
   ·
   <a href="docs/README.md">完整文档</a>
-  ·
-  <a href="#交流群">加入社区</a>
 </p>
 
 <p align="center">
@@ -227,14 +225,6 @@ SHOTWISE 通过统一的 `ImageBackend` / `VideoBackend` / `TextBackend` 协议�
 
 供应商选择优先级：项目级设置 > 全局默认。切换供应商时通用设置（分辨率、宽高比、音频等）直接沿用，供应商特有参数保留。
 
-## 交流群
-
-扫码加入飞书交流群，获取帮助和最新动态：
-
-<p align="center">
-  <img src="docs/assets/feishu-qr.png" alt="飞书交流群二维码" width="280">
-</p>
-
 ## AI 助手架构
 
 SHOTWISE 的 AI 助手基于 Claude Agent SDK 构建，采用**编排 Skill + 聚焦 Subagent** 的多智能体架构：
@@ -313,16 +303,6 @@ flowchart TB
 | [常见问题](docs/FAQ.md) | 部署、费用、模型、数据和许可证问题 |
 | [贡献指南](CONTRIBUTING.md) | 本地开发、测试、代码规范和 PR 流程 |
 | [更新记录](CHANGELOG.md) | 每个版本的功能和修复 |
-
-## 交流群
-
-扫码加入飞书交流群，获取使用帮助、版本动态和创作经验：
-
-<p align="center">
-  <img src="docs/assets/feishu-qr.png" alt="ArcReel 飞书交流群二维码" width="280">
-</p>
-
-遇到可以复现的 Bug 或明确的功能需求，也可以直接提交 [GitHub Issue](https://github.com/ArcReel/ArcReel/issues)。
 
 ## 贡献
 
