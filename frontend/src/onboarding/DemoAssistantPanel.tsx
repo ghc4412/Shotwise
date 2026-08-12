@@ -46,7 +46,7 @@ export function DemoAssistantPanel() {
     <div
       data-onboarding={ONBOARDING_ANCHORS.workbenchAgent}
       className="relative isolate flex h-full flex-col"
-      style={{ background: "oklch(0.19 0.011 250 / 0.5)" }}
+      style={{ background: "var(--color-shell-side-a)" }}
     >
       {/* 头部：与真实面板同款标识，不带会话切换/新建——演示里没有会话可管理 */}
       <div
@@ -84,7 +84,7 @@ export function DemoAssistantPanel() {
           className="flex items-end gap-2 rounded-lg px-3 py-2"
           style={{
             border: "1px solid var(--color-hairline)",
-            background: "oklch(0.20 0.012 265 / 0.7)",
+            background: "var(--color-shell-btn-2)",
           }}
         >
           <textarea

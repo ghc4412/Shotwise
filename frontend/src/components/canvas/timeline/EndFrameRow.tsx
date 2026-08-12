@@ -169,7 +169,7 @@ export function EndFrameRow({
       className="mb-2.5 rounded-[10px]"
       style={{
         border: "1px solid var(--color-hairline)",
-        background: "oklch(0.18 0.010 265 / 0.4)",
+        background: "var(--panel-spec-bar-bg)",
       }}
     >
       <button
@@ -244,7 +244,7 @@ export function EndFrameRow({
               border: previewUrl
                 ? "1px solid var(--color-accent-soft)"
                 : "1px dashed var(--color-hairline-strong)",
-              background: previewUrl ? undefined : "oklch(0.20 0.011 265 / 0.5)",
+              background: previewUrl ? undefined : "var(--color-shell-field)",
             }}
           >
             <AspectFrame ratio={aspectRatio}>
@@ -288,7 +288,7 @@ export function EndFrameRow({
                   className="focus-ring rounded-md px-2.5 py-1 text-[11.5px] font-medium transition-colors hover:bg-[oklch(0.26_0.013_265_/_0.7)] disabled:cursor-not-allowed disabled:opacity-50"
                   style={{
                     border: "1px solid var(--color-hairline)",
-                    background: "oklch(0.22 0.011 265 / 0.5)",
+                    background: "var(--color-shell-btn)",
                     color: "var(--color-text-2)",
                   }}
                 >

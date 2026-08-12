@@ -8,8 +8,7 @@ export const ACCENT_BUTTON_STYLE: CSSProperties = {
 };
 
 export const CARD_STYLE: CSSProperties = {
-  background:
-    "linear-gradient(180deg, oklch(0.20 0.011 265 / 0.55), oklch(0.16 0.010 265 / 0.55))",
+  background: "var(--panel-card-bg)",
 };
 
 export const INPUT_CLS =
@@ -23,8 +22,7 @@ export const GHOST_BTN_CLS = `${GHOST_BTN_BASE_CLS} gap-1.5 px-3 py-1.5 text-[12
 export const GHOST_BTN_LG_CLS = `${GHOST_BTN_BASE_CLS} gap-2 px-3.5 py-2 text-[12.5px]`;
 
 export const DROPDOWN_PANEL_STYLE: CSSProperties = {
-  background:
-    "linear-gradient(180deg, oklch(0.20 0.011 265 / 0.92), oklch(0.16 0.010 265 / 0.92))",
+  background: "var(--panel-dropdown-bg)",
   backdropFilter: "blur(12px)",
   WebkitBackdropFilter: "blur(12px)",
 };

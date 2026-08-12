@@ -21,7 +21,7 @@ export function GalleryEmptyState({ icon, label, hint, onClick }: Props) {
       style={{
         border: "1px dashed var(--color-hairline)",
         background:
-          "radial-gradient(600px 280px at 50% -10%, var(--color-accent-dim), transparent 60%), oklch(0.18 0.010 265 / 0.35)",
+          "radial-gradient(600px 280px at 50% -10%, var(--color-accent-dim), transparent 60%), var(--panel-spec-bar-bg)",
       }}
       onMouseEnter={
         onClick

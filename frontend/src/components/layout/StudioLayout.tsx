@@ -178,7 +178,7 @@ export function StudioLayout({ children }: StudioLayoutProps) {
             style={{
               width: `min(${ASSISTANT_PANEL_DEFAULT_WIDTH}px, 40vw)`,
               minWidth: 0,
-              background: "oklch(0.19 0.011 250 / 0.5)",
+              background: "var(--color-shell-side-a)",
               borderLeft: "1px solid var(--color-hairline)",
             }}
           >
@@ -193,7 +193,7 @@ export function StudioLayout({ children }: StudioLayoutProps) {
           }`}
           style={{
             width: assistantPanelOpen ? displayedPanelWidth : 0,
-            background: "oklch(0.19 0.011 250 / 0.5)",
+            background: "var(--color-shell-side-a)",
             borderLeft: assistantPanelOpen
               ? "1px solid var(--color-hairline)"
               : "1px solid transparent",

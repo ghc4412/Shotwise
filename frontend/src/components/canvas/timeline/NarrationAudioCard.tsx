@@ -66,7 +66,7 @@ export function NarrationAudioCard({
         className="rounded-[10px] px-3 py-2.5"
         style={{
           background:
-            "linear-gradient(180deg, oklch(0.22 0.012 265 / 0.5), oklch(0.20 0.012 265 / 0.35))",
+            "var(--panel-card-bg)",
           border: "1px solid var(--color-hairline-soft)",
           borderLeft: "3px solid var(--color-accent-soft)",
         }}
@@ -92,7 +92,7 @@ export function NarrationAudioCard({
             className="mt-2.5 flex items-center justify-center gap-2 rounded-[8px] py-2.5 text-[11.5px]"
             style={{
               border: "1px dashed var(--color-hairline)",
-              background: "oklch(0.18 0.010 265 / 0.4)",
+              background: "var(--panel-spec-bar-bg)",
               color: "var(--color-text-4)",
             }}
           >

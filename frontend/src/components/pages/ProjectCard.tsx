@@ -85,7 +85,7 @@ export function Poster({ project, styleLabel, large = false }: PosterProps) {
         width: "100%",
         aspectRatio: aspect,
         borderRadius: radius,
-        background: `radial-gradient(120% 80% at 30% 30%, oklch(0.58 0.16 ${hue1}) 0%, oklch(0.30 0.09 ${(hue1 + 10) % 360}) 45%, oklch(0.13 0.030 275) 100%)`,
+        background: `radial-gradient(120% 80% at 30% 30%, oklch(0.58 0.16 ${hue1}) 0%, oklch(0.30 0.09 ${(hue1 + 10) % 360}) 45%, var(--lobby-poster-end) 100%)`,
         boxShadow: "inset 0 0 0 1px oklch(1 0 0 / 0.08)",
       }}
     >
@@ -98,7 +98,7 @@ export function Poster({ project, styleLabel, large = false }: PosterProps) {
           className="absolute inset-0 h-full w-full object-cover opacity-90"
         />
       ) : null}
-      <div aria-hidden className="pointer-events-none absolute inset-0" style={POSTER_FX_STYLE} />
+      <div aria-hidden className="lobby-poster-fx pointer-events-none absolute inset-0" style={POSTER_FX_STYLE} />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 opacity-10"
@@ -161,7 +161,7 @@ export function PhasePill({ phase, label }: { phase: Phase | null; label: string
   const isProduction = phase === "production";
   return (
     <span
-      className="inline-flex items-center gap-1.5 rounded-full border border-hairline-soft bg-bg-grad-a/60 px-2 py-[2px] font-mono text-[10px] font-semibold uppercase tracking-[0.06em]"
+      className="inline-flex items-center gap-1.5 rounded-full border border-hairline-soft bg-[var(--lobby-pill-bg)] px-2 py-[2px] font-mono text-[10px] font-semibold uppercase tracking-[0.06em]"
       style={{ color: tone.text }}
     >
       <span
@@ -190,8 +190,8 @@ function episodeDotColor(
   if (i < inProductionEnd) {
     return { bg: "var(--color-accent)", glow: "0 0 6px var(--color-accent-glow)" };
   }
-  if (i < scriptedEnd) return { bg: "oklch(0.55 0.010 265)" };
-  return { bg: "oklch(0.22 0.011 265)" };
+  if (i < scriptedEnd) return { bg: "var(--lobby-episode-scripted)" };
+  return { bg: "var(--lobby-episode-idle)" };
 }
 
 function EpisodeStrip({ summary }: { summary: ProjectStatus["episodes_summary"] }) {
@@ -218,7 +218,7 @@ export function gradientProgressStyles(variant: "accent" | "good"): {
   trackStyle: CSSProperties;
   barStyle: CSSProperties;
 } {
-  const trackStyle: CSSProperties = { background: "oklch(0.16 0.010 265)" };
+  const trackStyle: CSSProperties = { background: "var(--lobby-track)" };
   if (variant === "good") {
     return {
       trackStyle,
@@ -346,7 +346,7 @@ export function ProjectCard(props: ProjectCardProps) {
 
         <div
           className="mt-3 grid grid-cols-4 overflow-hidden rounded-[7px] border border-hairline-soft"
-          style={{ background: "oklch(0.15 0.028 275 / 0.55)" }}
+          style={{ background: "var(--lobby-cell-bg)" }}
         >
           {(
             [
@@ -406,7 +406,7 @@ export function ProjectCard(props: ProjectCardProps) {
   );
 
   return (
-    <article className="group relative overflow-hidden rounded-[12px] border border-hairline bg-bg-grad-a/85 transition-[transform,border-color,box-shadow] duration-150 motion-safe:hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[0_18px_44px_-22px_oklch(0_0_0_/_0.6),0_0_0_1px_var(--color-accent-soft),0_0_26px_-10px_var(--color-accent-glow)] focus-within:border-accent/60 focus-within:shadow-[0_0_0_2px_var(--color-accent-soft)]">
+    <article className="lobby-card-tile group relative overflow-hidden rounded-[12px] border border-hairline bg-[var(--lobby-card-bg)] transition-[transform,border-color,box-shadow] duration-150 motion-safe:hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[0_18px_44px_-22px_var(--lobby-card-shadow),0_0_0_1px_var(--color-accent-soft),0_0_26px_-10px_var(--color-accent-glow)] focus-within:border-accent/60 focus-within:shadow-[0_0_0_2px_var(--color-accent-soft)]">
       <Link
         href={`/app/projects/${project.name}`}
         className="block w-full text-left text-text no-underline outline-none"

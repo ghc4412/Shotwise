@@ -225,7 +225,7 @@ export function EndFramePicker({
         className="flex items-center gap-2 px-5 py-3"
         style={{
           borderTop: "1px solid var(--color-hairline-soft)",
-          background: "oklch(0.17 0.010 250 / 0.5)",
+          background: "var(--color-shell-field)",
         }}
       >
         <span className="flex-1 truncate text-[11px]" style={{ color: "var(--color-text-4)" }}>
@@ -284,7 +284,7 @@ function PickerCell({ projectName, image, aspectRatio, selected, onToggle }: Pic
       </AspectFrame>
       <div
         className="truncate px-1.5 py-1 text-[10.5px] font-medium"
-        style={{ color: "var(--color-text-2)", background: "oklch(0.16 0.010 265 / 0.85)" }}
+        style={{ color: "var(--color-text-2)", background: "var(--color-shell-hover-strong)" }}
       >
         {image.label}
       </div>

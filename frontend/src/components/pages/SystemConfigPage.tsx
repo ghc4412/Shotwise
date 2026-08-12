@@ -141,7 +141,7 @@ export function SystemConfigPage() {
         className="shrink-0 sticky top-0 z-30"
         style={{
           background:
-            "linear-gradient(180deg, oklch(0.20 0.011 265 / 0.55), oklch(0.15 0.010 265 / 0.45))",
+            "linear-gradient(180deg, var(--color-shell-grad-a), var(--color-shell-grad-b))",
           backdropFilter: "blur(28px) saturate(1.5)",
           WebkitBackdropFilter: "blur(28px) saturate(1.5)",
           borderBottom: "1px solid var(--color-hairline)",
@@ -201,7 +201,10 @@ export function SystemConfigPage() {
         <nav
           aria-label={t("common:settings")}
           className="w-[220px] shrink-0 overflow-y-auto border-r border-hairline-soft px-3 py-5"
-          style={{ background: "oklch(0.16 0.010 265 / 0.45)" }}
+          style={{
+            background:
+              "linear-gradient(180deg, var(--color-shell-side-a), var(--color-shell-side-b))",
+          }}
         >
           {SECTION_GROUPS.map((group, gi) => (
             <div key={group.kicker} className={gi > 0 ? "mt-5" : undefined}>

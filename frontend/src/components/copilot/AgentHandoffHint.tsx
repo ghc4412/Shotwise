@@ -106,7 +106,7 @@ export function AgentHandoffHint({ triggerKey, storageScope }: AgentHandoffHintP
           padding: "16px 18px 14px",
           border: "1px solid var(--color-hairline)",
           background:
-            "linear-gradient(180deg, oklch(0.22 0.014 285 / 0.96), oklch(0.18 0.011 270 / 0.94))",
+            "var(--panel-dropdown-bg)",
           boxShadow:
             "0 28px 64px -24px oklch(0 0 0 / 0.85), 0 0 0 1px oklch(1 0 0 / 0.04), inset 0 1px 0 oklch(1 0 0 / 0.06)",
           backdropFilter: "blur(16px) saturate(1.1)",

@@ -235,7 +235,7 @@ export function VoiceSampleButton({
           {!voicesLoading && !voicesConfigured ? (
             <p
               className="mt-4 rounded-lg px-3 py-2 text-[12.5px]"
-              style={{ background: "oklch(0.22 0.012 265 / 0.5)", color: "var(--color-text-3)" }}
+              style={{ background: "var(--color-shell-btn)", color: "var(--color-text-3)" }}
             >
               {t("voice_sample_not_configured_hint")}
             </p>
@@ -255,7 +255,7 @@ export function VoiceSampleButton({
                 disabled={voicesLoading || voices.length === 0 || generating || confirming}
                 className="focus-ring mt-1.5 w-full rounded-lg px-3 py-2 text-[13px] outline-none transition-[border-color,box-shadow] disabled:cursor-not-allowed disabled:opacity-60"
                 style={{
-                  background: "oklch(0.20 0.011 265 / 0.6)",
+                  background: "var(--panel-spec-bar-bg)",
                   border: "1px solid var(--color-hairline)",
                   color: "var(--color-text)",
                 }}
@@ -294,7 +294,7 @@ export function VoiceSampleButton({
                 disabled={generating || confirming}
                 className="focus-ring mt-1.5 w-full resize-none rounded-lg px-3 py-2 text-[13px] leading-[1.55] outline-none transition-[border-color,box-shadow] disabled:cursor-not-allowed disabled:opacity-60"
                 style={{
-                  background: "oklch(0.20 0.011 265 / 0.6)",
+                  background: "var(--panel-spec-bar-bg)",
                   border: "1px solid var(--color-hairline)",
                   color: "var(--color-text)",
                 }}
@@ -313,7 +313,7 @@ export function VoiceSampleButton({
                 <div
                   className="mt-3 flex items-center gap-2 rounded-lg px-2.5 py-1.5"
                   style={{
-                    background: "oklch(0.20 0.011 265 / 0.6)",
+                    background: "var(--panel-spec-bar-bg)",
                     border: "1px solid var(--color-hairline)",
                   }}
                 >

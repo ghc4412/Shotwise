@@ -175,7 +175,7 @@ export function WorkspaceNotificationsDrawer({
                       ? "1px solid var(--color-accent-soft)"
                       : `1px solid ${tone.ring}`,
                     background: actionable
-                      ? "linear-gradient(135deg, var(--color-accent-dim) 0%, oklch(0.20 0.011 265 / 0.5) 60%)"
+                      ? "linear-gradient(135deg, var(--color-accent-dim) 0%, var(--color-shell-field) 60%)"
                       : tone.soft,
                     boxShadow: actionable
                       ? "inset 0 1px 0 oklch(1 0 0 / 0.04), 0 6px 18px -6px var(--color-accent-glow)"
@@ -186,7 +186,7 @@ export function WorkspaceNotificationsDrawer({
                     <span
                       className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg"
                       style={{
-                        background: "oklch(0.16 0.010 265 / 0.6)",
+                        background: "var(--color-shell-field)",
                         border: `1px solid ${tone.ring}`,
                         color: tone.color,
                       }}

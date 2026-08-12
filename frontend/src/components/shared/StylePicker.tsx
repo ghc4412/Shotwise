@@ -75,8 +75,7 @@ function TemplateCard({
         aria-hidden
         className="-z-10 absolute inset-0"
         style={{
-          background:
-            "linear-gradient(135deg, oklch(0.30 0.04 295), oklch(0.18 0.012 265))",
+          background: "var(--panel-thumb-bg)",
         }}
       />
 

@@ -39,7 +39,7 @@ export function DropdownPill<T extends string>({
         disabled={disabled}
         className="focus-ring inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs transition-colors disabled:cursor-default"
         style={{
-          background: "oklch(0.225 0.003 285 / 0.55)",
+          background: "var(--color-shell-field)",
           border: "1px solid var(--color-hairline-soft)",
           color: "var(--color-text-2)",
         }}
@@ -48,7 +48,7 @@ export function DropdownPill<T extends string>({
           e.currentTarget.style.color = "var(--color-text)";
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.background = "oklch(0.225 0.003 285 / 0.55)";
+          e.currentTarget.style.background = "var(--color-shell-field)";
           e.currentTarget.style.color = "var(--color-text-2)";
         }}
       >
@@ -71,7 +71,7 @@ export function DropdownPill<T extends string>({
         className="overflow-hidden rounded-lg py-1 shadow-xl"
         style={{
           background:
-            "linear-gradient(180deg, oklch(0.21 0.005 285 / 0.96), oklch(0.18 0.004 285 / 0.96))",
+            "var(--panel-dropdown-bg)",
           border: "1px solid var(--color-hairline)",
           backdropFilter: "blur(12px)",
           WebkitBackdropFilter: "blur(12px)",

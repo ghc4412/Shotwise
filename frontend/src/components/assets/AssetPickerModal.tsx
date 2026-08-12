@@ -143,7 +143,7 @@ export function AssetPickerModal({ type, existingNames, onClose, onImport }: Pro
           <div
             className="flex w-52 items-center gap-2 rounded-md px-2.5 py-1.5"
             style={{
-              background: "oklch(0.16 0.010 265 / 0.6)",
+              background: "var(--color-shell-field)",
               border: "1px solid var(--color-hairline)",
             }}
           >
@@ -193,10 +193,10 @@ export function AssetPickerModal({ type, existingNames, onClose, onImport }: Pro
                       ? "1px solid var(--color-accent-soft)"
                       : "1px solid var(--color-hairline)",
                   background: dup
-                    ? "oklch(0.20 0.011 265 / 0.3)"
+                    ? "var(--color-shell-hover)"
                     : sel
-                      ? "linear-gradient(135deg, var(--color-accent-dim) 0%, oklch(0.20 0.011 265 / 0.5) 60%)"
-                      : "oklch(0.20 0.011 265 / 0.5)",
+                      ? "linear-gradient(135deg, var(--color-accent-dim) 0%, var(--color-shell-field) 60%)"
+                      : "var(--color-shell-field)",
                   opacity: dup ? 0.4 : 1,
                   boxShadow: sel
                     ? "inset 0 1px 0 oklch(1 0 0 / 0.04), 0 6px 18px -6px var(--color-accent-glow)"
@@ -205,13 +205,13 @@ export function AssetPickerModal({ type, existingNames, onClose, onImport }: Pro
                 onMouseEnter={(e) => {
                   if (!dup && !sel) {
                     e.currentTarget.style.borderColor = "var(--color-hairline-strong)";
-                    e.currentTarget.style.background = "oklch(0.22 0.011 265 / 0.7)";
+                    e.currentTarget.style.background = "var(--color-shell-btn-2)";
                   }
                 }}
                 onMouseLeave={(e) => {
                   if (!dup && !sel) {
                     e.currentTarget.style.borderColor = "var(--color-hairline)";
-                    e.currentTarget.style.background = "oklch(0.20 0.011 265 / 0.5)";
+                    e.currentTarget.style.background = "var(--color-shell-field)";
                   }
                 }}
               >

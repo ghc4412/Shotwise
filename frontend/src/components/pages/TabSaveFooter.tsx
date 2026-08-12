@@ -14,7 +14,7 @@ interface TabSaveFooterProps {
 
 const FOOTER_DIRTY_STYLE: CSSProperties = {
   background:
-    "linear-gradient(180deg, oklch(0.20 0.011 265 / 0.65), oklch(0.15 0.010 265 / 0.55))",
+    "var(--color-shell-footer)",
   backdropFilter: "blur(28px) saturate(1.5)",
   WebkitBackdropFilter: "blur(28px) saturate(1.5)",
   borderTop: "1px solid var(--color-hairline)",

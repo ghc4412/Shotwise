@@ -128,6 +128,37 @@ html {
     --color-shell-hud-good: oklch(0.30 0.10 155 / 0.12);
     --color-shell-hud-danger-strong: oklch(0.30 0.10 25 / 0.28);
     --color-shell-hud-warn-strong: oklch(0.35 0.10 70 / 0.22);
+
+    /* 大厅（Lobby）语义变量 — 深色默认与原硬编码一致 */
+    --lobby-card-bg: oklch(0.16 0.032 275 / 0.62);
+    --lobby-cell-bg: oklch(0.16 0.030 275 / 0.6);
+    --lobby-hero-stat-bg: oklch(0.15 0.030 275 / 0.55);
+    --lobby-pill-bg: oklch(0.22 0.035 275 / 0.7);
+    --lobby-poster-end: oklch(0.13 0.030 275);
+    --lobby-episode-idle: oklch(0.22 0.011 265);
+    --lobby-episode-scripted: oklch(0.55 0.010 265);
+    --lobby-track: oklch(0.16 0.010 265);
+    --lobby-icon-grad-a: oklch(0.32 0.11 200);
+    --lobby-icon-grad-b: oklch(0.24 0.10 312);
+    --lobby-now-fade-a: oklch(0.5 0.09 300);
+    --lobby-now-fade-b: oklch(0.3 0.06 280);
+    --lobby-card-shadow: oklch(0 0 0 / 0.7);
+    --lobby-card-inset: oklch(1 0 0 / 0.06);
+    --lobby-topbar-bg: linear-gradient(180deg, oklch(0.20 0.011 265 / 0.55), oklch(0.15 0.010 265 / 0.45));
+    --lobby-topbar-shadow: inset 0 1px 0 oklch(1 0 0 / 0.05), 0 6px 24px -12px oklch(0 0 0 / 0.45);
+    --lobby-modal-bg: linear-gradient(180deg, oklch(0.20 0.012 270 / 0.95), oklch(0.16 0.010 265 / 0.95));
+    --lobby-modal-overlay: radial-gradient(900px 480px at 12% -10%, oklch(0.32 0.05 295 / 0.30), transparent 55%), radial-gradient(800px 460px at 100% 110%, oklch(0.26 0.04 260 / 0.28), transparent 55%), oklch(0 0 0 / 0.62);
+    --lobby-sprocket: repeating-linear-gradient(90deg, oklch(0 0 0 / 0.55) 0 6px, transparent 6px 12px);
+    --lobby-step-badge-active: linear-gradient(180deg, oklch(0.30 0.05 295 / 0.65), oklch(0.20 0.02 280 / 0.65));
+    --lobby-step-badge-done: linear-gradient(180deg, oklch(0.30 0.05 295 / 0.65), oklch(0.20 0.02 280 / 0.65));
+    --lobby-step-badge-inactive: oklch(0.16 0.010 265 / 0.55);
+
+    /* 通用面板/卡片背景 — dark 默认与原 darkroom-tokens 硬编码一致 */
+    --panel-card-bg: linear-gradient(180deg, oklch(0.20 0.011 265 / 0.55), oklch(0.16 0.010 265 / 0.55));
+    --panel-dropdown-bg: linear-gradient(180deg, oklch(0.20 0.011 265 / 0.92), oklch(0.16 0.010 265 / 0.92));
+    --panel-route-frame-bg: linear-gradient(180deg, oklch(0.19 0.011 268 / 0.6), oklch(0.15 0.010 262 / 0.6));
+    --panel-spec-bar-bg: oklch(0.18 0.010 265 / 0.35);
+    --panel-thumb-bg: linear-gradient(135deg, oklch(0.30 0.04 295), oklch(0.18 0.012 265));
 }
 
 html.theme-light {
@@ -196,6 +227,54 @@ html.theme-light {
     --color-shell-hud-good: oklch(0.58 0.13 155 / 0.14);
     --color-shell-hud-danger-strong: oklch(0.60 0.16 25 / 0.18);
     --color-shell-hud-warn-strong: oklch(0.67 0.14 75 / 0.2);
+
+    /* 大厅（Lobby）语义变量 — 浅色覆盖：亮底 + 低饱和，保持霓虹 accent 点缀 */
+    --lobby-card-bg: oklch(0.985 0.006 250 / 0.82);
+    --lobby-cell-bg: oklch(0.96 0.010 250 / 0.7);
+    --lobby-hero-stat-bg: oklch(0.99 0.005 250 / 0.65);
+    --lobby-pill-bg: oklch(0.96 0.012 250 / 0.85);
+    --lobby-poster-end: oklch(0.88 0.02 250);
+    --lobby-episode-idle: oklch(0.86 0.015 250);
+    --lobby-episode-scripted: oklch(0.72 0.015 250);
+    --lobby-track: oklch(0.90 0.012 250);
+    --lobby-icon-grad-a: oklch(0.66 0.13 200);
+    --lobby-icon-grad-b: oklch(0.60 0.12 312);
+    --lobby-now-fade-a: oklch(0.72 0.08 300);
+    --lobby-now-fade-b: oklch(0.82 0.05 280);
+    --lobby-card-shadow: oklch(0.3 0.04 250 / 0.5);
+    --lobby-card-inset: oklch(1 0 0 / 0.7);
+    --lobby-topbar-bg: linear-gradient(180deg, oklch(0.99 0.004 250 / 0.82), oklch(0.96 0.010 250 / 0.78));
+    --lobby-topbar-shadow: inset 0 1px 0 oklch(1 0 0 / 0.7), 0 10px 30px -18px oklch(0.3 0.03 250 / 0.35);
+    --lobby-modal-bg: linear-gradient(180deg, oklch(0.995 0.004 250 / 0.98), oklch(0.96 0.010 250 / 0.98));
+    --lobby-modal-overlay: radial-gradient(900px 480px at 12% -10%, oklch(0.72 0.06 295 / 0.18), transparent 55%), radial-gradient(800px 460px at 100% 110%, oklch(0.70 0.05 260 / 0.16), transparent 55%), oklch(0.2 0.01 250 / 0.35);
+    --lobby-sprocket: repeating-linear-gradient(90deg, oklch(0.4 0.02 250 / 0.35) 0 6px, transparent 6px 12px);
+    --lobby-step-badge-active: linear-gradient(180deg, oklch(0.60 0.08 295 / 0.5), oklch(0.70 0.05 280 / 0.5));
+    --lobby-step-badge-done: linear-gradient(180deg, oklch(0.72 0.06 295 / 0.45), oklch(0.78 0.04 280 / 0.45));
+    --lobby-step-badge-inactive: oklch(0.94 0.012 250 / 0.6);
+
+    /* 通用面板/卡片背景 — 浅色覆盖：亮底半透明，与弹窗/卡片语义同构 */
+    --panel-card-bg: linear-gradient(180deg, oklch(0.995 0.004 250 / 0.92), oklch(0.955 0.010 250 / 0.92));
+    --panel-dropdown-bg: linear-gradient(180deg, oklch(0.995 0.004 250 / 0.98), oklch(0.965 0.008 250 / 0.98));
+    --panel-route-frame-bg: linear-gradient(180deg, oklch(0.99 0.004 250 / 0.9), oklch(0.95 0.010 250 / 0.9));
+    --panel-spec-bar-bg: oklch(0.955 0.010 250 / 0.8);
+    --panel-thumb-bg: linear-gradient(135deg, oklch(0.90 0.03 295), oklch(0.78 0.02 265));
+
+    /* 玻璃弹窗 / 编辑器日间覆盖 — 亮底毛玻璃，与 --panel-dropdown-bg 同构 */
+    .shotwise-glass-panel {
+        background: linear-gradient(180deg, oklch(0.995 0.004 250 / 0.97), oklch(0.955 0.010 250 / 0.97));
+    }
+    .shotwise-btn-secondary {
+        background: oklch(0.92 0.014 250 / 0.9);
+    }
+    .shotwise-btn-secondary:hover:not(:disabled) {
+        background: oklch(0.89 0.016 250 / 0.95);
+    }
+    .prompt-editor {
+        background: oklch(1 0 0 / 0.6);
+    }
+    .segment-card {
+        background: linear-gradient(180deg, oklch(0.99 0.004 250 / 0.9), oklch(0.95 0.010 250 / 0.85));
+    }
 }
 
 /* ============================================================
@@ -458,6 +537,29 @@ body {
 @utility shotwise-slide-in {
     @media (prefers-reduced-motion: no-preference) {
         animation: shotwise-slide-in 0.25s ease-out;
+    }
+}
+
+/* === 滚动入场（Reveal 组件） — 进入视口时上浮淡入 === */
+.reveal {
+    opacity: 0;
+    transform: var(--reveal-from, translateY(22px));
+    transition:
+        opacity 0.7s cubic-bezier(0.22, 0.8, 0.3, 1),
+        transform 0.7s cubic-bezier(0.22, 0.8, 0.3, 1);
+    will-change: opacity, transform;
+}
+
+.reveal[data-reveal-visible] {
+    opacity: 1;
+    transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .reveal {
+        opacity: 1;
+        transform: none;
+        transition: none;
     }
 }
 

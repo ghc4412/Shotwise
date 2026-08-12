@@ -235,7 +235,7 @@ export function EpisodeSourceReview({
           <div
             className="min-h-0 flex-1 overflow-y-auto rounded-2xl px-12 py-9"
             style={{
-              background: "linear-gradient(180deg, oklch(0.215 0.011 265 / 0.75), oklch(0.195 0.010 265 / 0.75))",
+              background: "var(--panel-dropdown-bg)",
               border: "1px solid var(--color-hairline)",
               boxShadow: "inset 0 1px 0 oklch(1 0 0 / 0.04)",
             }}

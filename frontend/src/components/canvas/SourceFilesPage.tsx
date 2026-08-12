@@ -225,7 +225,7 @@ export function SourceFilesPage({ projectName }: SourceFilesPageProps) {
         className="sticky top-0 z-10 flex items-center gap-3 px-5 py-3"
         style={{
           background:
-            "linear-gradient(180deg, oklch(0.20 0.012 265 / 0.85), oklch(0.18 0.010 265 / 0.65))",
+            "var(--panel-card-bg)",
           backdropFilter: "blur(10px)",
           WebkitBackdropFilter: "blur(10px)",
           borderBottom: "1px solid var(--color-hairline-soft)",
@@ -312,7 +312,7 @@ export function SourceFilesPage({ projectName }: SourceFilesPageProps) {
               }`,
               background: isDragging
                 ? "radial-gradient(600px 280px at 50% -10%, var(--color-accent-soft), transparent 60%), oklch(0.20 0.011 265 / 0.45)"
-                : "radial-gradient(600px 280px at 50% -10%, var(--color-accent-dim), transparent 60%), oklch(0.18 0.010 265 / 0.35)",
+                : "radial-gradient(600px 280px at 50% -10%, var(--color-accent-dim), transparent 60%), var(--panel-spec-bar-bg)",
             }}
           >
             <span
@@ -389,7 +389,7 @@ export function SourceFilesPage({ projectName }: SourceFilesPageProps) {
                 isDragging ? "var(--color-accent-soft)" : "var(--color-hairline-soft)"
               }`,
               background:
-                "linear-gradient(180deg, oklch(0.22 0.012 265 / 0.5), oklch(0.19 0.010 265 / 0.35))",
+                "var(--panel-card-bg)",
               boxShadow:
                 "inset 0 1px 0 oklch(1 0 0 / 0.04), 0 8px 24px -10px oklch(0 0 0 / 0.5)",
               transition: "border-color .12s ease",
@@ -495,7 +495,7 @@ export function SourceFilesPage({ projectName }: SourceFilesPageProps) {
                     style={{
                       color: "var(--color-text-3)",
                       border: "1px solid var(--color-hairline)",
-                      background: "oklch(0.22 0.011 265 / 0.5)",
+                      background: "var(--color-shell-btn)",
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.color = "var(--color-text)";

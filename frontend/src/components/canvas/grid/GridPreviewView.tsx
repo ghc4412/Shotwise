@@ -147,7 +147,7 @@ export function GridPreviewView({
         className="mb-4 flex flex-wrap items-center gap-2 rounded-md border px-3.5 py-2.5"
         style={{
           borderColor: "var(--color-hairline-soft)",
-          background: "oklch(0.18 0.010 265 / 0.5)",
+          background: "var(--panel-spec-bar-bg)",
         }}
       >
         <span

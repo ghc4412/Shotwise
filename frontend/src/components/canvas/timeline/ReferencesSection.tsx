@@ -208,7 +208,7 @@ export function ReferencesSection({
         className="focus-ring group flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
         style={{
           border: "1px solid var(--color-hairline-soft)",
-          background: "oklch(0.20 0.011 265 / 0.4)",
+          background: "var(--panel-spec-bar-bg)",
         }}
         onMouseEnter={(e) => {
           if (disabled) return;

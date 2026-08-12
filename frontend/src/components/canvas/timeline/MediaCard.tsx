@@ -198,7 +198,7 @@ export function MediaCard({
             className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-[10px]"
             style={{
               border: "1px dashed var(--color-hairline)",
-              background: "oklch(0.18 0.010 265 / 0.4)",
+              background: "var(--panel-spec-bar-bg)",
               color: "var(--color-text-4)",
             }}
           >

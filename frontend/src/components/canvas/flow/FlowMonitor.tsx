@@ -58,7 +58,7 @@ const STATUS_TONE: Record<string, { color: string; background: string; border: s
   paused: { color: "var(--color-warn)", background: "oklch(0.25 0.04 75 / 0.4)", border: "oklch(0.62 0.12 75 / 0.42)" },
   waiting_review: { color: "var(--color-warn)", background: "oklch(0.25 0.04 75 / 0.4)", border: "oklch(0.62 0.12 75 / 0.42)" },
   failed: { color: "var(--color-danger)", background: "oklch(0.24 0.055 25 / 0.4)", border: "oklch(0.58 0.16 25 / 0.4)" },
-  cancelled: { color: "var(--color-text-4)", background: "oklch(0.22 0.01 265 / 0.5)", border: "var(--color-hairline)" },
+  cancelled: { color: "var(--color-text-4)", background: "var(--color-shell-btn)", border: "var(--color-hairline)" },
 };
 
 function tone(status: string) {
