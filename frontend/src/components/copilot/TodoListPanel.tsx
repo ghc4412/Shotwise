@@ -75,7 +75,7 @@ export function TodoListPanel({ turns, draftTurn }: TodoListPanelProps) {
       className="mx-3 mb-1 overflow-hidden rounded-lg"
       style={{
         border: "1px solid var(--color-hairline-soft)",
-        background: "oklch(0.20 0.012 265 / 0.5)",
+        background: "var(--color-shell-field)",
         backdropFilter: "blur(6px)",
         WebkitBackdropFilter: "blur(6px)",
       }}

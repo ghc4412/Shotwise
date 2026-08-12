@@ -324,7 +324,7 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
               style={{
                 background: usageDrawerOpen
                   ? "var(--color-accent-dim)"
-                  : "oklch(0.22 0.011 265 / 0.5)",
+                  : "var(--color-shell-btn)",
                 border: "1px solid var(--color-hairline-soft)",
                 color: "var(--color-text-2)",
               }}

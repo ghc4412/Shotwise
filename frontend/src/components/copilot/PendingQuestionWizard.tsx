@@ -171,7 +171,7 @@ export function PendingQuestionWizard({
       style={{
         borderTop: "1px solid var(--color-accent-soft)",
         background:
-          "linear-gradient(180deg, oklch(0.76 0.09 295 / 0.10), transparent 60%), oklch(0.18 0.010 265 / 0.6)",
+          "linear-gradient(180deg, oklch(0.76 0.09 295 / 0.10), transparent 60%), var(--color-shell-field)",
         backdropFilter: "blur(10px)",
         WebkitBackdropFilter: "blur(10px)",
       }}
@@ -439,7 +439,7 @@ export function PendingQuestionWizard({
               className="w-full resize-none rounded-md px-3 py-2 text-[12.5px] leading-[1.55] outline-none transition-colors focus-ring"
               style={{
                 border: "1px solid var(--color-accent-soft)",
-                background: "oklch(0.16 0.010 265 / 0.7)",
+                background: "var(--color-shell-track)",
                 color: "var(--color-text)",
                 maxHeight: `${OTHER_TEXTAREA_MAX_PX}px`,
                 overflowY: "hidden",

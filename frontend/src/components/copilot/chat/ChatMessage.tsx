@@ -58,11 +58,11 @@ export function ChatMessage({ message, streaming }: ChatMessageProps) {
       }
     : isSystem
       ? {
-          background: "oklch(0.22 0.011 265 / 0.5)",
+          background: "var(--color-shell-btn)",
           border: "1px solid var(--color-hairline-soft)",
         }
       : {
-          background: "oklch(0.21 0.012 265 / 0.5)",
+          background: "var(--color-shell-side-a)",
           border: "1px solid var(--color-hairline-soft)",
         };
 

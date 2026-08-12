@@ -20,7 +20,7 @@ export function GalleryToolbar({ title, count, onAdd, onPickFromLibrary }: Props
       className="sticky top-0 z-10 flex items-center gap-3 px-5 py-3"
       style={{
         background:
-          "linear-gradient(180deg, oklch(0.20 0.012 265 / 0.85), oklch(0.18 0.010 265 / 0.65))",
+          "var(--panel-card-bg)",
         backdropFilter: "blur(10px)",
         WebkitBackdropFilter: "blur(10px)",
         borderBottom: "1px solid var(--color-hairline-soft)",
@@ -62,14 +62,14 @@ export function GalleryToolbar({ title, count, onAdd, onPickFromLibrary }: Props
         style={{
           color: "var(--color-text-2)",
           border: "1px solid var(--color-hairline)",
-          background: "oklch(0.22 0.011 265 / 0.5)",
+          background: "var(--color-shell-btn)",
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.background = "oklch(0.26 0.013 265 / 0.7)";
           e.currentTarget.style.color = "var(--color-text)";
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.background = "oklch(0.22 0.011 265 / 0.5)";
+          e.currentTarget.style.background = "var(--color-shell-btn)";
           e.currentTarget.style.color = "var(--color-text-2)";
         }}
       >

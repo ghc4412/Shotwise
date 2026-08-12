@@ -22,6 +22,7 @@ import { ArchiveDiagnosticsDialog } from "@/components/shared/ArchiveDiagnostics
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { GlassModal } from "@/components/ui/GlassModal";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { Reveal } from "@/components/ui/Reveal";
 import { SecondaryButton } from "@/components/ui/SecondaryButton";
 import { Typewriter, type TypewriterSegment } from "@/components/ui/Typewriter";
 import { WARM_TONE } from "@/utils/severity-tone";
@@ -30,6 +31,7 @@ import { CreateProjectModal } from "./CreateProjectModal";
 import { OpenClawModal } from "./OpenClawModal";
 import { rememberAssetLibraryReturnTo } from "./AssetLibraryPage";
 import { ICON_BTN_FILLED_CLS } from "@/components/ui/darkroom-tokens";
+import { ThemeAccentPicker } from "@/components/ui/ThemeAccentPicker";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { UserMenu } from "@/components/layout/UserMenu";
 import {
@@ -138,7 +140,7 @@ function NowEditingCard({ project, styleLabel, phaseLabels, t }: NowEditingCardP
       style={{
         gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr)",
         boxShadow:
-          "0 30px 80px -40px oklch(0 0 0 / 0.7), 0 0 40px -18px var(--color-accent-glow), 0 0 60px -24px var(--color-violet-glow), inset 0 1px 0 oklch(1 0 0 / 0.06)",
+          "0 30px 80px -40px var(--lobby-card-shadow), 0 0 40px -18px var(--color-accent-glow), 0 0 60px -24px var(--color-violet-glow), inset 0 1px 0 var(--lobby-card-inset)",
       }}
     >
       <div className="relative p-3.5">
@@ -166,7 +168,7 @@ function NowEditingCard({ project, styleLabel, phaseLabels, t }: NowEditingCardP
             fontSize: 120,
             lineHeight: 1,
             background:
-              "linear-gradient(180deg, oklch(0.5 0.09 300), oklch(0.3 0.06 280))",
+              "linear-gradient(180deg, var(--lobby-now-fade-a), var(--lobby-now-fade-b))",
             WebkitBackgroundClip: "text",
             backgroundClip: "text",
             color: "transparent",
@@ -263,7 +265,7 @@ function NowEditingCard({ project, styleLabel, phaseLabels, t }: NowEditingCardP
             <div
               key={cell.k}
               className="px-3.5 py-3"
-              style={{ background: "oklch(0.16 0.030 275 / 0.6)" }}
+              style={{ background: "var(--lobby-cell-bg)" }}
             >
               <div className="font-mono text-[9px] font-bold uppercase tracking-[0.1em] text-text-3">
                 {cell.k}
@@ -309,7 +311,7 @@ function PlaceholderTile({ onClick, title, kicker, icon, ariaLabel }: Placeholde
     <button
       type="button"
       onClick={onClick}
-      className="group relative flex h-full min-h-[380px] flex-col overflow-hidden rounded-[12px] border border-dashed border-hairline-strong bg-bg-grad-a/55 text-left transition-all hover:border-accent/60 hover:bg-bg-grad-a/75 hover:shadow-[0_0_28px_-8px_var(--color-accent-glow)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      className="lobby-placeholder-tile group relative flex h-full min-h-[380px] flex-col overflow-hidden rounded-[12px] border border-dashed border-hairline-strong bg-[var(--lobby-card-bg)] text-left transition-all hover:border-accent/60 hover:bg-[var(--lobby-card-bg)] hover:shadow-[0_0_28px_-8px_var(--color-accent-glow)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       aria-label={ariaLabel ?? title}
     >
       <div className="p-2.5">
@@ -318,7 +320,7 @@ function PlaceholderTile({ onClick, title, kicker, icon, ariaLabel }: Placeholde
           style={{
             aspectRatio: "2 / 1",
             background:
-              "radial-gradient(120% 80% at 30% 30%, oklch(0.30 0.09 312 / 0.45) 0%, transparent 60%), oklch(0.17 0.032 275 / 0.6)",
+              "radial-gradient(120% 80% at 30% 30%, oklch(0.30 0.09 312 / 0.45) 0%, transparent 60%), var(--lobby-poster-end)",
           }}
         >
           <div className="flex flex-col items-center gap-2.5 transition-transform motion-safe:group-hover:-translate-y-0.5">
@@ -327,7 +329,7 @@ function PlaceholderTile({ onClick, title, kicker, icon, ariaLabel }: Placeholde
               className="grid h-12 w-12 place-items-center rounded-[12px]"
               style={{
                 background:
-                  "linear-gradient(135deg, oklch(0.32 0.11 200), oklch(0.24 0.10 312))",
+                  "linear-gradient(135deg, var(--lobby-icon-grad-a), var(--lobby-icon-grad-b))",
                 border: "1px solid oklch(0.80 0.14 200 / 0.5)",
                 boxShadow:
                   "inset 0 1px 0 oklch(1 0 0 / 0.08), 0 0 22px -6px var(--color-accent-glow), 0 0 30px -10px var(--color-violet-glow)",
@@ -361,7 +363,7 @@ function PlaceholderTile({ onClick, title, kicker, icon, ariaLabel }: Placeholde
         </div>
         <div
           className="grid grid-cols-4 overflow-hidden rounded-[7px] border border-dashed border-hairline"
-          style={{ background: "oklch(0.15 0.028 275 / 0.5)" }}
+          style={{ background: "var(--lobby-cell-bg)" }}
         >
           {[0, 1, 2, 3].map((i) => (
             <div
@@ -427,13 +429,11 @@ function TopBar({
     <div
       className="lobby-topbar sticky top-0 z-30"
       style={{
-        background:
-          "linear-gradient(180deg, oklch(0.20 0.011 265 / 0.55), oklch(0.15 0.010 265 / 0.45))",
+        background: "var(--lobby-topbar-bg)",
         backdropFilter: "blur(28px) saturate(1.5)",
         WebkitBackdropFilter: "blur(28px) saturate(1.5)",
         borderBottom: "1px solid oklch(1 0 0 / 0.06)",
-        boxShadow:
-          "inset 0 1px 0 oklch(1 0 0 / 0.05), 0 6px 24px -12px oklch(0 0 0 / 0.45)",
+        boxShadow: "var(--lobby-topbar-shadow)",
       }}
     >
       <div className="mx-auto flex max-w-[1320px] items-center gap-4 px-6 py-3">
@@ -515,6 +515,7 @@ function TopBar({
           </button>
           <span aria-hidden className="mx-1 h-5 w-px bg-hairline-soft" />
           <ThemeToggle compact />
+          <ThemeAccentPicker />
           <button
             type="button"
             onClick={onOpenClaw}
@@ -623,99 +624,101 @@ function HeroStrip({ totals, t }: HeroStripProps) {
   ];
 
   return (
-    <div className="lobby-hero-strip lobby-rise mx-auto flex max-w-[1320px] items-stretch justify-between gap-6 px-6 pb-5 pt-6">
-      <div className="min-w-0 flex-1">
-        <div className="mb-3 flex items-center gap-2.5">
-          <span
-            aria-hidden
-            className="grid h-7 w-7 place-items-center rounded-[8px]"
+    <div className="lobby-hero-parallax">
+      <div className="lobby-hero-strip lobby-rise mx-auto flex max-w-[1320px] items-stretch justify-between gap-6 px-6 pb-5 pt-6">
+        <div className="min-w-0 flex-1">
+          <div className="mb-3 flex items-center gap-2.5">
+            <span
+              aria-hidden
+              className="grid h-7 w-7 place-items-center rounded-[8px]"
+              style={{
+                background:
+                  "linear-gradient(135deg, var(--color-accent-dim), var(--color-violet-dim))",
+                border: "1px solid oklch(0.75 0.13 210 / 0.4)",
+                boxShadow: "0 0 18px -4px var(--color-accent-glow)",
+                color: "var(--color-accent-2)",
+              }}
+            >
+              <Clapperboard className="h-4 w-4" aria-hidden />
+            </span>
+            <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-text-3">
+              {t("dashboard:lobby_hero_eyebrow")} — {dateLine}
+            </span>
+          </div>
+          <h1
+            className="font-editorial m-0"
             style={{
-              background:
-                "linear-gradient(135deg, var(--color-accent-dim), var(--color-violet-dim))",
-              border: "1px solid oklch(0.75 0.13 210 / 0.4)",
-              boxShadow: "0 0 18px -4px var(--color-accent-glow)",
-              color: "var(--color-accent-2)",
+              fontSize: 46,
+              fontWeight: 400,
+              lineHeight: 1.22,
+              letterSpacing: "-0.012em",
+              color: "var(--color-text)",
+              textShadow: "0 0 30px oklch(0.85 0.14 200 / 0.14)",
             }}
           >
-            <Clapperboard className="h-4 w-4" aria-hidden />
-          </span>
-          <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-text-3">
-            {t("dashboard:lobby_hero_eyebrow")} — {dateLine}
-          </span>
-        </div>
-        <h1
-          className="font-editorial m-0"
-          style={{
-            fontSize: 46,
-            fontWeight: 400,
-            lineHeight: 1.22,
-            letterSpacing: "-0.012em",
-            color: "var(--color-text)",
-            textShadow: "0 0 30px oklch(0.85 0.14 200 / 0.14)",
-          }}
-        >
-          <Typewriter
-            once="lobby-hero"
-            segments={
-              [
-                { text: t(`dashboard:${greetingKey}`), after: <br /> },
-                {
-                  text: subtitle,
-                  style: {
-                    fontStyle: "italic",
-                    background:
-                      "linear-gradient(120deg, var(--color-accent-2), var(--color-pink) 60%, var(--color-violet-2))",
-                    WebkitBackgroundClip: "text",
-                    backgroundClip: "text",
-                    color: "transparent",
+            <Typewriter
+              once="lobby-hero"
+              segments={
+                [
+                  { text: t(`dashboard:${greetingKey}`), after: <br /> },
+                  {
+                    text: subtitle,
+                    style: {
+                      fontStyle: "italic",
+                      background:
+                        "linear-gradient(120deg, var(--color-accent-2), var(--color-pink) 60%, var(--color-violet-2))",
+                      WebkitBackgroundClip: "text",
+                      backgroundClip: "text",
+                      color: "transparent",
+                    },
                   },
-                },
-              ] satisfies TypewriterSegment[]
-            }
-          />
-        </h1>
-        <p className="m-0 mt-2.5 max-w-[560px] text-[13px] leading-[1.55] text-text-3">
-          {summaryLine}
-        </p>
-      </div>
-      <div className="flex flex-col items-end justify-between gap-2.5">
-        <div className="lobby-signal" aria-hidden>
-          <span className="lobby-signal-line"><i /><i /><i /><i /><i /><i /><i /><i /></span>
-        </div>
-        <div
-          className="flex items-stretch overflow-hidden rounded-[10px]"
-          style={{
-            border: "1px solid oklch(0.7 0.12 210 / 0.35)",
-            background: "oklch(0.15 0.030 275 / 0.55)",
-            boxShadow: "0 0 26px -12px var(--color-accent-glow)",
-          }}
-        >
-          {stats.map((s, i) => (
-            <div
-              key={s.key}
-              className={
-                "relative px-4 py-2.5" +
-                (i < stats.length - 1 ? " border-r border-hairline-soft" : "")
+                ] satisfies TypewriterSegment[]
               }
-            >
-              <div className="font-mono text-[9px] font-bold tracking-[0.14em] text-text-3">
-                {s.label}
-              </div>
+            />
+          </h1>
+          <p className="m-0 mt-2.5 max-w-[560px] text-[13px] leading-[1.55] text-text-3">
+            {summaryLine}
+          </p>
+        </div>
+        <div className="flex flex-col items-end justify-between gap-2.5">
+          <div className="lobby-signal" aria-hidden>
+            <span className="lobby-signal-line"><i /><i /><i /><i /><i /><i /><i /><i /></span>
+          </div>
+          <div
+            className="flex items-stretch overflow-hidden rounded-[10px]"
+            style={{
+              border: "1px solid oklch(0.7 0.12 210 / 0.35)",
+              background: "var(--lobby-hero-stat-bg)",
+              boxShadow: "0 0 26px -12px var(--color-accent-glow)",
+            }}
+          >
+            {stats.map((s, i) => (
               <div
-                className="font-editorial mt-0.5 tabular-nums"
-                style={{
-                  fontSize: 30,
-                  fontWeight: 400,
-                  lineHeight: 1,
-                  letterSpacing: "-0.012em",
-                  ...s.tone,
-                  textShadow: "0 0 18px var(--color-accent-glow)",
-                }}
+                key={s.key}
+                className={
+                  "relative px-4 py-2.5" +
+                  (i < stats.length - 1 ? " border-r border-hairline-soft" : "")
+                }
               >
-                {s.value}
+                <div className="font-mono text-[9px] font-bold tracking-[0.14em] text-text-3">
+                  {s.label}
+                </div>
+                <div
+                  className="font-editorial mt-0.5 tabular-nums"
+                  style={{
+                    fontSize: 30,
+                    fontWeight: 400,
+                    lineHeight: 1,
+                    letterSpacing: "-0.012em",
+                    ...s.tone,
+                    textShadow: "0 0 18px var(--color-accent-glow)",
+                  }}
+                >
+                  {s.value}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -764,7 +767,7 @@ function FilterPills({ active, onChange, counts, phaseLabels, t }: FilterPillsPr
                 "inline-flex items-center rounded-full px-3 py-1 text-[11.5px] font-medium backdrop-blur-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent " +
                 (isActive
                   ? "border border-accent/60 bg-accent/25 text-text shadow-[0_0_16px_-4px_var(--color-accent-glow),inset_0_1px_0_oklch(1_0_0_/_0.08)]"
-                  : "border border-hairline-soft bg-[oklch(0.22_0.035_275_/_0.7)] text-text-3 hover:border-hairline hover:bg-[oklch(0.26_0.040_275_/_0.78)] hover:text-text-2")
+                  : "border border-hairline-soft bg-[var(--lobby-pill-bg)] text-text-3 hover:border-hairline hover:bg-[var(--lobby-pill-bg)] hover:brightness-[1.06] hover:text-text-2")
               }
             >
               {c.label}
@@ -845,6 +848,28 @@ export function ProjectsPage() {
     }
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  // 滚动视差：把 scrollY 写入 CSS 变量，驱动 hero 视差层（.lobby-hero-parallax）
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const y = Math.min(window.scrollY, 480);
+      document.documentElement.style.setProperty("--lobby-scroll-y", `${y}px`);
+    };
+    const onScroll = () => {
+      if (!raf) raf = window.requestAnimationFrame(update);
+    };
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (raf) window.cancelAnimationFrame(raf);
+      document.documentElement.style.removeProperty("--lobby-scroll-y");
+    };
   }, []);
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1031,7 +1056,6 @@ export function ProjectsPage() {
         } as CSSProperties
       }
     >
-      <div aria-hidden className="lobby-scanline" />
       <TopBar
         searchValue={searchQuery}
         onSearch={setSearchQuery}
@@ -1131,15 +1155,18 @@ export function ProjectsPage() {
                   </span>
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {restProjects.map((project) => (
-                    <ProjectCard
-                      key={project.name}
-                      project={project}
-                      styleLabel={styleLabels[project.name] ?? ""}
-                      onDelete={() => setDeletingProject(project)}
-                    />
+                  {restProjects.map((project, index) => (
+                    <Reveal key={project.name} delay={Math.min(index, 5) * 70} threshold={0.06}>
+                      <ProjectCard
+                        project={project}
+                        styleLabel={styleLabels[project.name] ?? ""}
+                        onDelete={() => setDeletingProject(project)}
+                      />
+                    </Reveal>
                   ))}
-                  <NewProjectTile onClick={() => setShowCreateModal(true)} t={t} />
+                  <Reveal delay={Math.min(restProjects.length, 5) * 70} threshold={0.06}>
+                    <NewProjectTile onClick={() => setShowCreateModal(true)} t={t} />
+                  </Reveal>
                 </div>
               </section>
             )}

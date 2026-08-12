@@ -24,7 +24,7 @@ import { executingImageModel, executingVideoModel } from "@/components/shared/La
 // 三步走作为录制流程的开机预备：身份 → 器材 → 镜头美学。
 
 const SPROCKET_STYLE: CSSProperties = {
-  background: "repeating-linear-gradient(90deg, oklch(0 0 0 / 0.55) 0 6px, transparent 6px 12px)",
+  background: "var(--lobby-sprocket)",
 };
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
@@ -35,22 +35,19 @@ const STEPS = [
   { num: 3, key: "wizard_step_style" },
 ] as const;
 
-const STEP_BADGE_GRADIENT =
-  "linear-gradient(180deg, oklch(0.30 0.05 295 / 0.65), oklch(0.20 0.02 280 / 0.65))";
-
 const STEP_BADGE_ACTIVE_STYLE: CSSProperties = {
-  background: STEP_BADGE_GRADIENT,
+  background: "var(--lobby-step-badge-active)",
   boxShadow:
     "inset 0 1px 0 oklch(1 0 0 / 0.06), 0 0 18px -6px var(--color-accent-glow)",
 };
 
 const STEP_BADGE_DONE_STYLE: CSSProperties = {
-  background: STEP_BADGE_GRADIENT,
+  background: "var(--lobby-step-badge-done)",
   boxShadow: "inset 0 1px 0 oklch(1 0 0 / 0.05)",
 };
 
 const STEP_BADGE_INACTIVE_STYLE: CSSProperties = {
-  background: "oklch(0.16 0.010 265 / 0.55)",
+  background: "var(--lobby-step-badge-inactive)",
 };
 
 const STEP_CONNECTOR_DONE_STYLE: CSSProperties = {
@@ -350,8 +347,7 @@ export function CreateProjectModal() {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center px-4"
       style={{
-        background:
-          "radial-gradient(900px 480px at 12% -10%, oklch(0.32 0.05 295 / 0.30), transparent 55%), radial-gradient(800px 460px at 100% 110%, oklch(0.26 0.04 260 / 0.28), transparent 55%), oklch(0 0 0 / 0.62)",
+        background: "var(--lobby-modal-overlay)",
         backdropFilter: "blur(12px) saturate(1.1)",
         WebkitBackdropFilter: "blur(12px) saturate(1.1)",
       }}
@@ -369,10 +365,9 @@ export function CreateProjectModal() {
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-project-title"
-        className="relative w-full max-w-3xl overflow-hidden rounded-[14px] border border-hairline bg-bg-grad-a/95 shadow-[0_40px_100px_-30px_oklch(0_0_0_/_0.85)] backdrop-blur-md max-h-[92vh] flex flex-col"
+        className="relative w-full max-w-3xl overflow-hidden rounded-[14px] border border-hairline bg-[var(--lobby-card-bg)] shadow-[0_40px_100px_-30px_var(--lobby-card-shadow)] backdrop-blur-md max-h-[92vh] flex flex-col"
         style={{
-          background:
-            "linear-gradient(180deg, oklch(0.20 0.012 270 / 0.95), oklch(0.16 0.010 265 / 0.95))",
+          background: "var(--lobby-modal-bg)",
         }}
       >
         {/* Hero header */}
@@ -422,7 +417,7 @@ export function CreateProjectModal() {
         </div>
 
         {/* Step indicator strip */}
-        <div className="shrink-0 border-y border-hairline-soft bg-[oklch(0.16_0.010_265_/_0.55)] px-6">
+        <div className="shrink-0 border-y border-hairline-soft bg-[var(--lobby-step-badge-inactive)] px-6">
           <StepIndicator current={step} />
         </div>
 

@@ -20,6 +20,25 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   };
 }
 
+// jsdom 默认不实现 matchMedia；组件里用 prefers-reduced-motion 探测动效
+// （如滚动视差开关）。默认按「不减少动效」处理，测试不关心真实媒体状态。
+if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: (query: string): MediaQueryList => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+      dispatchEvent: () => false,
+    }),
+  });
+}
+
 if (
   typeof window !== "undefined"
   && (

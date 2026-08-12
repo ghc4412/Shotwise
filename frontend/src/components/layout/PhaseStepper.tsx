@@ -18,7 +18,7 @@ export function PhaseStepper({ currentPhase }: PhaseStepperProps) {
       <div
         className="inline-flex items-center gap-px rounded-full p-[3px]"
         style={{
-          background: "oklch(0.17 0.010 265 / 0.6)",
+          background: "var(--color-shell-field)",
           border: "1px solid var(--color-hairline)",
           boxShadow: "inset 0 1px 2px oklch(0 0 0 / 0.25)",
         }}

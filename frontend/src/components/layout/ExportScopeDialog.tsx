@@ -197,7 +197,7 @@ export function ExportScopeDialog({
                   onChange={(e) => setSelectedEpisode(Number(e.target.value))}
                   className="focus-ring w-full rounded-md px-2.5 py-1.5 text-[13px] outline-none"
                   style={{
-                    background: "oklch(0.16 0.010 265 / 0.6)",
+                    background: "var(--color-shell-field)",
                     border: "1px solid var(--color-hairline)",
                     color: "var(--color-text)",
                   }}
@@ -224,7 +224,7 @@ export function ExportScopeDialog({
                 onChange={(e) => setJianyingVersion(e.target.value)}
                 className="focus-ring w-full rounded-md px-2.5 py-1.5 text-[13px] outline-none"
                 style={{
-                  background: "oklch(0.16 0.010 265 / 0.6)",
+                  background: "var(--color-shell-field)",
                   border: "1px solid var(--color-hairline)",
                   color: "var(--color-text)",
                 }}
@@ -247,7 +247,7 @@ export function ExportScopeDialog({
                 placeholder={t("dashboard:draft_path_placeholder")}
                 className="focus-ring w-full rounded-md px-2.5 py-1.5 text-[13px] outline-none"
                 style={{
-                  background: "oklch(0.16 0.010 265 / 0.6)",
+                  background: "var(--color-shell-field)",
                   border: "1px solid var(--color-hairline)",
                   color: "var(--color-text)",
                   fontFamily: "var(--font-mono)",
@@ -325,14 +325,14 @@ function ScopeOption({
       className="focus-ring group flex items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors"
       style={{
         border: "1px solid var(--color-hairline)",
-        background: "oklch(0.20 0.011 265 / 0.4)",
+        background: "var(--panel-spec-bar-bg)",
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.background = palette.hoverBg;
         e.currentTarget.style.borderColor = palette.hoverBorder;
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.background = "oklch(0.20 0.011 265 / 0.4)";
+        e.currentTarget.style.background = "var(--panel-spec-bar-bg)";
         e.currentTarget.style.borderColor = "var(--color-hairline)";
       }}
     >
@@ -340,7 +340,7 @@ function ScopeOption({
         aria-hidden
         className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md"
         style={{
-          background: "oklch(0.16 0.010 265 / 0.6)",
+          background: "var(--color-shell-field)",
           border: `1px solid ${palette.ring}`,
           color: palette.color,
         }}

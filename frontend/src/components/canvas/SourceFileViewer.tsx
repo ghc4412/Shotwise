@@ -161,7 +161,7 @@ export function SourceFileViewer({ projectName, filename }: SourceFileViewerProp
             className="focus-ring h-full w-full resize-none rounded-lg p-4 font-mono text-[13px] leading-[1.7] outline-none"
             style={{
               background:
-                "linear-gradient(180deg, oklch(0.225 0.003 285 / 0.55), oklch(0.195 0.003 285 / 0.4))",
+                "var(--color-shell-field)",
               border: "1px solid var(--color-hairline-soft)",
               color: "var(--color-text)",
               boxShadow: "inset 0 1px 0 oklch(1 0 0 / 0.03)",
@@ -172,7 +172,7 @@ export function SourceFileViewer({ projectName, filename }: SourceFileViewerProp
             className="whitespace-pre-wrap rounded-lg p-4 font-mono text-[13px] leading-[1.7]"
             style={{
               background:
-                "linear-gradient(180deg, oklch(0.20 0.011 265 / 0.5), oklch(0.18 0.010 265 / 0.35))",
+                "linear-gradient(180deg, var(--color-shell-field), var(--panel-spec-bar-bg))",
               border: "1px solid var(--color-hairline-soft)",
               color: "var(--color-text-2)",
               boxShadow: "inset 0 1px 0 oklch(1 0 0 / 0.03)",
@@ -208,7 +208,7 @@ function ViewerToolbar({
       className="sticky top-0 z-10 flex items-center gap-3 px-5 py-3"
       style={{
         background:
-          "linear-gradient(180deg, oklch(0.20 0.012 265 / 0.85), oklch(0.18 0.010 265 / 0.65))",
+          "var(--panel-card-bg)",
         backdropFilter: "blur(10px)",
         WebkitBackdropFilter: "blur(10px)",
         borderBottom: "1px solid var(--color-hairline-soft)",
@@ -221,7 +221,7 @@ function ViewerToolbar({
         style={{
           color: "var(--color-text-3)",
           border: "1px solid var(--color-hairline)",
-          background: "oklch(0.22 0.011 265 / 0.5)",
+          background: "var(--color-shell-btn)",
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.color = "var(--color-text)";
@@ -230,7 +230,7 @@ function ViewerToolbar({
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.color = "var(--color-text-3)";
-          e.currentTarget.style.background = "oklch(0.22 0.011 265 / 0.5)";
+          e.currentTarget.style.background = "var(--color-shell-btn)";
           e.currentTarget.style.borderColor = "var(--color-hairline)";
         }}
       >

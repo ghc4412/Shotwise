@@ -9,6 +9,7 @@ import { safeReturnPath } from "@/utils/safe-url";
 import { BRAND } from "@/branding";
 import type { LoginResponse, ErrorResponse } from "@/api";
 import { FieldLabel } from "@/components/ui/FieldLabel";
+import { Reveal } from "@/components/ui/Reveal";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { ThemeAccentPicker } from "@/components/ui/ThemeAccentPicker";
 import {
@@ -121,43 +122,54 @@ export function LoginPage() {
 
       <main className="auth-layout relative z-10 mx-auto grid w-full max-w-[1240px] gap-10 px-6 pb-10 pt-6 lg:grid-cols-[1.08fr_0.82fr] lg:items-center lg:px-10 lg:pb-20 lg:pt-12">
         <section className="auth-showcase min-w-0">
-          <div className="mb-5 flex items-center gap-3 font-mono text-[10px] font-semibold uppercase tracking-[0.17em] text-accent-2">
-            <span className="auth-kicker-line" />
-            {t("auth:login_kicker")}
-          </div>
-          <h1 className="auth-title max-w-[720px] whitespace-pre-line text-balance font-editorial text-[clamp(3.2rem,6.8vw,6rem)] font-normal leading-[1.05] tracking-[-0.035em] text-text">
-            {t("auth:login_hero_title")}
-          </h1>
-          <p className="mt-7 max-w-[560px] text-[15px] leading-7 text-text-2 lg:text-[17px]">{t("auth:login_hero_body")}</p>
-
-          <div className="auth-reel mt-10" aria-label={t("auth:login_reel_label")}>
-            <div className="auth-reel-head">
-              <span className="flex items-center gap-2"><Film className="h-3.5 w-3.5" />{t("auth:login_reel_label")}</span>
-              <span className="font-mono text-[9px] tracking-[0.16em] text-text-4">{t("auth:login_reel_meta")}</span>
+          <Reveal from="left" threshold={0}>
+            <div className="mb-5 flex items-center gap-3 font-mono text-[10px] font-semibold uppercase tracking-[0.17em] text-accent-2">
+              <span className="auth-kicker-line" />
+              {t("auth:login_kicker")}
             </div>
-            <div className="auth-reel-stage">
-              <div className="auth-reel-frame auth-reel-frame-one" />
-              <div className="auth-reel-frame auth-reel-frame-two" />
-              <div className="auth-reel-frame auth-reel-frame-three" />
-              <div className="auth-reel-copy"><Sparkles className="h-4 w-4 text-accent-2" /><span>{t("auth:login_reel_counter")}</span></div>
-              <div className="auth-reel-play"><span /></div>
-            </div>
-            <div className="auth-reel-progress"><span /></div>
-          </div>
+          </Reveal>
+          <Reveal from="left" delay={90} threshold={0}>
+            <h1 className="auth-title max-w-[720px] whitespace-pre-line text-balance font-editorial text-[clamp(3.2rem,6.8vw,6rem)] font-normal leading-[1.05] tracking-[-0.035em] text-text">
+              {t("auth:login_hero_title")}
+            </h1>
+          </Reveal>
+          <Reveal from="left" delay={180} threshold={0}>
+            <p className="mt-7 max-w-[560px] text-[15px] leading-7 text-text-2 lg:text-[17px]">{t("auth:login_hero_body")}</p>
+          </Reveal>
 
-          <div className="auth-metrics mt-8 grid max-w-[620px] grid-cols-3">
-            {["login_metric_worlds", "login_metric_shots", "login_metric_render"].map((key, index) => (
-              <div key={key} className="auth-metric">
-                <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-text-4">{t(`auth:${key}`)}</div>
-                <div className="mt-2 font-editorial text-[27px] text-text">{["01", "08", "∞"][index]}</div>
+          <Reveal from="left" delay={270} threshold={0}>
+            <div className="auth-reel mt-10" aria-label={t("auth:login_reel_label")}>
+              <div className="auth-reel-head">
+                <span className="flex items-center gap-2"><Film className="h-3.5 w-3.5" />{t("auth:login_reel_label")}</span>
+                <span className="font-mono text-[9px] tracking-[0.16em] text-text-4">{t("auth:login_reel_meta")}</span>
               </div>
-            ))}
-          </div>
+              <div className="auth-reel-stage">
+                <div className="auth-reel-frame auth-reel-frame-one" />
+                <div className="auth-reel-frame auth-reel-frame-two" />
+                <div className="auth-reel-frame auth-reel-frame-three" />
+                <div className="auth-reel-copy"><Sparkles className="h-4 w-4 text-accent-2" /><span>{t("auth:login_reel_counter")}</span></div>
+                <div className="auth-reel-play"><span /></div>
+              </div>
+              <div className="auth-reel-progress"><span /></div>
+            </div>
+          </Reveal>
+
+          <Reveal from="left" delay={360} threshold={0}>
+            <div className="auth-metrics mt-8 grid max-w-[620px] grid-cols-3">
+              {["login_metric_worlds", "login_metric_shots", "login_metric_render"].map((key, index) => (
+                <div key={key} className="auth-metric">
+                  <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-text-4">{t(`auth:${key}`)}</div>
+                  <div className="mt-2 font-editorial text-[27px] text-text">{["01", "08", "∞"][index]}</div>
+                </div>
+              ))}
+            </div>
+          </Reveal>
         </section>
 
-        <section className="auth-panel relative w-full max-w-[450px] justify-self-end">
-          <div className="auth-panel-topline" aria-hidden />
-          <div className="p-7 sm:p-9">
+        <Reveal from="right" delay={200} threshold={0}>
+          <section className="auth-panel relative w-full max-w-[450px] justify-self-end">
+            <div className="auth-panel-topline" aria-hidden />
+            <div className="p-7 sm:p-9">
             <div className="mb-8">
               <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-accent-2">{t("auth:login_kicker")}</div>
               <h2 className="mt-2 font-editorial text-[34px] font-normal leading-none text-text">{t("auth:login_workspace_access")}</h2>
@@ -218,7 +230,8 @@ export function LoginPage() {
               )}
             </form>
           </div>
-        </section>
+          </section>
+        </Reveal>
       </main>
       <footer className="relative z-10 flex justify-between px-6 pb-5 font-mono text-[9px] uppercase tracking-[0.16em] text-text-4 lg:px-10">
         <span>{BRAND.name} / {BRAND.nameZh}</span>

@@ -104,7 +104,7 @@ export function ShotList({
         style={{
           width: 44,
           borderRight: "1px solid var(--color-hairline)",
-          background: "oklch(0.19 0.011 265 / 0.5)",
+          background: "var(--color-shell-side-a)",
         }}
       >
         <button
@@ -148,7 +148,7 @@ export function ShotList({
                   background:
                     i === selectedIndex
                       ? "linear-gradient(180deg, var(--color-accent-2), var(--color-accent))"
-                      : "oklch(0.22 0.011 265 / 0.5)",
+                      : "var(--color-shell-btn)",
                   border: "1px solid var(--color-hairline-soft)",
                 }}
               >
@@ -166,7 +166,7 @@ export function ShotList({
       style={{
         borderRight: "1px solid var(--color-hairline)",
         background:
-          "linear-gradient(180deg, oklch(0.19 0.011 265 / 0.5), oklch(0.17 0.010 265 / 0.35))",
+          "linear-gradient(180deg, var(--color-shell-side-a), var(--color-shell-side-b))",
       }}
       className="flex h-full min-w-0 flex-col"
     >
@@ -207,7 +207,7 @@ export function ShotList({
         <div
           className="flex items-center gap-1.5 rounded-md px-2 py-1.5"
           style={{
-            background: "oklch(0.20 0.011 265 / 0.55)",
+            background: "var(--panel-card-bg)",
             border: "1px solid var(--color-hairline-soft)",
           }}
         >
@@ -258,7 +258,7 @@ export function ShotList({
                   gridTemplateColumns: "auto 1fr",
                   transform: `translateY(${virt.start}px)`,
                   background: active
-                    ? "linear-gradient(180deg, oklch(0.26 0.018 290 / 0.5), oklch(0.22 0.015 280 / 0.35))"
+                    ? "linear-gradient(180deg, var(--color-shell-card-a), var(--color-shell-card-b))"
                     : undefined,
                   border: active
                     ? "1px solid var(--color-accent-soft)"
@@ -294,7 +294,7 @@ export function ShotList({
                       className="flex h-full w-full items-center justify-center"
                       style={{
                         background:
-                          "linear-gradient(135deg, oklch(0.30 0.05 280), oklch(0.18 0.02 260))",
+                          "var(--panel-thumb-bg)",
                       }}
                     />
                   )}
