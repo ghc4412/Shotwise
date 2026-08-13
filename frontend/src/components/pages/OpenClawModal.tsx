@@ -101,11 +101,20 @@ export function OpenClawModal({ onClose }: OpenClawModalProps) {
       />
       <div
         ref={dialogRef}
-        className="relative z-10 flex max-h-[90vh] w-full max-w-lg flex-col overflow-y-auto rounded-2xl border border-hairline shadow-2xl shadow-black/60"
+        className="relative z-10 flex max-h-[90vh] w-full max-w-3xl flex-col overflow-y-auto rounded-2xl border border-hairline shadow-2xl shadow-black/60"
         style={DROPDOWN_PANEL_STYLE}
       >
+        {/* 顶部 accent 装饰线，与其他玻璃面板同构 */}
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 z-10 h-px"
+          style={{
+            background:
+              "linear-gradient(90deg, transparent, var(--color-accent-soft), transparent)",
+          }}
+        />
         <div
-          className="sticky top-0 z-10 flex items-center justify-between border-b border-hairline px-5 py-4"
+          className="sticky top-0 z-10 flex items-center justify-between border-b border-hairline px-6 py-4"
           style={DROPDOWN_PANEL_STYLE}
         >
           <div className="flex items-center gap-2.5">
@@ -129,7 +138,7 @@ export function OpenClawModal({ onClose }: OpenClawModalProps) {
           </button>
         </div>
 
-        <div className="space-y-5 p-5">
+        <div className="space-y-6 p-6">
           {/* Prompt */}
           <div>
             <div className="mb-2 flex items-center justify-between">
@@ -154,7 +163,7 @@ export function OpenClawModal({ onClose }: OpenClawModalProps) {
                 )}
               </button>
             </div>
-            <div className="rounded-xl border border-accent/30 bg-bg p-3">
+            <div className="rounded-xl border border-accent/30 bg-bg-grad-a/60 p-3.5">
               <pre className="whitespace-pre-wrap font-mono text-[12px] leading-5 text-accent-2">
                 {systemPrompt}
               </pre>
@@ -173,12 +182,12 @@ export function OpenClawModal({ onClose }: OpenClawModalProps) {
             </p>
           </div>
 
-          {/* Steps */}
+          {/* Steps — 拉宽后三步并排 */}
           <div>
             <div className="mb-3 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-text-3">
               {t("dashboard:openclaw_steps_label")}
             </div>
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               {STEP_KEYS.map(({ step, titleKey, descKey }) => (
                 <div
                   key={step}
@@ -200,12 +209,12 @@ export function OpenClawModal({ onClose }: OpenClawModalProps) {
             </div>
           </div>
 
-          {/* Codex local install (optional) */}
+          {/* Codex local install (optional) — macOS / Windows 并排 */}
           <div>
             <div className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-text-3">
               {t("dashboard:codex_install_label")}
             </div>
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {CODEX_INSTALL_CMDS.map(({ key, label, cmd }) => (
                 <div
                   key={key}
