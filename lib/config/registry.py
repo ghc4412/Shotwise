@@ -1207,7 +1207,7 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
     ),
     "kling": ProviderMeta(
         display_name="可灵 Kling",
-        console_url="https://platform.klingai.com",
+        console_url="https://www.klingai.com/dev/api-key",
         description=(
             "快手可灵 Kling 视频与图像生成平台。API Key（Bearer）适用于全部模型；"
             "Access Key + Secret Key（JWT）仅适用于 3.0 及更早模型，二者二选一，同时填写时 API Key 优先。"

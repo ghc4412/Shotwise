@@ -904,6 +904,28 @@ def _test_minimax(config: dict[str, str], _t: Callable[..., str]) -> ConnectionT
     models = client.models.list()
     available = sorted(m.id for m in models.data if "minimax" in m.id.lower() or "abab" in m.id.lower())
     return ConnectionTestResponse(
+        success=True,        available_models=available,
+        message=_t("connection_success"),
+    )
+
+
+def _test_agnes(config: dict[str, str], _t: Callable[..., str]) -> ConnectionTestResponse:
+    """通过 models.list() 验证 Agnes API Key（OpenAI 兼容协议，Bearer 单 key）。
+
+    与 DashScope / MiniMax 同构：复用 OpenAI 客户端打 models.list()；base_url 经
+    agnes_base_url 归一化为 {host}/v1，容忍用户填 host 或带 /v1 后缀（缺省 apihub 网关）。
+    """
+    from openai import OpenAI
+
+    from lib.agnes_shared import agnes_base_url
+
+    client = OpenAI(
+        api_key=config["api_key"],
+        base_url=agnes_base_url(config.get("base_url")),
+    )
+    models = client.models.list()
+    available = sorted(m.id for m in models.data if "agnes" in m.id.lower())
+    return ConnectionTestResponse(
         success=True,
         available_models=available,
         message=_t("connection_success"),
@@ -982,6 +1004,7 @@ _TEST_DISPATCH: dict[str, Callable[[dict[str, str], Any], ConnectionTestResponse
     "dashscope": _test_dashscope,
     "minimax": _test_minimax,
     "kling": _test_kling,
+    "agnes": _test_agnes,
 }
 
 
