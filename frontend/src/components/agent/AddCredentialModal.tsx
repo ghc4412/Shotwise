@@ -5,7 +5,6 @@ import {
   Loader2,
   Search,
   SlidersHorizontal,
-  Star,
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -72,27 +71,27 @@ export function AddCredentialModal({
         initial?.haiku_model || initial?.sonnet_model || initial?.opus_model || initial?.subagent_model,
       ),
   );
-  // 从自定义供应商导入：列出已配置 api_key 的 providers，选中后填充 baseUrl + apiKey 草稿
+  // 浠庤嚜瀹氫箟渚涘簲鍟嗗鍏ワ細鍒楀嚭宸查厤缃?api_key 鐨?providers锛岄€変腑鍚庡～鍏?baseUrl + apiKey 鑽夌
   const [providers, setProviders] = useState<CustomProviderInfo[]>([]);
   const [importPickerOpen, setImportPickerOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const importTriggerRef = useRef<HTMLButtonElement>(null);
 
-  // 草稿态连接测试：保存前先验 base_url + api_key 是否能真实跑通
+  // 鑽夌鎬佽繛鎺ユ祴璇曪細淇濆瓨鍓嶅厛楠?base_url + api_key 鏄惁鑳界湡瀹炶窇閫?
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestConnectionResponse | null>(null);
   const [testedBaseUrl, setTestedBaseUrl] = useState<string | null>(null);
 
-  // 异步竞态隔离：modal 重开（或父组件切到另一条凭证）后，旧 session 里
-  // discover/test/import 的 await 仍可能返回并写 state。每次 reset effect 里
-  // bump 一次，async 路径在 await 后比对 session id，不一致则丢弃结果。
+  // 寮傛绔炴€侀殧绂伙細modal 閲嶅紑锛堟垨鐖剁粍浠跺垏鍒板彟涓€鏉″嚟璇侊級鍚庯紝鏃?session 閲?
+  // discover/test/import 鐨?await 浠嶅彲鑳借繑鍥炲苟鍐?state銆傛瘡娆?reset effect 閲?
+  // bump 涓€娆★紝async 璺緞鍦?await 鍚庢瘮瀵?session id锛屼笉涓€鑷村垯涓㈠純缁撴灉銆?
   const sessionRef = useRef(0);
 
   useEffect(() => {
     if (!open || mode !== "create") return;
     let cancelled = false;
-    // 拉取前先清旧列表：失败时不会残留上一轮 providers（同一 React 组件实例
-    // 跨 modal 会话保留 state），避免用户点到已删除/失效的 provider 触发 404。
+    // 鎷夊彇鍓嶅厛娓呮棫鍒楄〃锛氬け璐ユ椂涓嶄細娈嬬暀涓婁竴杞?providers锛堝悓涓€ React 缁勪欢瀹炰緥
+    // 璺?modal 浼氳瘽淇濈暀 state锛夛紝閬垮厤鐢ㄦ埛鐐瑰埌宸插垹闄?澶辨晥鐨?provider 瑙﹀彂 404銆?
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setProviders([]);
     void (async () => {
@@ -102,7 +101,7 @@ export function AddCredentialModal({
           setProviders(res.providers.filter((p) => p.api_key_masked));
         }
       } catch {
-        // 静默：导入是可选快捷入口，失败不打断主流程
+        // 闈欓粯锛氬鍏ユ槸鍙€夊揩鎹峰叆鍙ｏ紝澶辫触涓嶆墦鏂富娴佺▼
       }
     })();
     return () => {
@@ -110,14 +109,14 @@ export function AddCredentialModal({
     };
   }, [open, mode]);
 
-  // 父组件复用 modal 时只切换 open/initial，本地一次性诊断状态不会自动清。
-  // 重开（或切换到另一条凭证）时把模型列表、错误、测试结果、popover、inflight
-  // loading 全部归零，按新 initial 重算 advancedOpen，bump sessionRef 让旧
-  // session 的 await 返回时丢弃结果。
+  // 鐖剁粍浠跺鐢?modal 鏃跺彧鍒囨崲 open/initial锛屾湰鍦颁竴娆℃€ц瘖鏂姸鎬佷笉浼氳嚜鍔ㄦ竻銆?
+  // 閲嶅紑锛堟垨鍒囨崲鍒板彟涓€鏉″嚟璇侊級鏃舵妸妯″瀷鍒楄〃銆侀敊璇€佹祴璇曠粨鏋溿€乸opover銆乮nflight
+  // loading 鍏ㄩ儴褰掗浂锛屾寜鏂?initial 閲嶇畻 advancedOpen锛宐ump sessionRef 璁╂棫
+  // session 鐨?await 杩斿洖鏃朵涪寮冪粨鏋溿€?
   useEffect(() => {
     sessionRef.current += 1;
     if (!open) return;
-    // 重开 modal 时的批量重置，是动作驱动的状态归零。
+    // 閲嶅紑 modal 鏃剁殑鎵归噺閲嶇疆锛屾槸鍔ㄤ綔椹卞姩鐨勭姸鎬佸綊闆躲€?
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setModelOptions([]);
     setDiscoverError(null);
@@ -145,16 +144,21 @@ export function AddCredentialModal({
 
   if (!open) return null;
 
-  // 草稿任意可影响连通性的字段（preset / base_url / api_key / model）变化后，
-  // 旧 testResult 已经不对应当前草稿了，必须失效，避免用户把未重新验证的配置
-  // 当成已通过验证。
+  // 妯″瀷涓嬫媺閫夐」锛氫紭鍏堜娇鐢ㄦā鍨嬪彂鐜扮粨鏋滐紱鏈彂鐜帮紙鎴栦緵搴斿晢涓嶆敮鎸佸彂鐜帮紝濡傜伀灞辨柟鑸燂級
+  // 鏃跺洖閫€鍒伴璁剧殑 suggested_models锛堝畼鏂规敮鎸佺殑妯″瀷鍚嶏級锛岀敤鎴蜂粛鍙墜鍔ㄨ緭鍏ャ€?
+  const selectableModels =
+    modelOptions.length > 0 ? modelOptions : (selected?.suggested_models ?? []);
+
+  // 鑽夌浠绘剰鍙奖鍝嶈繛閫氭€х殑瀛楁锛坧reset / base_url / api_key / model锛夊彉鍖栧悗锛?
+  // 鏃?testResult 宸茬粡涓嶅搴斿綋鍓嶈崏绋夸簡锛屽繀椤诲け鏁堬紝閬垮厤鐢ㄦ埛鎶婃湭閲嶆柊楠岃瘉鐨勯厤缃?
+  // 褰撴垚宸查€氳繃楠岃瘉銆?
   const invalidateDraftTest = () => {
     setTestResult(null);
     setTestedBaseUrl(null);
   };
 
-  // modelOptions 是按 (endpoint, credential) 元组发现出来的；base_url 或 api_key
-  // 变了，旧列表里的 id 在新 endpoint 不一定支持，让它失效避免用户保存无效配置。
+  // modelOptions 鏄寜 (endpoint, credential) 鍏冪粍鍙戠幇鍑烘潵鐨勶紱base_url 鎴?api_key
+  // 鍙樹簡锛屾棫鍒楄〃閲岀殑 id 鍦ㄦ柊 endpoint 涓嶄竴瀹氭敮鎸侊紝璁╁畠澶辨晥閬垮厤鐢ㄦ埛淇濆瓨鏃犳晥閰嶇疆銆?
   const invalidateDiscoveredModels = () => {
     setModelOptions([]);
     setDiscoverError(null);
@@ -171,8 +175,8 @@ export function AddCredentialModal({
     setDiscovering(true);
     setDiscoverError(null);
     try {
-      // 优先使用表单里的 base_url：用户改了 URL 但发现仍走预设默认端点会选到
-      // 当前 endpoint 不支持的模型。无 base_url 时回退到预设的 discovery/messages URL。
+      // 浼樺厛浣跨敤琛ㄥ崟閲岀殑 base_url锛氱敤鎴锋敼浜?URL 浣嗗彂鐜颁粛璧伴璁鹃粯璁ょ鐐逛細閫夊埌
+      // 褰撳墠 endpoint 涓嶆敮鎸佺殑妯″瀷銆傛棤 base_url 鏃跺洖閫€鍒伴璁剧殑 discovery/messages URL銆?
       const discoverBase =
         form.baseUrl.trim() ||
         (form.presetId === customSentinelId
@@ -206,18 +210,18 @@ export function AddCredentialModal({
   };
 
   const handleImportProvider = async (provider: CustomProviderInfo) => {
-    // 同 session 防重入：popover 内 provider option 没有 disabled，用户可以
-    // 连击或在 inflight 期间点别的 provider；sessionRef 只挡跨 session race，
-    // 挡不住同一 session 内的并发，最后返回的请求会覆盖表单。
+    // 鍚?session 闃查噸鍏ワ細popover 鍐?provider option 娌℃湁 disabled锛岀敤鎴峰彲浠?
+    // 杩炲嚮鎴栧湪 inflight 鏈熼棿鐐瑰埆鐨?provider锛泂essionRef 鍙尅璺?session race锛?
+    // 鎸′笉浣忓悓涓€ session 鍐呯殑骞跺彂锛屾渶鍚庤繑鍥炵殑璇锋眰浼氳鐩栬〃鍗曘€?
     if (importing) return;
     const session = sessionRef.current;
     setImporting(true);
-    // 立即关闭 popover，避免 inflight 期间用户继续看到可点选项
+    // 绔嬪嵆鍏抽棴 popover锛岄伩鍏?inflight 鏈熼棿鐢ㄦ埛缁х画鐪嬪埌鍙偣閫夐」
     setImportPickerOpen(false);
     try {
       const cred = await API.getCustomProviderCredentials(provider.id);
       if (session !== sessionRef.current) return;
-      // 切到 __custom__：避免预设的 messages_url 覆盖刚导入的 base_url
+      // 鍒囧埌 __custom__锛氶伩鍏嶉璁剧殑 messages_url 瑕嗙洊鍒氬鍏ョ殑 base_url
       form.setPreset(customSentinelId);
       form.setApiKey(cred.api_key);
       form.setBaseUrl(cred.base_url);
@@ -241,7 +245,7 @@ export function AddCredentialModal({
   const handleTest = async () => {
     const session = sessionRef.current;
     setTesting(true);
-    // 失败时清旧的"连接成功"面板，避免用户看到上一次的过期结果
+    // 澶辫触鏃舵竻鏃х殑"杩炴帴鎴愬姛"闈㈡澘锛岄伩鍏嶇敤鎴风湅鍒颁笂涓€娆＄殑杩囨湡缁撴灉
     setTestResult(null);
     const submitBaseUrl = form.baseUrl.trim() || undefined;
     setTestedBaseUrl(submitBaseUrl ?? null);
@@ -265,7 +269,7 @@ export function AddCredentialModal({
 
   const handleApplyFix = (suggestedBaseUrl: string) => {
     form.setBaseUrl(suggestedBaseUrl);
-    // base_url 变了 → 旧 discovery 和测试结果都不再可信，鼓励用户重新发现+测试
+    // base_url 鍙樹簡 鈫?鏃?discovery 鍜屾祴璇曠粨鏋滈兘涓嶅啀鍙俊锛岄紦鍔辩敤鎴烽噸鏂板彂鐜?娴嬭瘯
     invalidateDiscoveredModels();
     invalidateDraftTest();
   };
@@ -336,7 +340,7 @@ export function AddCredentialModal({
                   onClose={() => setImportPickerOpen(false)}
                   anchorRef={importTriggerRef}
                   width="w-64"
-                  // modal 容器是 z-50；默认 Popover layer 是 z-40 会被 modal 遮挡
+                  // modal 瀹瑰櫒鏄?z-50锛涢粯璁?Popover layer 鏄?z-40 浼氳 modal 閬尅
                   layer="modal"
                   className="rounded-[8px] border border-hairline py-1 shadow-lg"
                 >
@@ -365,7 +369,7 @@ export function AddCredentialModal({
           </div>
         </div>
 
-        {/* Preset grid — 3 列固定网格,自定义永远固定首格,推荐项次之 */}
+        {/* Preset grid 鈥?3 鍒楀浐瀹氱綉鏍?鑷畾涔夋案杩滃浐瀹氶鏍?鎺ㄨ崘椤规涔?*/}
         <div className="mb-5">
           <div className="mb-2 font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-text-2">
             {t("select_provider")}
@@ -387,7 +391,6 @@ export function AddCredentialModal({
                 onClick={() => handlePresetClick(p.id)}
                 label={p.display_name}
                 iconKey={p.icon_key}
-                recommended={p.is_recommended}
                 disabled={mode === "edit"}
                 title={mode === "edit" ? t("preset_locked_in_edit") : undefined}
               />
@@ -483,7 +486,7 @@ export function AddCredentialModal({
                 form.setModel(v);
                 invalidateDraftTest();
               }}
-              options={modelOptions}
+              options={selectableModels}
               placeholder={selected?.default_model || ""}
               clearable
             />
@@ -492,7 +495,7 @@ export function AddCredentialModal({
             )}
           </Field>
 
-          {/* Advanced model routing - 折叠区 */}
+          {/* Advanced model routing - 鎶樺彔鍖?*/}
           <details
             open={advancedOpen}
             onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}
@@ -523,7 +526,7 @@ export function AddCredentialModal({
                 envVar="ANTHROPIC_DEFAULT_HAIKU_MODEL"
                 value={form.haikuModel}
                 onChange={form.setHaikuModel}
-                options={modelOptions}
+                options={selectableModels}
               />
               <RoutingField
                 id="cred-sonnet"
@@ -532,7 +535,7 @@ export function AddCredentialModal({
                 envVar="ANTHROPIC_DEFAULT_SONNET_MODEL"
                 value={form.sonnetModel}
                 onChange={form.setSonnetModel}
-                options={modelOptions}
+                options={selectableModels}
               />
               <RoutingField
                 id="cred-opus"
@@ -541,7 +544,7 @@ export function AddCredentialModal({
                 envVar="ANTHROPIC_DEFAULT_OPUS_MODEL"
                 value={form.opusModel}
                 onChange={form.setOpusModel}
-                options={modelOptions}
+                options={selectableModels}
               />
               <RoutingField
                 id="cred-subagent"
@@ -550,7 +553,7 @@ export function AddCredentialModal({
                 envVar="CLAUDE_CODE_SUBAGENT_MODEL"
                 value={form.subagentModel}
                 onChange={form.setSubagentModel}
-                options={modelOptions}
+                options={selectableModels}
               />
             </div>
           </details>
@@ -617,7 +620,6 @@ function PresetChip({
   onClick,
   label,
   iconKey,
-  recommended,
   dataTestid,
   disabled,
   title,
@@ -626,12 +628,10 @@ function PresetChip({
   onClick: () => void;
   label: string;
   iconKey?: string;
-  recommended?: boolean;
   dataTestid?: string;
   disabled?: boolean;
   title?: string;
 }) {
-  const { t } = useTranslation("common");
   return (
     <button
       type="button"
@@ -646,12 +646,6 @@ function PresetChip({
           : "border-hairline bg-bg-grad-a/35 text-text-2 hover:border-accent/40"
       }`}
     >
-      {recommended && (
-        <Star
-          className="h-3 w-3 shrink-0 fill-amber-300 text-amber-300"
-          aria-label={t("recommended")}
-        />
-      )}
       {iconKey && <PresetIcon iconKey={iconKey} size={14} />}
       <span className="truncate">{label}</span>
     </button>
@@ -722,3 +716,4 @@ function RoutingField({
     </div>
   );
 }
+

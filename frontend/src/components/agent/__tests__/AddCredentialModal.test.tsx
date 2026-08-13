@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { API } from "@/api";
@@ -77,6 +77,26 @@ describe("AddCredentialModal", () => {
     ) as HTMLInputElement;
     expect(baseUrlInput).toBeInTheDocument();
     expect(baseUrlInput.value).toBe("https://api.deepseek.com/anthropic");
+  });
+
+  it("model dropdown falls back to suggested_models when no discovery results", () => {
+    render(
+      <AddCredentialModal
+        open
+        presets={presets}
+        customSentinelId="__custom__"
+        onSubmit={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /DeepSeek/i }));
+    // 未点「发现模型」：modelOptions 为空 → 下拉展示 preset.suggested_models
+    const modelInput = screen.getByLabelText(/default[_ ]model|默认模型/i) as HTMLInputElement;
+    const toggle = within(modelInput.parentElement as HTMLElement).getByRole("button", {
+      name: /toggle[_ ]options|切换选项/i,
+    });
+    fireEvent.click(toggle);
+    expect(screen.getByRole("option", { name: "deepseek-chat" })).toBeInTheDocument();
   });
 
   it("when custom chosen, base_url input shown and empty", () => {

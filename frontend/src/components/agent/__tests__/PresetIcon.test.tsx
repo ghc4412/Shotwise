@@ -6,7 +6,12 @@ import { PresetIcon } from "@/components/agent/PresetIcon";
 describe("PresetIcon", () => {
   it("renders lobehub icon when iconKey known", async () => {
     render(<PresetIcon iconKey="DeepSeek" size={24} />);
-    expect(await screen.findByTestId("lobehub-stub-icon")).toBeInTheDocument();
+    const icon = await screen.findByTestId("lobehub-stub-icon");
+    expect(icon).toBeInTheDocument();
+    // The upstream SVG contains a <title>, which otherwise triggers an
+    // unthemeable browser-native tooltip when hovering a provider chip.
+    expect(icon.parentElement).toHaveAttribute("aria-hidden", "true");
+    expect(icon.parentElement).toHaveClass("pointer-events-none");
   });
 
   it("falls back to monogram on unknown iconKey", async () => {
