@@ -823,7 +823,7 @@ export default {
   'status_ready': '已就绪',
   'status_error': '异常',
   'status_unconfigured': '未配置',
-  'provider_console_link': '去供应商控制台获取 API Key',
+  'provider_console_link': '打开供应商控制台',
   'provider_enabled': '已启用',
   'provider_disabled': '已禁用',
   'provider_toggle_enable': '启用该供应商',

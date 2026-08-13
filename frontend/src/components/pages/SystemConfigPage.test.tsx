@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
@@ -196,11 +196,89 @@ describe("SystemConfigPage", () => {
     expect(screen.queryByText("当前配置存在以下问题，可能会影响部分功能：")).not.toBeInTheDocument();
   });
 
+  it("lights only the sidebar section whose tab has a config issue", async () => {
+    // 缺 Anthropic key → 只有 agent tab 有 issue，侧边栏只点亮「智能体」
+    vi.spyOn(API, "getSystemConfig").mockResolvedValue(
+      makeConfigResponse({ anthropic_api_key: { is_set: false, masked: null } }),
+    );
+    vi.spyOn(API, "getProviders").mockResolvedValue(makeProviders({ status: "ready" }));
+    renderPage();
+
+    const sidebar = () => screen.getByRole("navigation", { name: "设置" });
+    await waitFor(() => {
+      expect(
+        within(sidebar()).getByRole("button", { name: /智能体/ }).querySelector('[aria-label="配置不完整"]'),
+      ).not.toBeNull();
+    });
+    // 其余 section 不受影响：不因别处的问题一起亮
+    expect(
+      within(sidebar()).getByRole("button", { name: /供应商/ }).querySelector('[aria-label="配置不完整"]'),
+    ).toBeNull();
+    expect(
+      within(sidebar()).getByRole("button", { name: /模型选择/ }).querySelector('[aria-label="配置不完整"]'),
+    ).toBeNull();
+  });
+
+  it("lights the 供应商 section when a media provider is missing", async () => {
+    // 供应商未就绪（缺 video 能力）→ providers tab 的 issue，侧边栏只点亮「供应商」
+    vi.spyOn(API, "getProviders").mockResolvedValue(makeProviders({ status: "unconfigured" }));
+    renderPage();
+
+    const sidebar = () => screen.getByRole("navigation", { name: "设置" });
+    await waitFor(() => {
+      expect(
+        within(sidebar()).getByRole("button", { name: /供应商/ }).querySelector('[aria-label="配置不完整"]'),
+      ).not.toBeNull();
+    });
+    expect(
+      within(sidebar()).getByRole("button", { name: /智能体/ }).querySelector('[aria-label="配置不完整"]'),
+    ).toBeNull();
+  });
+
   it("renders the back link that navigates to projects", () => {
     renderPage();
     const link = screen.getByRole("link", { name: "返回" });
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute("href", "/app/projects");
+  });
+
+  it("renders provider console link when the provider is configured (ready)", async () => {
+    // 已配置状态也需能跳转到供应商控制台（新标签页打开）
+    vi.spyOn(API, "getProviderConfig").mockResolvedValue({
+      id: "gemini",
+      display_name: "Google Gemini",
+      status: "ready",
+      media_types: ["image", "video"],
+      capabilities: [],
+      fields: [],
+      supports_base_url: false,
+      console_url: "https://aistudio.google.com/apikey",
+    } as never);
+    renderPage();
+
+    const link = await screen.findByRole("link", { name: "已就绪" });
+    expect(link).toHaveAttribute("href", "https://aistudio.google.com/apikey");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("does not render a console link when the provider has no console_url", async () => {
+    // 无 console_url 时徽章保持纯文本，不可点击
+    vi.spyOn(API, "getProviderConfig").mockResolvedValue({
+      id: "gemini",
+      display_name: "Google Gemini",
+      status: "ready",
+      media_types: ["image", "video"],
+      capabilities: [],
+      fields: [],
+      supports_base_url: false,
+      console_url: null,
+    } as never);
+    renderPage();
+
+    const badge = await screen.findByText("已就绪");
+    expect(badge.tagName).toBe("SPAN");
+    expect(screen.queryByRole("link", { name: "已就绪" })).not.toBeInTheDocument();
   });
 
   it("loads version info when entering the about section", async () => {

@@ -54,8 +54,9 @@ function StatusBadge({ status, consoleUrl }: { status: string; consoleUrl?: stri
   const { t } = useTranslation("dashboard");
   const { label, style } = STATUS_BADGE_MAP[status] ?? STATUS_BADGE_MAP.unconfigured;
 
-  // 未配置且有控制台地址时，徽章渲染为跳转供应商控制台的外链按钮（申请 API Key 的引导入口）。
-  if (status === "unconfigured" && consoleUrl) {
+  // 无论是否已配置，只要有控制台地址就渲染为跳转供应商控制台的外链（新标签页打开）。
+  // 未配置时是申请 API Key 的引导入口；已配置/异常时也可随时回到供应商控制台核对。
+  if (consoleUrl) {
     return (
       <a
         href={consoleUrl}

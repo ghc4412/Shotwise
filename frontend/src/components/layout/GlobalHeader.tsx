@@ -18,6 +18,7 @@ import { ExportScopeDialog } from "./ExportScopeDialog";
 import { ProjectMenu } from "./ProjectMenu";
 import { PhaseStepper } from "./PhaseStepper";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import { ThemeAccentPicker } from "@/components/ui/ThemeAccentPicker";
 import { UserMenu } from "./UserMenu";
 
 import { API } from "@/api";
@@ -419,6 +420,7 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
 
           {/* Export — accent CTA */}
           <ThemeToggle compact />
+          <ThemeAccentPicker />
           <UserMenu compact />
 
           <div

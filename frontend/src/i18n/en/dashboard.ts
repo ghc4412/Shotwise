@@ -824,7 +824,7 @@ export default {
   'status_ready': 'Ready',
   'status_error': 'Error',
   'status_unconfigured': 'Unconfigured',
-  'provider_console_link': 'Get an API key at the provider console',
+  'provider_console_link': 'Open the provider console',
   'provider_enabled': 'Enabled',
   'provider_disabled': 'Disabled',
   'provider_toggle_enable': 'Enable this provider',

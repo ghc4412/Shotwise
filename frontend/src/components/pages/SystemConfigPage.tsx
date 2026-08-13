@@ -214,9 +214,9 @@ export function SystemConfigPage() {
               </div>
               {group.items.map(({ id, labelKey, Icon }) => {
                 const isActive = activeSection === id;
-                const hasIssue =
-                  (id === "providers" || id === "agent" || id === "media") &&
-                  configIssues.length > 0;
+                // 只点亮真正有问题的 section：按 ConfigIssue.tab 精确匹配，
+                // 而不是「任何一条 issue 就三个 tab 一起亮」。
+                const hasIssue = configIssues.some((issue) => issue.tab === id);
 
                 return (
                   <button
