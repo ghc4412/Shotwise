@@ -803,7 +803,7 @@ export default {
   'status_ready': 'Sẵn sàng',
   'status_error': 'Lỗi',
   'status_unconfigured': 'Chưa cấu hình',
-  'provider_console_link': 'Lấy API Key tại bảng điều khiển nhà cung cấp',
+  'provider_console_link': 'Mở bảng điều khiển nhà cung cấp',
   'provider_enabled': 'Đã bật',
   'provider_disabled': 'Đã tắt',
   'provider_toggle_enable': 'Bật nhà cung cấp này',
