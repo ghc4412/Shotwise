@@ -32,6 +32,8 @@ export interface CustomProviderInfo {
   image_max_workers: number | null;
   video_max_workers: number | null;
   audio_max_workers: number | null;
+  /** 供应商级启用开关；关闭后该供应商全部模型不再被生成链路选择/调用。 */
+  is_enabled: boolean;
 }
 
 export interface CustomProviderModelInfo {
@@ -92,6 +94,8 @@ export interface CustomProviderCreateRequest {
   image_max_workers?: number | null;
   video_max_workers?: number | null;
   audio_max_workers?: number | null;
+  /** 供应商级启用开关；省略 = 启用。 */
+  is_enabled?: boolean;
 }
 
 export interface CustomProviderFullUpdateRequest {
@@ -104,6 +108,8 @@ export interface CustomProviderFullUpdateRequest {
   image_max_workers: number | null;
   video_max_workers: number | null;
   audio_max_workers: number | null;
+  /** PUT 为供应商级开关权威来源：必填。 */
+  is_enabled: boolean;
 }
 
 export interface CustomProviderModelInput {

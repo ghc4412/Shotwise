@@ -159,7 +159,7 @@ async def _enumerate_candidates(
     供算价」，默认层与能力桶层同受此约束（能力过滤只加在桶层）。
     """
     statuses = await svc.get_all_providers_status()
-    ready_providers = {s.name for s in statuses if s.status == "ready"}
+    ready_providers = {s.name for s in statuses if s.status == "ready" and s.enabled}
 
     candidates: list[_ModelCandidate] = []
     provider_names: dict[str, str] = {}
@@ -186,8 +186,12 @@ async def _enumerate_candidates(
         repo = CustomProviderRepository(session)
         providers = await repo.list_providers()
         provider_name_map = {p.id: p.display_name for p in providers}
+        # 供应商级禁用：其模型整体不出现在可选后端列表
+        enabled_provider_ids = {p.id for p in providers if p.is_enabled}
         enabled_models = await repo.list_all_enabled_models()
         for model in enabled_models:
+            if model.provider_id not in enabled_provider_ids:
+                continue
             pid = make_provider_id(model.provider_id)
             candidates.append(
                 _ModelCandidate(

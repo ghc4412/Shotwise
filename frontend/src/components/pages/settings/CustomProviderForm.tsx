@@ -452,7 +452,7 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
     setSaving(true);
     try {
       if (isEdit && existing) {
-        // 单个事务原子更新 provider + models
+        // 单个事务原子更新 provider + models；供应商级开关随 PUT 全量回传（表单不改它）
         await API.fullUpdateCustomProvider(existing.id, {
           display_name: displayName,
           base_url: baseUrl,
@@ -461,6 +461,7 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
           image_max_workers: imageMax,
           video_max_workers: videoMax,
           audio_max_workers: audioMax,
+          is_enabled: existing.is_enabled,
         });
       } else {
         await API.createCustomProvider({

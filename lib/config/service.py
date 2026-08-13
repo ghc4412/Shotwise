@@ -31,6 +31,10 @@ _DEFAULT_REFERENCE_SINGLE_MAX_BYTES = 4 * 1024 * 1024
 _MAX_WORKERS_KEYS = frozenset({"image_max_workers", "video_max_workers", "audio_max_workers"})
 _MAX_WORKERS_CODE = "max_workers_must_be_positive_integer"
 
+# 预置供应商启用开关在 system_setting 表中的 key 前缀（值 "1"/"0"，缺省视为启用）。
+# 存 system_setting 而非 provider_config，避免污染 configured_keys / status 判定。
+_PROVIDER_ENABLED_PREFIX = "provider_enabled:"
+
 
 class ProviderConfigValueError(ValueError):
     """provider 配置值校验失败。
@@ -109,6 +113,8 @@ class ProviderStatus:
     configured_keys: list[str]
     missing_keys: list[str]
     models: dict[str, dict] | None = None  # model_id -> ModelInfo dict representation
+    # 供应商级启用开关（默认启用）；关闭后全局生效：生成链路不再选择/调用该供应商
+    enabled: bool = True
 
 
 class ConfigService:
@@ -152,6 +158,7 @@ class ConfigService:
         all_configured = await self._provider_repo.get_all_configured_keys_bulk()
         cred_repo = CredentialRepository(self._provider_repo.session)
         active_creds = await cred_repo.get_active_credentials_bulk()
+        enabled_map = await self.get_all_providers_enabled()
         statuses = []
         for name, meta in PROVIDER_REGISTRY.items():
             has_active = name in active_creds
@@ -181,9 +188,32 @@ class ConfigService:
                     configured_keys=configured,
                     missing_keys=missing,
                     models=models_dict,
+                    enabled=enabled_map.get(name, True),
                 )
             )
         return statuses
+
+    # ── 供应商级启用开关 ────────────────────────────────────────────
+
+    async def set_provider_enabled(self, provider: str, enabled: bool) -> None:
+        """设置预置供应商启用开关；关闭后该供应商不再被生成链路选择/调用。"""
+        self._validate_provider(provider)
+        await self._setting_repo.set(f"{_PROVIDER_ENABLED_PREFIX}{provider}", "1" if enabled else "0")
+
+    async def get_provider_enabled(self, provider: str) -> bool:
+        """读取预置供应商启用开关；未设置时视为启用。"""
+        self._validate_provider(provider)
+        raw = await self._setting_repo.get(f"{_PROVIDER_ENABLED_PREFIX}{provider}", "1")
+        return raw != "0"
+
+    async def get_all_providers_enabled(self) -> dict[str, bool]:
+        """一次性读取全部预置供应商的启用开关（缺省视为启用）。"""
+        settings = await self._setting_repo.get_all()
+        out: dict[str, bool] = {}
+        for name in PROVIDER_REGISTRY:
+            raw = settings.get(f"{_PROVIDER_ENABLED_PREFIX}{name}", "1")
+            out[name] = raw != "0"
+        return out
 
     async def get_all_provider_configs(self) -> dict[str, dict[str, str]]:
         """Get raw config for ALL providers in a single query."""

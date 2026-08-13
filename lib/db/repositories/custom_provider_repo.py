@@ -45,6 +45,7 @@ class CustomProviderRepository(BaseRepository):
         image_max_workers: int | None = None,
         video_max_workers: int | None = None,
         audio_max_workers: int | None = None,
+        is_enabled: bool = True,
     ) -> CustomProvider:
         """创建供应商，可选同时创建模型列表。"""
         provider = CustomProvider(
@@ -55,6 +56,7 @@ class CustomProviderRepository(BaseRepository):
             image_max_workers=image_max_workers,
             video_max_workers=video_max_workers,
             audio_max_workers=audio_max_workers,
+            is_enabled=is_enabled,
         )
         self.session.add(provider)
         await self.session.flush()  # 获取 provider.id
@@ -180,6 +182,28 @@ class CustomProviderRepository(BaseRepository):
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_model_with_provider(
+        self, provider_id: int, model_id: str
+    ) -> tuple[CustomProvider, CustomProviderModel] | None:
+        """一次 join 查询取模型行 + 其供应商行。
+
+        执行链路校验供应商级/模型级启用状态时用本方法，避免在热路径上额外查一次 provider 行
+        （``docs/adr`` 有性能护栏测试守住此调用面）。模型不存在时返回 None。
+        """
+        stmt = (
+            select(CustomProvider, CustomProviderModel)
+            .join(CustomProviderModel, CustomProviderModel.provider_id == CustomProvider.id)
+            .where(
+                CustomProviderModel.provider_id == provider_id,
+                CustomProviderModel.model_id == model_id,
+            )
+        )
+        result = await self.session.execute(stmt)
+        row = result.first()
+        if row is None:
+            return None
+        return row[0], row[1]
 
     async def resolve_price(self, provider: str, model: str) -> CustomProviderPrice:
         """解析自定义供应商的声明价格，供记账与预估两侧共用，杜绝同源复刻的口径漂移。

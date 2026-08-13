@@ -234,6 +234,8 @@ class CapacityTable:
 
             repo = CustomProviderRepository(session)
             for provider, models in await repo.list_providers_with_models():
+                if not provider.is_enabled:
+                    continue
                 pid = provider.provider_id  # "custom-{id}"
                 media_types = {endpoint_to_media_type(m.endpoint) for m in models if m.is_enabled}
                 # 自定义供应商不在内置注册表，无声明默认层 → 两层回退：列有值取列值，

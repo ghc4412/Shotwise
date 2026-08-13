@@ -32,6 +32,10 @@ export interface ProviderInfo {
   configured_keys: string[];
   missing_keys: string[];
   models: Record<string, ModelInfoResponse>;
+  // 供应商控制台/平台地址（后端按 registry console_url 返回，单一真相源）；未声明时为 null
+  console_url?: string | null;
+  // 供应商级启用开关（后端按 system_setting 返回）；关闭后生成链路不再选择/调用该供应商
+  enabled: boolean;
 }
 
 export interface ProviderField {
@@ -66,6 +70,10 @@ export interface ProviderConfigDetail {
   // 凭证「二选一」分组：满足任一组（组内字段全填）即视为凭证完整；单组场景（绝大多数
   // provider）等价于「全部 secret_fields 必填」的旧语义。可灵为 [["api_key"], ["access_key", "secret_key"]]。
   secret_field_groups: string[][];
+  // 供应商控制台/平台地址（后端按 registry console_url 返回，单一真相源）；未声明时为 null
+  console_url?: string | null;
+  // 供应商级启用开关（后端按 system_setting 返回）；关闭后生成链路不再选择/调用该供应商
+  enabled: boolean;
 }
 
 export interface ProviderTestResult {

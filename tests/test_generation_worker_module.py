@@ -410,6 +410,7 @@ class TestCapacityTable:
             image_max_workers=image,
             video_max_workers=video,
             audio_max_workers=audio,
+            is_enabled=True,
         )
         models = [SimpleNamespace(endpoint=ep, is_enabled=True) for ep in endpoints]
         return provider, models

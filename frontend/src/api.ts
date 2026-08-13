@@ -2016,6 +2016,14 @@ class API {
     });
   }
 
+  /** 开关预置供应商的启用状态；关闭后生成链路不再选择/调用该供应商。 */
+  static async setProviderEnabled(id: string, enabled: boolean): Promise<void> {
+    return this.request(`/providers/${encodeURIComponent(id)}/enabled`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    });
+  }
+
   /** 测试指定 provider 的连接。 */
   static async testProviderConnection(id: string, credentialId?: number): Promise<ProviderTestResult> {
     const params = credentialId != null ? `?credential_id=${credentialId}` : "";

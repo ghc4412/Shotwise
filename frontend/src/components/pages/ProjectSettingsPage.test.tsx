@@ -356,6 +356,7 @@ describe("ProjectSettingsPage – model_settings resolution", () => {
         capabilities: [],
         configured_keys: [],
         missing_keys: [],
+        enabled: true,
         models: {
           "veo-3": {
             display_name: "Veo 3",

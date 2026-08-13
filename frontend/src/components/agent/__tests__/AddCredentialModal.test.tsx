@@ -309,6 +309,7 @@ describe("AddCredentialModal", () => {
       image_max_workers: null,
       video_max_workers: null,
       audio_max_workers: null,
+      is_enabled: true,
     };
 
     it("hides import button when no custom providers configured", async () => {

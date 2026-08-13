@@ -100,6 +100,10 @@ class ProviderSummary(BaseModel):
     configured_keys: list[str]
     missing_keys: list[str]
     models: dict[str, ModelInfoResponse]
+    # 供应商控制台/平台地址（真相源：registry console_url）；未声明时为 None
+    console_url: str | None = None
+    # 供应商级启用开关（默认启用）；关闭后全局生效：生成链路不再选择/调用该供应商
+    enabled: bool = True
 
 
 class ProvidersListResponse(BaseModel):
@@ -145,6 +149,10 @@ class ProviderConfigResponse(BaseModel):
     # （真相源：registry credential_groups；空声明时 router 回退为 [全部 secret_fields]，
     # 与迁移前「全部必填」语义等价）。
     secret_field_groups: list[list[str]]
+    # 供应商控制台/平台地址（真相源：registry console_url）；未声明时为 None
+    console_url: str | None = None
+    # 供应商级启用开关（默认启用）；关闭后生成链路不再选择/调用该供应商
+    enabled: bool = True
 
 
 class ConnectionTestResponse(BaseModel):
@@ -396,9 +404,37 @@ async def list_providers(
                 configured_keys=s.configured_keys,
                 missing_keys=s.missing_keys,
                 models=models,
+                console_url=meta.console_url if meta is not None else None,
+                enabled=s.enabled,
             )
         )
     return ProvidersListResponse(providers=providers)
+
+
+class ProviderEnabledRequest(BaseModel):
+    enabled: bool
+
+
+@router.patch("/{provider_id}/enabled", status_code=204)
+async def set_provider_enabled(
+    provider_id: str,
+    body: ProviderEnabledRequest,
+    request: Request,
+    _t: Translator,
+    _user: AdminUser,
+    session: AsyncSession = Depends(get_async_session),
+) -> Response:
+    """开关预置供应商的启用状态；关闭后生成链路不再选择/调用该供应商。"""
+    _validate_provider(provider_id, _t)
+
+    svc = ConfigService(session)
+    await svc.set_provider_enabled(provider_id, body.enabled)
+    await session.commit()
+
+    # 配置变更后刷新缓存和并发池
+    await _invalidate_caches(request)
+
+    return Response(status_code=204)
 
 
 @router.get("/{provider_id}/config", response_model=ProviderConfigResponse)
@@ -455,6 +491,8 @@ async def get_provider_config(
         supports_base_url="base_url" in meta.optional_keys,
         secret_fields=secret_fields,
         secret_field_groups=secret_field_groups,
+        console_url=meta.console_url,
+        enabled=await svc.get_provider_enabled(provider_id),
     )
 
 

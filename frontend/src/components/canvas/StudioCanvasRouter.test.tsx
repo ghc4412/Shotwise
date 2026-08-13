@@ -548,6 +548,7 @@ describe("StudioCanvasRouter", () => {
           capabilities: [],
           configured_keys: [],
           missing_keys: [],
+          enabled: true,
           models: {
             "model-1": {
               display_name: "Model 1",
@@ -617,6 +618,7 @@ describe("StudioCanvasRouter", () => {
           capabilities: [],
           configured_keys: [],
           missing_keys: [],
+          enabled: true,
           models: {
             "veo-3.1": {
               display_name: "Veo 3.1",

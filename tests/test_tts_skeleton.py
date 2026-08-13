@@ -303,15 +303,26 @@ class TestWorkerAudioLane:
 
 
 class TestExtractProviderAudio:
-    async def test_audio_payload_provider_routes_to_audio_resolver(self):
+    async def test_audio_payload_provider_routes_to_audio_resolver(self, monkeypatch):
         from lib.generation_worker import _extract_provider
 
-        # payload 携带历史 audio_provider → audio lane 投影短路取到
-        task = {
-            "payload": {"audio_provider": "dashscope", "audio_model": "qwen3-tts-flash"},
-            "task_type": "tts",
-        }
-        assert await _extract_provider(task) == "dashscope"
+        # _extract_provider 内部用模块级 async_session_factory（默认连 dev 库）做 payload
+        # 供应商启用校验；dev 库的真实 system_setting（如某供应商被禁用）会污染本断言，
+        # 故替换为内存库隔离。
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
+        monkeypatch.setattr("lib.db.async_session_factory", factory)
+        try:
+            # payload 携带历史 audio_provider → audio lane 投影短路取到
+            task = {
+                "payload": {"audio_provider": "dashscope", "audio_model": "qwen3-tts-flash"},
+                "task_type": "tts",
+            }
+            assert await _extract_provider(task) == "dashscope"
+        finally:
+            await engine.dispose()
 
 
 class TestOrphanAudioRestartLost:

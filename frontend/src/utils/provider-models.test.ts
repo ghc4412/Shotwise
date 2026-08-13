@@ -47,6 +47,7 @@ const VEO_PROVIDERS: ProviderInfo[] = [
     capabilities: [],
     configured_keys: [],
     missing_keys: [],
+    enabled: true,
     models: {
       "veo-3.1-generate-preview": {
         display_name: "Veo 3.1",
