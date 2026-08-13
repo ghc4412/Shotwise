@@ -54,8 +54,12 @@ CLAUDE.local.md
 # Local Codex runtime metadata
 .codex/
 
+# Local Reasonix tool runtime metadata and config
+.reasonix/
+reasonix.toml
+
 # Frontend build artifacts
-frontend/node_modules/
+node_modules/
 frontend/dist/
 frontend/.vite/
 *.tsbuildinfo
