@@ -88,14 +88,15 @@ export function PresetIcon({ iconKey, size = 20, className }: Props) {
         alt={iconKey ?? ""}
         width={size}
         height={size}
-        className={`rounded-[3px] object-cover ${className ?? ""}`}
+        aria-hidden="true"
+        className={`pointer-events-none rounded-[3px] object-cover ${className ?? ""}`}
       />
     );
 
   const Icon = loaded && loaded.key === iconKey ? loaded.component : null;
   if (Icon)
     return (
-      <span className={className}>
+      <span aria-hidden="true" className={`pointer-events-none ${className ?? ""}`}>
         <Icon size={size} />
       </span>
     );
@@ -104,7 +105,8 @@ export function PresetIcon({ iconKey, size = 20, className }: Props) {
   return (
     <span
       data-testid="preset-icon-monogram"
-      className={`inline-flex items-center justify-center rounded-md bg-bg-grad-a text-[11px] font-bold text-text-3 ${className ?? ""}`}
+      aria-hidden="true"
+      className={`pointer-events-none inline-flex items-center justify-center rounded-md bg-bg-grad-a text-[11px] font-bold text-text-3 ${className ?? ""}`}
       style={{ width: size, height: size }}
     >
       {letter}
