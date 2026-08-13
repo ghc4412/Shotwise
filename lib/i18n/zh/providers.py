@@ -5,6 +5,7 @@ MESSAGES: dict[str, str] = {
     "provider_name_gemini-aistudio": "AI Studio",
     "provider_name_gemini-vertex": "Vertex AI",
     "provider_name_ark": "火山方舟",
+    "provider_name_ark-coding-plan": "火山方舟 Coding Plan",
     "provider_name_ark-agent-plan": "火山方舟 Agent Plan",
     "provider_name_grok": "Grok",
     "provider_name_openai": "OpenAI",
@@ -27,7 +28,11 @@ MESSAGES: dict[str, str] = {
     "provider_desc_agnes": "Agnes 多模态平台（OpenAI 风格），使用 Bearer API Key 鉴权；当前支持图像 / 文本 / 视频生成。",
     # Agent preset notes (lib/agent_provider_catalog.py)
     "preset_notes_deepseek": "DeepSeek 官方 Anthropic 兼容端点，需 sk- 开头的 API Key",
+    "preset_notes_alibaba_coding_plan": "阿里云百炼 Coding Plan 专属 Anthropic 兼容端点；使用 sk-sp- 开头的套餐 API Key",
     "preset_notes_xiaomi_mimo": "小米 MiMo 仅支持已知模型名，未公开模型列表",
-    "preset_notes_ark_coding_plan": "火山方舟 Coding Plan 套餐",
-    "preset_notes_ark_agent_plan": "火山方舟 Agent Plan 套餐",
+    "preset_notes_ark_coding_plan": "火山方舟 Coding Plan 套餐；不支持模型自动发现，请从模型名下拉选择或手动输入官方支持的模型名",
+    "preset_notes_ark_agent_plan": "火山方舟 Agent Plan 套餐；不支持模型自动发现，请从模型名下拉选择或手动输入官方支持的模型名",
+    "preset_notes_tencent_tokenhub_coding": "腾讯云 TokenHub Coding Plan 专属 Anthropic 兼容端点；使用 sk-sp- 开头的套餐 API Key",
+    "preset_notes_openrouter": "OpenRouter 的 Anthropic Messages 兼容网关；模型名使用 provider/model 形式",
+    "preset_notes_siliconflow": "硅基流动 Anthropic Messages 兼容端点；可在模型广场选择支持的模型",
 }

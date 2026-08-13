@@ -5,6 +5,7 @@ MESSAGES: dict[str, str] = {
     "provider_name_gemini-aistudio": "AI Studio",
     "provider_name_gemini-vertex": "Vertex AI",
     "provider_name_ark": "Volcengine Ark",
+    "provider_name_ark-coding-plan": "Volcengine Ark Coding Plan",
     "provider_name_ark-agent-plan": "Volcengine Ark Agent Plan",
     "provider_name_grok": "Grok",
     "provider_name_openai": "OpenAI",
@@ -27,7 +28,11 @@ MESSAGES: dict[str, str] = {
     "provider_desc_agnes": "Nền tảng đa phương thức Agnes (phong cách OpenAI), xác thực bằng Bearer API key; hiện hỗ trợ tạo ảnh, văn bản và video.",
     # Agent preset notes (lib/agent_provider_catalog.py)
     "preset_notes_deepseek": "Endpoint Anthropic-compat chính thức của DeepSeek; cần API key sk-.",
+    "preset_notes_alibaba_coding_plan": "Endpoint tương thích Anthropic của Alibaba Cloud Model Studio Coding Plan; dùng API key gói sk-sp-.",
     "preset_notes_xiaomi_mimo": "Xiaomi MiMo chỉ chấp nhận tên model đã biết; không có danh sách model công khai.",
-    "preset_notes_ark_coding_plan": "Gói Volcengine Ark Coding Plan",
-    "preset_notes_ark_agent_plan": "Gói Volcengine Ark Agent Plan",
+    "preset_notes_ark_coding_plan": "Gói Volcengine Ark Coding Plan; không hỗ trợ tự động phát hiện model — hãy chọn từ danh sách model hoặc nhập tên model được hỗ trợ chính thức.",
+    "preset_notes_ark_agent_plan": "Gói Volcengine Ark Agent Plan; không hỗ trợ tự động phát hiện model — hãy chọn từ danh sách model hoặc nhập tên model được hỗ trợ chính thức.",
+    "preset_notes_tencent_tokenhub_coding": "Endpoint tương thích Anthropic của Tencent Cloud TokenHub Coding Plan; dùng API key gói sk-sp-.",
+    "preset_notes_openrouter": "Cổng tương thích Anthropic Messages của OpenRouter; ID model dùng định dạng provider/model.",
+    "preset_notes_siliconflow": "Endpoint tương thích Anthropic Messages của SiliconFlow; chọn model được hỗ trợ trong danh mục của họ.",
 }
