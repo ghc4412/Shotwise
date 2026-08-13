@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { PHASE_ORDER } from "@/types";
+import { useAppStore } from "@/stores/app-store";
 
 interface PhaseStepperProps {
   currentPhase: string | undefined;
@@ -8,9 +9,14 @@ interface PhaseStepperProps {
 /**
  * 顶栏阶段步进器：胶囊样式（圆形号 + 标签 + 短分隔线）。
  * 当前阶段高亮 accent 紫色，已完成阶段显示弱化的连接线。
+ *
+ * 日间模式走浅色主题配色（批注诉求）：活动胶囊用主题色底、当前步骤圆圈白底深字、
+ * 其余步骤序号主题色底深字；夜间保持深色霓虹风格。
  */
 export function PhaseStepper({ currentPhase }: PhaseStepperProps) {
   const { t } = useTranslation("dashboard");
+  const theme = useAppStore((s) => s.theme);
+  const isLight = theme === "light";
   const currentIdx = PHASE_ORDER.findIndex((p) => p === currentPhase);
 
   return (
@@ -34,12 +40,19 @@ export function PhaseStepper({ currentPhase }: PhaseStepperProps) {
                 className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors"
                 style={
                   isActive
-                    ? {
-                        color: "var(--color-text)",
-                        background: "linear-gradient(180deg, oklch(0.30 0.012 265), oklch(0.26 0.012 265))",
-                        boxShadow:
-                          "0 0 0 1px var(--color-hairline-strong), 0 1px 2px oklch(0 0 0 / 0.3)",
-                      }
+                    ? isLight
+                      ? {
+                          color: "oklch(0.14 0.02 250)",
+                          background: "var(--color-accent)",
+                          boxShadow:
+                            "0 0 0 1px var(--color-hairline-strong), 0 1px 2px oklch(0 0 0 / 0.18)",
+                        }
+                      : {
+                          color: "var(--color-text)",
+                          background: "linear-gradient(180deg, oklch(0.30 0.012 265), oklch(0.26 0.012 265))",
+                          boxShadow:
+                            "0 0 0 1px var(--color-hairline-strong), 0 1px 2px oklch(0 0 0 / 0.3)",
+                        }
                     : { color: "var(--color-text-3)", background: "transparent" }
                 }
               >
@@ -47,15 +60,26 @@ export function PhaseStepper({ currentPhase }: PhaseStepperProps) {
                   className="num inline-grid h-[15px] w-[15px] place-items-center rounded-full text-[10px] font-bold"
                   style={
                     isActive
-                      ? {
-                          background: "var(--color-accent)",
-                          color: "oklch(0.12 0 0)",
-                          boxShadow: "0 0 8px -1px var(--color-accent-glow)",
-                        }
-                      : {
-                          background: "oklch(0.32 0.012 265)",
-                          color: "var(--color-text-3)",
-                        }
+                      ? isLight
+                        ? {
+                            background: "var(--color-surface-2)",
+                            color: "oklch(0.14 0.02 250)",
+                            boxShadow: "0 0 0 1px var(--color-hairline-soft)",
+                          }
+                        : {
+                            background: "var(--color-accent)",
+                            color: "oklch(0.12 0 0)",
+                            boxShadow: "0 0 8px -1px var(--color-accent-glow)",
+                          }
+                      : isLight
+                        ? {
+                            background: "var(--color-accent)",
+                            color: "oklch(0.14 0.02 250)",
+                          }
+                        : {
+                            background: "oklch(0.32 0.012 265)",
+                            color: "var(--color-text-3)",
+                          }
                   }
                 >
                   {idx + 1}

@@ -159,6 +159,8 @@ html {
     --panel-route-frame-bg: linear-gradient(180deg, oklch(0.19 0.011 268 / 0.6), oklch(0.15 0.010 262 / 0.6));
     --panel-spec-bar-bg: oklch(0.18 0.010 265 / 0.35);
     --panel-thumb-bg: linear-gradient(135deg, oklch(0.30 0.04 295), oklch(0.18 0.012 265));
+    /* Popover 面板默认背景 — 深色值与原 POPOVER_BG 硬编码一致 */
+    --popover-bg: oklch(0.182 0.011 270);
 }
 
 html.theme-light {
@@ -252,16 +254,18 @@ html.theme-light {
     --lobby-step-badge-done: linear-gradient(180deg, oklch(0.72 0.06 295 / 0.45), oklch(0.78 0.04 280 / 0.45));
     --lobby-step-badge-inactive: oklch(0.94 0.012 250 / 0.6);
 
-    /* 通用面板/卡片背景 — 浅色覆盖：亮底半透明，与弹窗/卡片语义同构 */
-    --panel-card-bg: linear-gradient(180deg, oklch(0.995 0.004 250 / 0.92), oklch(0.955 0.010 250 / 0.92));
+    /* 通用面板/卡片背景 — 浅色覆盖：白色加一定透明度（毛玻璃白），与弹窗/卡片语义同构 */
+    --panel-card-bg: linear-gradient(180deg, oklch(1 0 0 / 0.72), oklch(0.985 0.004 250 / 0.64));
     --panel-dropdown-bg: linear-gradient(180deg, oklch(0.995 0.004 250 / 0.98), oklch(0.965 0.008 250 / 0.98));
     --panel-route-frame-bg: linear-gradient(180deg, oklch(0.99 0.004 250 / 0.9), oklch(0.95 0.010 250 / 0.9));
     --panel-spec-bar-bg: oklch(0.955 0.010 250 / 0.8);
     --panel-thumb-bg: linear-gradient(135deg, oklch(0.90 0.03 295), oklch(0.78 0.02 265));
+    /* Popover 面板默认背景 — 浅色覆盖：近白不透明，与 --color-bg-grad-a 同构 */
+    --popover-bg: oklch(0.995 0.004 250);
 
-    /* 玻璃弹窗 / 编辑器日间覆盖 — 亮底毛玻璃，与 --panel-dropdown-bg 同构 */
+    /* 玻璃弹窗 / 编辑器日间覆盖 — 白色加 50% 透明度（毛玻璃白），与 --panel-dropdown-bg 同构 */
     .shotwise-glass-panel {
-        background: linear-gradient(180deg, oklch(0.995 0.004 250 / 0.97), oklch(0.955 0.010 250 / 0.97));
+        background: linear-gradient(180deg, oklch(1 0 0 / 0.5), oklch(0.985 0.004 250 / 0.5));
     }
     .shotwise-btn-secondary {
         background: oklch(0.92 0.014 250 / 0.9);
