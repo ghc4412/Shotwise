@@ -60,7 +60,7 @@ async def list_preset_providers(_t: Translator, _user: AdminUser) -> PresetProvi
         providers=[
             PresetProviderResponse(
                 id=p.id,
-                display_name=p.display_name,
+                display_name=_t(p.name_i18n_key) if p.name_i18n_key else p.display_name,
                 icon_key=p.icon_key,
                 messages_url=p.messages_url,
                 discovery_url=p.discovery_url,

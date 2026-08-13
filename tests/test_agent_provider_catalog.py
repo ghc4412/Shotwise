@@ -26,21 +26,21 @@ def test_anthropic_official_present() -> None:
     assert p.is_recommended is False
 
 
-def test_shotwise_is_only_recommended() -> None:
-    """Shotwise 是用户表格中唯一标推荐的预设;其他全部不推荐."""
+def test_alibaba_coding_plan_is_only_recommended() -> None:
+    """阿里云 Coding Plan 是推荐的真实 Anthropic 兼容预设。"""
     recommended = [p for p in list_presets() if p.is_recommended]
-    assert [p.id for p in recommended] == ["shotwise"]
+    assert [p.id for p in recommended] == ["alibaba-coding-plan"]
 
 
 def test_get_preset_unknown_returns_none() -> None:
     assert get_preset("does-not-exist") is None
 
 
-def test_anthropic_official_first_shotwise_second() -> None:
-    """显示顺序:官方第一,Shotwise API 第二."""
+def test_anthropic_official_first_alibaba_coding_plan_second() -> None:
+    """显示顺序：官方第一，阿里云 Coding Plan 第二。"""
     presets = list_presets()
     assert presets[0].id == "anthropic-official"
-    assert presets[1].id == "shotwise"
+    assert presets[1].id == "alibaba-coding-plan"
 
 
 def test_no_duplicate_ids() -> None:
@@ -59,7 +59,7 @@ def test_curated_preset_set() -> None:
     """目录与用户提供的表格保持一致;11 条预设."""
     expected = {
         "anthropic-official",
-        "shotwise",
+        "alibaba-coding-plan",
         "glm-cn",
         "glm-intl",
         "xiaomi-mimo",
@@ -69,6 +69,9 @@ def test_curated_preset_set() -> None:
         "kimi",
         "ark-coding-plan",
         "ark-agent-plan",
+        "tencent-tokenhub-coding",
+        "openrouter",
+        "siliconflow",
     }
     actual = {p.id for p in list_presets()}
     assert actual == expected
@@ -78,7 +81,7 @@ def test_default_models_match_table() -> None:
     """用户表格指定的默认模型."""
     expected = {
         "anthropic-official": "",
-        "shotwise": "gpt-5.5",
+        "alibaba-coding-plan": "",
         "glm-cn": "glm-5.1",
         "glm-intl": "glm-5.1",
         "xiaomi-mimo": "mimo-v2.5-pro",
@@ -88,6 +91,9 @@ def test_default_models_match_table() -> None:
         "kimi": "",
         "ark-coding-plan": "",
         "ark-agent-plan": "",
+        "tencent-tokenhub-coding": "",
+        "openrouter": "anthropic/claude-sonnet-4",
+        "siliconflow": "Pro/zai-org/GLM-4.7",
     }
     actual = {p.id: p.default_model for p in list_presets()}
     assert actual == expected

@@ -5,6 +5,7 @@ MESSAGES: dict[str, str] = {
     "provider_name_gemini-aistudio": "AI Studio",
     "provider_name_gemini-vertex": "Vertex AI",
     "provider_name_ark": "Volcengine Ark",
+    "provider_name_ark-coding-plan": "Volcengine Ark Coding Plan",
     "provider_name_ark-agent-plan": "Volcengine Ark Agent Plan",
     "provider_name_grok": "Grok",
     "provider_name_openai": "OpenAI",
@@ -27,7 +28,11 @@ MESSAGES: dict[str, str] = {
     "provider_desc_agnes": "Agnes multimodal platform (OpenAI-style), authenticated with a Bearer API key; currently supports image, text and video generation.",
     # Agent preset notes (lib/agent_provider_catalog.py)
     "preset_notes_deepseek": "DeepSeek official Anthropic-compat endpoint; needs sk- prefixed key.",
+    "preset_notes_alibaba_coding_plan": "Alibaba Cloud Model Studio Coding Plan Anthropic-compatible endpoint; use an sk-sp- plan API key.",
     "preset_notes_xiaomi_mimo": "Xiaomi MiMo only accepts known model names; no public model list.",
-    "preset_notes_ark_coding_plan": "Volcengine Ark Coding Plan",
-    "preset_notes_ark_agent_plan": "Volcengine Ark Agent Plan",
+    "preset_notes_ark_coding_plan": "Volcengine Ark Coding Plan; no model auto-discovery — pick from the model dropdown or type an officially supported model name manually.",
+    "preset_notes_ark_agent_plan": "Volcengine Ark Agent Plan; no model auto-discovery — pick from the model dropdown or type an officially supported model name manually.",
+    "preset_notes_tencent_tokenhub_coding": "Tencent Cloud TokenHub Coding Plan Anthropic-compatible endpoint; use an sk-sp- plan API key.",
+    "preset_notes_openrouter": "OpenRouter's Anthropic Messages-compatible gateway; model IDs use provider/model format.",
+    "preset_notes_siliconflow": "SiliconFlow's Anthropic Messages-compatible endpoint; choose a supported model from its catalog.",
 }

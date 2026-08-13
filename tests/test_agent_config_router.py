@@ -80,9 +80,24 @@ async def test_list_preset_providers_returns_catalog(authed_client) -> None:
     assert deepseek["discovery_url"] == "https://api.deepseek.com"
     assert deepseek["default_model"] == "deepseek-v4-pro"
     assert deepseek["icon_key"] == "DeepSeek"
-    shotwise = next(p for p in data["providers"] if p["id"] == "shotwise")
-    assert shotwise["is_recommended"] is True
-    assert shotwise["api_key_url"] == "https://api.shotwise.com/"
+    alibaba = next(p for p in data["providers"] if p["id"] == "alibaba-coding-plan")
+    assert alibaba["is_recommended"] is True
+    assert alibaba["messages_url"] == "https://coding.dashscope.aliyuncs.com/apps/anthropic"
+    assert alibaba["api_key_url"] == "https://bailian.console.aliyun.com/"
+    assert "openrouter" in ids
+    siliconflow = next(p for p in data["providers"] if p["id"] == "siliconflow")
+    assert siliconflow["icon_key"] == "SiliconCloud"
+    assert siliconflow["messages_url"] == "https://api.siliconflow.cn"
+    # ark-coding-plan / ark-agent-plan 的 display_name 走 name_i18n_key（默认 locale 为 zh）
+    ark_coding = next(p for p in data["providers"] if p["id"] == "ark-coding-plan")
+    assert ark_coding["display_name"] == "火山方舟 Coding Plan"
+    assert ark_coding["messages_url"] == "https://ark.cn-beijing.volces.com/api/coding"
+    ark_agent = next(p for p in data["providers"] if p["id"] == "ark-agent-plan")
+    assert ark_agent["display_name"] == "火山方舟 Agent Plan"
+    assert ark_agent["messages_url"] == "https://ark.cn-beijing.volces.com/api/plan"
+    # 方舟不支持模型自动发现 → 预设提供官方模型名建议列表
+    assert "deepseek-v4-flash" in ark_coding["suggested_models"]
+    assert "ark-code-latest" in ark_agent["suggested_models"]
 
 
 @pytest.mark.asyncio
