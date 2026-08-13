@@ -875,6 +875,42 @@ class TestTestProviderConnection:
         assert resp.success is True
 
     @pytest.mark.unit
+    def test_agnes_registered_in_dispatch(self):
+        # agnes 作为内置 provider 暴露在设置页，连接测试必须有 dispatcher，
+        # 否则点"测试连接"会落到 unsupported_test 分支（即便 API Key 有效）
+        assert "agnes" in providers._TEST_DISPATCH
+
+    @pytest.mark.unit
+    def test_agnes_test_fn_uses_v1_base_and_filters_models(self):
+        from types import SimpleNamespace
+
+        captured: dict = {}
+
+        class _FakeModels:
+            def list(self):
+                return SimpleNamespace(
+                    data=[
+                        SimpleNamespace(id="agnes-2.0-flash"),
+                        SimpleNamespace(id="agnes-image-2.1-flash"),
+                        SimpleNamespace(id="embedding-3"),
+                    ]
+                )
+
+        class _FakeOpenAI:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+                self.models = _FakeModels()
+
+        with patch("openai.OpenAI", _FakeOpenAI):
+            resp = providers._test_agnes({"api_key": "sk", "base_url": "https://apihub.agnes-ai.com"}, lambda k, **kw: k)
+        # host → {host}/v1（OpenAI 协议，apihub 网关缺省同样归一化），api_key 透传
+        assert captured["base_url"] == "https://apihub.agnes-ai.com/v1"
+        assert captured["api_key"] == "sk"
+        # 仅暴露 agnes 模型，过滤掉 embedding 等
+        assert resp.available_models == ["agnes-2.0-flash", "agnes-image-2.1-flash"]
+        assert resp.success is True
+
+    @pytest.mark.unit
     def test_kling_registered_in_dispatch(self):
         # kling 作为内置 provider 暴露在设置页，连接测试必须有 dispatcher，
         # 否则点"测试连接"会落到 unsupported_test 分支（即便凭证有效）
