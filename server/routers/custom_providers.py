@@ -194,12 +194,14 @@ class CreateProviderRequest(BaseModel):
     image_max_workers: MaxWorkers
     video_max_workers: MaxWorkers
     audio_max_workers: MaxWorkers
+    is_enabled: bool = True
 
 
 class UpdateProviderRequest(BaseModel):
     display_name: str | None = None
     base_url: str | None = None
     api_key: str | None = None
+    is_enabled: bool | None = None
 
 
 class FullUpdateProviderRequest(BaseModel):
@@ -213,6 +215,8 @@ class FullUpdateProviderRequest(BaseModel):
     image_max_workers: MaxWorkers
     video_max_workers: MaxWorkers
     audio_max_workers: MaxWorkers
+    # 供应商级启用开关（PUT 全量语义，必填）
+    is_enabled: bool = True
 
 
 class ProviderConnectionRequest(BaseModel):
@@ -259,6 +263,8 @@ class ProviderResponse(BaseModel):
     image_max_workers: int | None = None
     video_max_workers: int | None = None
     audio_max_workers: int | None = None
+    # 供应商级启用开关（默认启用）；关闭后该供应商全部模型不再被生成链路选择/调用
+    is_enabled: bool = True
 
 
 class ConnectionTestResponse(BaseModel):
@@ -394,6 +400,7 @@ def _provider_to_response(provider, models, global_bucket_refs: dict[str, list[s
         image_max_workers=provider.image_max_workers,
         video_max_workers=provider.video_max_workers,
         audio_max_workers=provider.audio_max_workers,
+        is_enabled=provider.is_enabled,
     )
 
 
@@ -625,6 +632,7 @@ async def create_provider(
         image_max_workers=body.image_max_workers,
         video_max_workers=body.video_max_workers,
         audio_max_workers=body.audio_max_workers,
+        is_enabled=body.is_enabled,
     )
     await session.commit()
     await _invalidate_caches(request)
@@ -688,6 +696,8 @@ async def update_provider(
         kwargs["base_url"] = body.base_url
     if body.api_key is not None:
         kwargs["api_key"] = body.api_key
+    if body.is_enabled is not None:
+        kwargs["is_enabled"] = body.is_enabled
 
     if not kwargs:
         raise HTTPException(status_code=400, detail=_t("at_least_one_field_required"))
@@ -724,6 +734,8 @@ async def full_update_provider(
         "image_max_workers": body.image_max_workers,
         "video_max_workers": body.video_max_workers,
         "audio_max_workers": body.audio_max_workers,
+        # PUT 为供应商级开关的权威来源：始终写入
+        "is_enabled": body.is_enabled,
     }
     if body.api_key is not None:
         kwargs["api_key"] = body.api_key

@@ -92,6 +92,9 @@ class ProviderMeta:
     secret_keys: list[str] = field(default_factory=list)
     models: dict[str, ModelInfo] = field(default_factory=dict)
     default_base_url: str | None = None
+    # 供应商控制台/平台地址：用于「未配置」状态下引导用户跳转申请 API Key。
+    # 若为 None 则不渲染控制台入口（自定义供应商无此字段，前端不展示）。
+    console_url: str | None = None
     # 凭证「二选一」分组：非空时凭证表单按「满足任一组」校验（组内字段全填），而非默认的
     # 「required_keys ∩ secret_keys 全填」。目前仅可灵需要（api_key 单键 / access_key+secret_key
     # 双键二选一）；空列表（默认）保持原语义不变，由 router 按
@@ -374,6 +377,7 @@ def _agnes_video_pricing(model_id: str, per_second: float) -> PerSecondMatrix:
 PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
     "gemini-aistudio": ProviderMeta(
         display_name="AI Studio",
+        console_url="https://aistudio.google.com/apikey",
         description="Google AI Studio 提供 Gemini 系列模型，支持图片和视频生成，适合快速原型和个人项目。",
         required_keys=["api_key"],
         optional_keys=["base_url", "image_rpm", "video_rpm", "request_gap", "image_max_workers", "video_max_workers"],
@@ -458,6 +462,7 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
     ),
     "gemini-vertex": ProviderMeta(
         display_name="Vertex AI",
+        console_url="https://console.cloud.google.com/vertex-ai",
         description="Google Cloud Vertex AI 企业级平台，支持 Gemini 和 Imagen 模型，提供更高配额和音频生成能力。",
         required_keys=["credentials_path"],
         optional_keys=["gcs_bucket", "image_rpm", "video_rpm", "request_gap", "image_max_workers", "video_max_workers"],
@@ -534,6 +539,7 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
     ),
     "ark": ProviderMeta(
         display_name="火山方舟",
+        console_url="https://console.volcengine.com/ark",
         description="字节跳动火山方舟 AI 平台，支持 Seedance 视频生成和 Seedream 图片生成，具备音频生成和种子控制能力。",
         required_keys=["api_key"],
         optional_keys=["video_max_workers", "image_max_workers"],
@@ -647,6 +653,7 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
     ),
     "ark-agent-plan": ProviderMeta(
         display_name="火山方舟 Agent Plan",
+        console_url="https://console.volcengine.com/ark",
         description="火山方舟 Agent Plan 套餐，聚合豆包及多家主流大模型，覆盖文本、图片与视频生成。",
         required_keys=["api_key"],
         optional_keys=["video_max_workers", "image_max_workers"],
@@ -742,6 +749,7 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
     ),
     "grok": ProviderMeta(
         display_name="Grok",
+        console_url="https://console.x.ai",
         description="xAI Grok 模型，支持视频和图片生成。",
         required_keys=["api_key"],
         optional_keys=["video_max_workers", "image_max_workers"],
@@ -809,6 +817,7 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
     ),
     "openai": ProviderMeta(
         display_name="OpenAI",
+        console_url="https://platform.openai.com/api-keys",
         description="OpenAI 官方平台，支持 GPT-5.5 / GPT-5.4 文本、GPT Image 2 图片和 Sora 视频生成。",
         required_keys=["api_key"],
         optional_keys=["base_url", "image_max_workers", "video_max_workers"],
@@ -893,6 +902,7 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
     ),
     "vidu": ProviderMeta(
         display_name="Vidu",
+        console_url="https://platform.vidu.cn",
         description="生数科技 Vidu 视频生成平台，支持文生视频、图生视频、首尾帧、参考生视频与参考生图，仅图片与视频能力。",
         required_keys=["api_key"],
         optional_keys=["base_url", "image_max_workers", "video_max_workers"],
@@ -962,6 +972,7 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
     ),
     "dashscope": ProviderMeta(
         display_name="阿里百炼",
+        console_url="https://bailian.console.aliyun.com/",
         description="阿里云百炼（Model Studio）全模态平台，支持 Qwen 文本、Qwen-Image / 万相图像与 HappyHorse / 万相视频（含参考生视频）。",
         required_keys=["api_key"],
         optional_keys=["base_url", "image_max_workers", "video_max_workers", "audio_max_workers"],
@@ -1119,6 +1130,7 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
     ),
     "minimax": ProviderMeta(
         display_name="MiniMax",
+        console_url="https://platform.minimaxi.com",
         description="MiniMax（海螺）多模态平台，提供文本、图片、视频生成。默认连接国内站，海外可将 base_url 切换到国际站。",
         required_keys=["api_key"],
         optional_keys=["base_url", "image_max_workers", "video_max_workers"],
@@ -1195,6 +1207,7 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
     ),
     "kling": ProviderMeta(
         display_name="可灵 Kling",
+        console_url="https://platform.klingai.com",
         description=(
             "快手可灵 Kling 视频与图像生成平台。API Key（Bearer）适用于全部模型；"
             "Access Key + Secret Key（JWT）仅适用于 3.0 及更早模型，二者二选一，同时填写时 API Key 优先。"
@@ -1279,6 +1292,7 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
     ),
     "agnes": ProviderMeta(
         display_name="Agnes",
+        console_url="https://agnes-ai.com",
         description="Agnes 多模态平台（OpenAI 风格），使用 Bearer API Key 鉴权；当前支持图像 / 文本 / 视频生成。",
         required_keys=["api_key"],
         optional_keys=["base_url", "image_max_workers", "video_max_workers"],

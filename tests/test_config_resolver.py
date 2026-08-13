@@ -47,9 +47,11 @@ class _FakeConfigService:
         settings: dict[str, str] | None = None,
         *,
         ready_providers: list[ProviderStatus] | None = None,
+        disabled_providers: set[str] | None = None,
     ):
         self._settings = settings or {}
         self._ready_providers = ready_providers
+        self._disabled_providers = disabled_providers or set()
 
     async def get_setting(self, key: str, default: str = "") -> str:
         return self._settings.get(key, default)
@@ -65,6 +67,9 @@ class _FakeConfigService:
 
     async def get_all_provider_configs(self) -> dict[str, dict[str, str]]:
         return {"gemini-aistudio": {"api_key": "key-aistudio"}}
+
+    async def get_provider_enabled(self, provider: str) -> bool:
+        return provider not in self._disabled_providers
 
     async def get_all_providers_status(self) -> list[ProviderStatus]:
         if self._ready_providers is not None:

@@ -200,7 +200,8 @@ export function ProviderSection() {
                 "group relative mb-0.5 flex w-full items-center gap-2.5 rounded-[8px] border px-3 py-2 text-left text-[12.5px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent " +
                 (isActive
                   ? "border-accent/35 bg-accent-dim text-text shadow-[inset_0_1px_0_oklch(1_0_0_/_0.04),0_0_22px_-10px_var(--color-accent-glow)]"
-                  : "border-transparent text-text-3 hover:border-hairline-soft hover:bg-bg-grad-a/55 hover:text-text")
+                  : "border-transparent text-text-3 hover:border-hairline-soft hover:bg-bg-grad-a/55 hover:text-text") +
+                (p.enabled ? "" : " opacity-55")
               }
             >
               {/* Active rail */}
@@ -215,6 +216,11 @@ export function ProviderSection() {
               />
               <ProviderIcon providerId={p.id} className="h-3.5 w-3.5 shrink-0" />
               <span className="min-w-0 flex-1 truncate">{p.display_name}</span>
+              {!p.enabled && (
+                <span className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-text-4">
+                  {t("provider_disabled")}
+                </span>
+              )}
               <StatusDot status={p.status} />
             </button>
           );

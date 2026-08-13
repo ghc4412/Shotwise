@@ -50,7 +50,8 @@ interface SectionDef {
 }
 
 interface SectionGroup {
-  kicker: string;
+  /** 分组标题的 i18n key（dashboard 命名空间），与右上角语言切换同步 */
+  kickerKey: string;
   items: SectionDef[];
 }
 
@@ -60,7 +61,7 @@ interface SectionGroup {
 
 const SECTION_GROUPS: SectionGroup[] = [
   {
-    kicker: "Configuration",
+    kickerKey: "dashboard:settings_group_configuration",
     items: [
       { id: "providers", labelKey: "dashboard:providers", Icon: Plug },
       { id: "agent", labelKey: "dashboard:agents", Icon: Bot },
@@ -68,14 +69,14 @@ const SECTION_GROUPS: SectionGroup[] = [
     ],
   },
   {
-    kicker: "Access",
+    kickerKey: "dashboard:settings_group_access",
     items: [
       { id: "usage", labelKey: "dashboard:usage", Icon: BarChart3 },
       { id: "api-keys", labelKey: "dashboard:api_keys", Icon: KeyRound },
     ],
   },
   {
-    kicker: "System",
+    kickerKey: "dashboard:settings_group_system",
     items: [{ id: "about", labelKey: "dashboard:about", Icon: Info }],
   },
 ];
@@ -207,9 +208,9 @@ export function SystemConfigPage() {
           }}
         >
           {SECTION_GROUPS.map((group, gi) => (
-            <div key={group.kicker} className={gi > 0 ? "mt-5" : undefined}>
+            <div key={group.kickerKey} className={gi > 0 ? "mt-5" : undefined}>
               <div className="mb-2 px-3 font-mono text-[9.5px] font-bold uppercase tracking-[0.16em] text-text-4">
-                {group.kicker}
+                {t(group.kickerKey)}
               </div>
               {group.items.map(({ id, labelKey, Icon }) => {
                 const isActive = activeSection === id;

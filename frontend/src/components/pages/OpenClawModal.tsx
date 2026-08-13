@@ -1,6 +1,6 @@
 /**
- * OpenClaw 集成引导 Modal
- * 提示词区域（可复制，含动态 skill.md URL）、3 步使用说明、"获取 API 令牌"按钮
+ * 第三方 Agent（OpenClaw / Codex 等）集成引导 Modal
+ * 提示词区域（可复制，含动态 skill.md URL）、使用步骤、Codex 本地安装命令、"获取 API 令牌"按钮
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -9,6 +9,7 @@ import { Check, Copy, ExternalLink, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { BRAND } from "@/branding";
 import {
   ACCENT_BTN_CLS,
   ACCENT_BUTTON_STYLE,
@@ -17,14 +18,6 @@ import {
   GHOST_BTN_LG_CLS,
   ICON_BTN_FILLED_CLS,
 } from "@/components/ui/darkroom-tokens";
-
-function LobsterIcon({ className }: { className?: string }) {
-  return (
-    <span className={className} aria-hidden="true" role="img">
-      🦞
-    </span>
-  );
-}
 
 interface OpenClawModalProps {
   onClose: () => void;
@@ -38,10 +31,23 @@ const STEP_KEYS = [
 
 const SKILL_URL = `${window.location.origin}/skill.md`;
 
+/** Codex 本地安装命令（skill.md 内容存为 ~/.codex/skills/shotwise/SKILL.md）。 */
+const CODEX_INSTALL_MACOS = `mkdir -p ~/.codex/skills/shotwise && curl -s ${window.location.origin}/skill.md -o ~/.codex/skills/shotwise/SKILL.md`;
+const CODEX_INSTALL_WINDOWS = `New-Item -ItemType Directory -Force "$env:USERPROFILE\\.codex\\skills\\shotwise" | Out-Null
+Invoke-WebRequest -Uri ${window.location.origin}/skill.md -OutFile "$env:USERPROFILE\\.codex\\skills\\shotwise\\SKILL.md"`;
+
+type CodexPlatform = "macos" | "windows";
+
+const CODEX_INSTALL_CMDS: ReadonlyArray<{ key: CodexPlatform; label: string; cmd: string }> = [
+  { key: "macos", label: "macOS / Linux", cmd: CODEX_INSTALL_MACOS },
+  { key: "windows", label: "Windows PowerShell", cmd: CODEX_INSTALL_WINDOWS },
+];
+
 export function OpenClawModal({ onClose }: OpenClawModalProps) {
   const { t } = useTranslation(["dashboard", "common"]);
   const [, navigate] = useLocation();
   const [copied, setCopied] = useState(false);
+  const [copiedCodex, setCopiedCodex] = useState<CodexPlatform | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const copiedTimerRef = useRef<number | null>(null);
 
@@ -56,6 +62,18 @@ export function OpenClawModal({ onClose }: OpenClawModalProps) {
       setCopied(false);
     }, 2000);
   }, [systemPrompt]);
+
+  const handleCopyCodex = useCallback(async (platform: CodexPlatform) => {
+    const cmd = CODEX_INSTALL_CMDS.find(({ key }) => key === platform)?.cmd;
+    if (!cmd) return;
+    await copyText(cmd);
+    setCopiedCodex(platform);
+    if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = window.setTimeout(() => {
+      copiedTimerRef.current = null;
+      setCopiedCodex(null);
+    }, 2000);
+  }, []);
 
   useEffect(() => () => {
     if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current);
@@ -91,7 +109,11 @@ export function OpenClawModal({ onClose }: OpenClawModalProps) {
           style={DROPDOWN_PANEL_STYLE}
         >
           <div className="flex items-center gap-2.5">
-            <LobsterIcon className="text-xl leading-none" />
+            <img
+              src="/shotwise-mark.svg"
+              alt={BRAND.name}
+              className="h-7 w-7 rounded-lg"
+            />
             <div>
               <h2 className="text-[14px] font-semibold text-text">{t("dashboard:openclaw_title")}</h2>
               <p className="text-[12px] text-text-4">{t("dashboard:openclaw_subtitle")}</p>
@@ -176,6 +198,42 @@ export function OpenClawModal({ onClose }: OpenClawModalProps) {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Codex local install (optional) */}
+          <div>
+            <div className="mb-2 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-text-3">
+              {t("dashboard:codex_install_label")}
+            </div>
+            <div className="space-y-2">
+              {CODEX_INSTALL_CMDS.map(({ key, label, cmd }) => (
+                <div
+                  key={key}
+                  className="rounded-xl border border-hairline-soft bg-bg-grad-a/40 px-3.5 py-3"
+                >
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-text-2">{label}</span>
+                    <button type="button" onClick={() => void handleCopyCodex(key)} className={GHOST_BTN_CLS}>
+                      {copiedCodex === key ? (
+                        <>
+                          <Check className="h-3 w-3 text-good" />
+                          {t("common:copied")}
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3 w-3" />
+                          {t("common:copy")}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <pre className="whitespace-pre-wrap font-mono text-[11px] leading-5 text-text-2">{cmd}</pre>
+                </div>
+              ))}
+            </div>
+            <p className="mt-1.5 text-[11px] text-text-4">
+              {t("dashboard:codex_install_hint")}
+            </p>
           </div>
 
           {/* Actions */}

@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback, type CSSProperties } from "react";
 import { errMsg, voidCall, voidPromise } from "@/utils/async";
-import { ChevronRight, Eye, EyeOff, Loader2, X } from "lucide-react";
+import { ChevronRight, ExternalLink, Eye, EyeOff, Loader2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useWarnUnsaved } from "@/hooks/useWarnUnsaved";
 import { API } from "@/api";
+import { useAppStore } from "@/stores/app-store";
 import { ProviderIcon } from "@/components/ui/ProviderIcon";
+import { PillSwitch } from "@/components/ui/PillSwitch";
 import { CredentialList } from "@/components/pages/CredentialList";
-import { ACCENT_BTN_CLS, ACCENT_BUTTON_STYLE, GHOST_BTN_CLS, INPUT_CLS } from "@/components/ui/darkroom-tokens";
+import { ACCENT_BTN_CLS, ACCENT_BUTTON_STYLE, CARD_STYLE, GHOST_BTN_CLS, INPUT_CLS } from "@/components/ui/darkroom-tokens";
 import { FieldLabel } from "@/components/ui/FieldLabel";
 import type { ProviderConfigDetail, ProviderField } from "@/types";
 
@@ -48,9 +50,27 @@ const STATUS_BADGE_MAP: Record<string, BadgeStyle> = {
   },
 };
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, consoleUrl }: { status: string; consoleUrl?: string | null }) {
   const { t } = useTranslation("dashboard");
   const { label, style } = STATUS_BADGE_MAP[status] ?? STATUS_BADGE_MAP.unconfigured;
+
+  // 未配置且有控制台地址时，徽章渲染为跳转供应商控制台的外链按钮（申请 API Key 的引导入口）。
+  if (status === "unconfigured" && consoleUrl) {
+    return (
+      <a
+        href={consoleUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={t("provider_console_link")}
+        className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.14em] transition-colors hover:text-accent-2 hover:border-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        style={{ ...style, cursor: "pointer" }}
+      >
+        {t(label)}
+        <ExternalLink className="h-2.5 w-2.5" aria-hidden />
+      </a>
+    );
+  }
+
   return (
     <span
       className="rounded-full px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.14em]"
@@ -259,6 +279,7 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [togglingEnabled, setTogglingEnabled] = useState(false);
 
   const hasDraft = Object.keys(draft).length > 0;
   useWarnUnsaved(hasDraft);
@@ -319,6 +340,21 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
     }
   }, [draft, providerId, onSaved]);
 
+  const handleToggleEnabled = useCallback(async () => {
+    if (!detail || togglingEnabled) return;
+    setTogglingEnabled(true);
+    try {
+      await API.setProviderEnabled(providerId, !detail.enabled);
+      const updated = await API.getProviderConfig(providerId);
+      setDetail(updated);
+      onSaved?.();
+    } catch (err) {
+      useAppStore.getState().pushToast(errMsg(err), "error");
+    } finally {
+      setTogglingEnabled(false);
+    }
+  }, [detail, providerId, onSaved, togglingEnabled]);
+
   if (loadError) {
     return (
       <div role="alert" className="flex flex-col items-start gap-2.5 px-1 py-10">
@@ -367,13 +403,36 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
             >
               {detail.display_name}
             </h3>
-            <StatusBadge status={detail.status} />
+            <StatusBadge status={detail.status} consoleUrl={detail.console_url} />
           </div>
           {detail.description && (
             <p className="mt-1.5 text-[12.5px] leading-[1.55] text-text-3">
               {detail.description}
             </p>
           )}
+        </div>
+      </div>
+
+      {/* 供应商级启用开关 */}
+      <div className="flex items-start gap-2.5 rounded-[10px] border border-hairline px-3.5 py-3" style={CARD_STYLE}>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <PillSwitch
+              checked={detail.enabled}
+              onToggle={() => void handleToggleEnabled()}
+              labelledBy="provider-enabled-label"
+            />
+            <span
+              id="provider-enabled-label"
+              className={`text-[12.5px] font-medium ${detail.enabled ? "text-text" : "text-text-3"}`}
+            >
+              {t(detail.enabled ? "provider_enabled" : "provider_disabled")}
+            </span>
+            {togglingEnabled && (
+              <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin text-accent-2" aria-hidden />
+            )}
+          </div>
+          <p className="mt-1.5 text-[11px] leading-[1.5] text-text-4">{t("provider_enabled_hint")}</p>
         </div>
       </div>
 

@@ -15,6 +15,7 @@ const PROVIDERS: ProviderInfo[] = [
     capabilities: [],
     configured_keys: [],
     missing_keys: [],
+    enabled: true,
     models: {
       "veo-3": {
         display_name: "veo-3",
@@ -38,6 +39,7 @@ const PROVIDERS: ProviderInfo[] = [
     capabilities: [],
     configured_keys: [],
     missing_keys: [],
+    enabled: true,
     models: {
       seedance: {
         display_name: "seedance",
@@ -591,6 +593,7 @@ describe("ModelConfigSection", () => {
         capabilities: [],
         configured_keys: [],
         missing_keys: [],
+        enabled: true,
         models: {
           seedance: {
             display_name: "seedance",
@@ -740,6 +743,7 @@ describe("ModelConfigSection", () => {
         capabilities: [],
         configured_keys: [],
         missing_keys: [],
+        enabled: true,
         models: {
           seedance: {
             display_name: "seedance",
@@ -790,6 +794,7 @@ describe("ModelConfigSection", () => {
       capabilities: [],
       configured_keys: [],
       missing_keys: [],
+      enabled: true,
       models: {
         veo: {
           display_name: "Veo 3.1",

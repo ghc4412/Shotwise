@@ -44,6 +44,7 @@ function makeProviders(overrides?: Partial<ProviderInfo>[]): { providers: Provid
       configured_keys: [],
       missing_keys: ["api_key"],
       models: {},
+      enabled: true,
     },
   ];
   if (overrides) {
@@ -154,6 +155,7 @@ describe("config-status-store", () => {
           configured_keys: ["api_key"],
           missing_keys: [],
           models: {},
+          enabled: true,
         },
       ]),
     );
@@ -169,6 +171,7 @@ describe("config-status-store", () => {
           image_max_workers: null,
           video_max_workers: null,
           audio_max_workers: null,
+          is_enabled: true,
           models: [
             {
               id: 1,

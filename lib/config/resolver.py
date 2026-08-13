@@ -1067,24 +1067,78 @@ class ConfigResolver:
         字段兼容裸 provider 覆盖（``_parse_project_provider``）；全局层要求 ``provider/model``
         完整形态。payload 层与运行时身份收敛（如视频自定义 provider 的有效身份收敛）不属于
         骨架，由各媒体的调用方在骨架外处理。
+
+        供应商级禁用在此统一拦截：project/global 显式引用被禁用的供应商直接报错，与
+        payload 锁定路径（``_ensure_provider_enabled``）同语义，不静默回退换供应商。
         """
+
+        async def _checked(pair: tuple[str, str] | None) -> tuple[str, str] | None:
+            if pair is None:
+                return None
+            await self._ensure_provider_enabled(svc, session, pair[0], pair[1])
+            return pair
+
         if project:
             for project_key in (keys.project_bucket_key, keys.project_default_key):
                 if project_key is None:
                     continue
-                parsed = _parse_project_provider(project.get(project_key), keys.media_type)
+                parsed = await _checked(_parse_project_provider(project.get(project_key), keys.media_type))
                 if parsed is not None:
                     return parsed
         settings = await svc.get_all_settings()
         if keys.global_bucket_key is not None:
             raw = settings.get(keys.global_bucket_key, "")
             if "/" in raw:
-                return ConfigService._parse_backend(raw, keys.parse_fallback)
+                parsed = await _checked(ConfigService._parse_backend(raw, keys.parse_fallback))
+                if parsed is not None:
+                    return parsed
         if keys.global_default_key is not None:
             raw = settings.get(keys.global_default_key, "")
             if "/" in raw:
-                return ConfigService._parse_backend(raw, keys.parse_fallback)
+                parsed = await _checked(ConfigService._parse_backend(raw, keys.parse_fallback))
+                if parsed is not None:
+                    return parsed
         return await self._auto_resolve_backend(svc, session, keys.media_type)
+
+    async def _ensure_provider_enabled(
+        self,
+        svc: ConfigService,
+        session: AsyncSession,
+        provider_id: str,
+        model_id: str | None = None,
+    ) -> None:
+        """生成链路拦截：供应商级禁用（预置/自定义）抛 ValueError，禁止解析为执行身份。
+
+        payload/项目显式引用的供应商被禁用时与「供应商被删 / 模型被禁用」同语义——直接
+        报错、不静默回退换供应商执行（换供应商等于静默改用户意图）。自定义供应商须同时
+        满足供应商级与模型级 is_enabled 才可用，模型级检查由各调用点负责。畸形 custom id
+        （db id 非整数，如 ``custom-abc``）无 DB 事实可查，保持历史宽容语义放行不拦截。
+
+        自定义分支走 ``get_model_with_provider`` 一次 join 带出供应商行，避免热路径额外
+        查 provider 行（``test_custom_provider_resolution`` 有性能护栏守住此调用面）。
+        """
+        if is_custom_provider(provider_id):
+            from lib.db.repositories.custom_provider_repo import CustomProviderRepository
+
+            try:
+                db_pid = parse_provider_id(provider_id)
+            except ValueError:
+                return
+            repo = CustomProviderRepository(session)
+            if model_id is not None:
+                pair = await repo.get_model_with_provider(db_pid, model_id)
+                if pair is not None:
+                    if not pair[0].is_enabled:
+                        raise ValueError(f"provider disabled: {provider_id}")
+                    return
+                # join 未命中（模型或供应商不存在）：回退查供应商行确认启用状态；
+                # 模型存在性校验由各媒体调用点负责（如视频的身份闸）
+            provider = await repo.get_provider(db_pid)
+            if provider is None or not provider.is_enabled:
+                raise ValueError(f"provider disabled: {provider_id}")
+            return
+        if not await svc.get_provider_enabled(provider_id):
+            raise ValueError(f"provider disabled: {provider_id}")
 
     async def _resolve_image_provider_model(
         self,
@@ -1108,6 +1162,7 @@ class ConfigResolver:
             if provider_id is not None:
                 model = _payload_model_or_default(payload.get("image_model"), provider_id, "image")
                 if model is not None:
+                    await self._ensure_provider_enabled(svc, session, provider_id, model)
                     return ProviderModel(provider_id, model)
         provider_id, model_id = await self._resolve_layered_backend(
             svc, session, project, _IMAGE_LAYERED_KEYS[capability]
@@ -1169,6 +1224,10 @@ class ConfigResolver:
             model_info = provider_meta.models.get(model_id) if provider_meta else None
             if model_info is None or model_info.media_type != "video":
                 raise _video_bucket_reference_unavailable(capability, provider_id, model_id)
+            # 供应商级禁用与「供应商下线 / 模型被删」同语义：报错、不静默回退换供应商。
+            # 测试环境以 fake svc 代 DB、session 可为 None，此时跳过检查。
+            if session is not None and not await ConfigService(session).get_provider_enabled(provider_id):
+                raise _video_bucket_reference_unavailable(capability, provider_id, model_id)
             return None
 
         # 延迟导入：分层契约（pyproject.toml [tool.importlinter]）以 lib.config 为下层，
@@ -1179,8 +1238,13 @@ class ConfigResolver:
             db_pid = parse_provider_id(provider_id)
         except ValueError as exc:
             raise _video_bucket_reference_unavailable(capability, provider_id, model_id) from exc
-        model = await CustomProviderRepository(session).get_model_by_ids(db_pid, model_id)
-        if model is None or not model.is_enabled:
+        repo = CustomProviderRepository(session)
+        # 一次 join 取模型行 + 供应商行，同时校验模型级与供应商级启用（不额外查 provider 行）
+        pair = await repo.get_model_with_provider(db_pid, model_id)
+        if pair is None:
+            raise _video_bucket_reference_unavailable(capability, provider_id, model_id)
+        provider, model = pair
+        if not model.is_enabled or not provider.is_enabled:
             raise _video_bucket_reference_unavailable(capability, provider_id, model_id)
         try:
             media_type = endpoint_to_media_type(model.endpoint)
@@ -1248,6 +1312,10 @@ class ConfigResolver:
         静默换模型。
         """
         if not is_custom_provider(selected.provider_id):
+            # 内置 provider 身份即 registry 身份；供应商级禁用时不可执行。
+            # 测试环境以 fake svc 代 DB、session 可为 None，此时跳过检查。
+            if session is not None and not await ConfigService(session).get_provider_enabled(selected.provider_id):
+                raise ValueError(f"provider disabled: {selected.provider_id}")
             return selected
 
         # 延迟导入：分层契约（pyproject.toml [tool.importlinter]）以 lib.config 为下层，
@@ -1260,9 +1328,29 @@ class ConfigResolver:
         except ValueError as exc:
             raise ValueError(f"invalid custom provider_id: {selected.provider_id}") from exc
         repo = CustomProviderRepository(session)
-        model = await repo.get_model_by_ids(db_pid, selected.model_id)
-        if model is not None and model.is_enabled and endpoint_to_media_type(model.endpoint) == "video":
-            return selected
+        # 一次 join 取模型行 + 供应商行：供应商级禁用 → 严格报错（默认模型同样不可用）；
+        # 模型级不可用 → 保持原语义回退到该供应商的默认启用 video model
+        pair = await repo.get_model_with_provider(db_pid, selected.model_id)
+        if pair is not None:
+            provider, model = pair
+            if not provider.is_enabled:
+                raise ValueError(f"provider disabled: {selected.provider_id}")
+            if model.is_enabled and endpoint_to_media_type(model.endpoint) == "video":
+                return selected
+        else:
+            provider = await repo.get_provider(db_pid)
+            if provider is None or not provider.is_enabled:
+                raise ValueError(f"provider disabled: {selected.provider_id}")
+
+        logger.warning(
+            "自定义模型 %s/%s 已不存在 / 已禁用 / 媒体类型不符（期望 video），身份解析回退到默认模型",
+            selected.provider_id,
+            selected.model_id,
+        )
+        default_model = await repo.get_default_model(db_pid, "video")
+        if default_model is None:
+            raise ValueError(f"custom model not found: {selected.provider_id}/{selected.model_id}")
+        return ProviderModel(selected.provider_id, default_model.model_id)
 
         logger.warning(
             "自定义模型 %s/%s 已不存在 / 已禁用 / 媒体类型不符（期望 video），身份解析回退到默认模型",
@@ -1298,6 +1386,7 @@ class ConfigResolver:
             if provider_id is not None:
                 model = _payload_model_or_default(payload.get("audio_model"), provider_id, "audio")
                 if model is not None:
+                    await self._ensure_provider_enabled(svc, session, provider_id, model)
                     return ProviderModel(provider_id, model)
         provider_id, model_id = await self._resolve_layered_backend(svc, session, project, _AUDIO_LAYERED_KEYS)
         return ProviderModel(provider_id, model_id)
@@ -1572,9 +1661,9 @@ class ConfigResolver:
         session: AsyncSession,
         media_type: str,
     ) -> tuple[str, str]:
-        """遍历 PROVIDER_REGISTRY（按注册顺序），找到第一个 ready 且支持该 media_type 的供应商。"""
+        """遍历 PROVIDER_REGISTRY（按注册顺序），找到第一个 ready 且启用且支持该 media_type 的供应商。"""
         statuses = await svc.get_all_providers_status()
-        ready = {s.name for s in statuses if s.status == "ready"}
+        ready = {s.name for s in statuses if s.status == "ready" and s.enabled}
 
         for provider_id, meta in PROVIDER_REGISTRY.items():
             if provider_id not in ready:
@@ -1590,6 +1679,9 @@ class ConfigResolver:
         custom_models = await repo.list_enabled_models_by_media_type(media_type)
         for model in custom_models:
             if model.is_default:
+                provider = await repo.get_provider(model.provider_id)
+                if provider is None or not provider.is_enabled:
+                    continue
                 return make_provider_id(model.provider_id), model.model_id
 
         raise ValueError(f"未找到可用的 {media_type} 供应商。请在「全局设置 → 供应商」页面配置至少一个供应商。")

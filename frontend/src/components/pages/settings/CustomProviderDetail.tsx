@@ -10,6 +10,7 @@ import { useEndpointCatalogStore } from "@/stores/endpoint-catalog-store";
 import { formatDurationsLabel } from "@/utils/duration_format";
 import { formatDate } from "@/utils/date-format";
 import { ACCENT_BTN_CLS, ACCENT_BUTTON_STYLE, CARD_STYLE, GHOST_BTN_CLS } from "@/components/ui/darkroom-tokens";
+import { PillSwitch } from "@/components/ui/PillSwitch";
 import { CustomProviderForm } from "./CustomProviderForm";
 
 const MEDIA_LABELS: Record<string, string> = {
@@ -52,6 +53,7 @@ export function CustomProviderDetail({ providerId, onDeleted, onSaved }: CustomP
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [togglingEnabled, setTogglingEnabled] = useState(false);
   const showError = useCallback((msg: string) => useAppStore.getState().pushToast(msg, "error"), []);
 
   const fetchProvider = useCallback(async () => {
@@ -107,6 +109,20 @@ export function CustomProviderDetail({ providerId, onDeleted, onSaved }: CustomP
     void fetchProvider();
     onSaved();
   }, [fetchProvider, onSaved]);
+
+  const handleToggleEnabled = useCallback(async () => {
+    if (!provider || togglingEnabled) return;
+    setTogglingEnabled(true);
+    try {
+      await API.updateCustomProvider(provider.id, { is_enabled: !provider.is_enabled });
+      await fetchProvider();
+      onSaved();
+    } catch (e) {
+      showError(t("save_failed", { message: errMsg(e) }));
+    } finally {
+      setTogglingEnabled(false);
+    }
+  }, [provider, togglingEnabled, fetchProvider, onSaved, showError, t]);
 
   if (loading || !provider) {
     return (
@@ -172,6 +188,29 @@ export function CustomProviderDetail({ providerId, onDeleted, onSaved }: CustomP
                 {provider.discovery_format === "openai" ? "OPENAI" : "GOOGLE"} ·{" "}
                 <span className="normal-case tracking-normal">{provider.base_url}</span>
               </p>
+            </div>
+          </div>
+
+          {/* 供应商级启用开关 */}
+          <div className="flex items-start gap-2.5 rounded-[10px] border border-hairline px-3.5 py-3" style={CARD_STYLE}>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <PillSwitch
+                  checked={provider.is_enabled}
+                  onToggle={() => void handleToggleEnabled()}
+                  labelledBy="custom-provider-enabled-label"
+                />
+                <span
+                  id="custom-provider-enabled-label"
+                  className={`text-[12.5px] font-medium ${provider.is_enabled ? "text-text" : "text-text-3"}`}
+                >
+                  {t(provider.is_enabled ? "provider_enabled" : "provider_disabled")}
+                </span>
+                {togglingEnabled && (
+                  <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin text-accent-2" aria-hidden />
+                )}
+              </div>
+              <p className="mt-1.5 text-[11px] leading-[1.5] text-text-4">{t("provider_enabled_hint")}</p>
             </div>
           </div>
 

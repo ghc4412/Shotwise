@@ -25,6 +25,7 @@ function provider(overrides: Partial<ProviderInfo["models"][string]> = {}): Prov
       capabilities: [],
       configured_keys: [],
       missing_keys: [],
+      enabled: true,
       models: {
         "veo-3": {
           display_name: "Veo 3",

@@ -42,6 +42,9 @@ class _FakeSvc:
             return self._ready
         return [_ready("dashscope", ["audio"])]
 
+    async def get_provider_enabled(self, provider: str) -> bool:
+        return True
+
 
 class TestResolveAudioProviderModel:
     async def test_payload_wins(self):

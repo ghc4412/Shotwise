@@ -41,7 +41,7 @@ export function CustomProviderSection({ providers, selectedId, onSelect, onAdd }
             selectedId === p.id
               ? "border-l-2 border-accent bg-accent-dim text-text shadow-[inset_0_1px_0_oklch(1_0_0_/_0.05)]"
               : "border-l-2 border-transparent text-text-3 hover:bg-bg-grad-a/40 hover:text-text"
-          }`}
+          } ${p.is_enabled ? "" : "opacity-55"}`}
         >
           {/* 自定义 provider 恒用字母徽章，不按 display_name 猜品牌：中转站协议无关，
               打某品牌图标会名不副实，且自由文本名匹配对中文名割裂。将来若要品牌化，
@@ -50,6 +50,11 @@ export function CustomProviderSection({ providers, selectedId, onSelect, onAdd }
             {Array.from(p.display_name)[0] ?? "?"}
           </span>
           <span className="min-w-0 flex-1 truncate">{p.display_name}</span>
+          {!p.is_enabled && (
+            <span className="font-mono text-[9px] font-bold uppercase tracking-[0.12em] text-text-4">
+              {t("provider_disabled")}
+            </span>
+          )}
           <CustomStatusDot provider={p} />
         </button>
       ))}

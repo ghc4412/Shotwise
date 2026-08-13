@@ -227,6 +227,33 @@ curl {{BASE_URL}}/api/v1/projects/ghost-story \
   -H "Authorization: Bearer <API_KEY>"
 ```
 
+## 其他 Agent 接入（Codex / Claude Code 等）
+
+本 Skill 遵循通用 Agent Skill 规范，OpenClaw、Codex、Claude Code 等支持 Skill 的 AI Agent 均可接入，无需为每个平台单独适配。
+
+**方式一：提示词引导（无需安装，所有 Agent 通用）**
+
+在 Agent 会话中发送：
+
+```
+先访问 {{BASE_URL}}/skill.md 学习 Shotwise 操作规范，然后按照 Skill 说明为我创作视频
+```
+
+**方式二：本地安装为 Codex Skill（macOS / Linux）**
+
+```bash
+mkdir -p ~/.codex/skills/shotwise && curl -s {{BASE_URL}}/skill.md -o ~/.codex/skills/shotwise/SKILL.md
+```
+
+**方式三：本地安装为 Codex Skill（Windows PowerShell）**
+
+```powershell
+New-Item -ItemType Directory -Force "$env:USERPROFILE\.codex\skills\shotwise" | Out-Null
+Invoke-WebRequest -Uri {{BASE_URL}}/skill.md -OutFile "$env:USERPROFILE\.codex\skills\shotwise\SKILL.md"
+```
+
+安装完成后 Codex 可自动识别 shotwise skill，直接用自然语言描述创作需求即可。无论哪种方式，都需要先在设置页获取 API Key（见上文「认证」），Agent 调用接口时通过 `Authorization: Bearer` 携带。
+
 ## 注意事项
 
 - `source` 接口最大 200000 字符（约 10 万汉字）；超长小说建议分章节多次传入（后续调用会覆盖同名文件）
