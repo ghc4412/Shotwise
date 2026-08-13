@@ -15,6 +15,7 @@ eggs/
 venv/
 env/
 .venv/
+.venv-arcreel-backup/
 
 # IDE
 .idea/
@@ -84,6 +85,11 @@ frontend/.vite/
 htmlcov/
 .coverage
 coverage/
+
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+.import_linter_cache/
 
 # File locks (project_manager 原子写产物)
 **/*.lock
