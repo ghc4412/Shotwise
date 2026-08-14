@@ -230,8 +230,12 @@ class AssistantService:
         images: list["ImageAttachment"] | None = None,
         locale: str = DEFAULT_LOCALE,
         client_key: str | None = None,
+        sdk_type: str = "claude",
     ) -> dict[str, Any]:
         """Unified send: create new session or send to existing one.
+
+        ``sdk_type`` 仅在新会话时生效（选择 Agent SDK 通道）；已有会话沿用
+        meta 中记录的 sdk_type（切 Agent 经 ``switch_agent`` 端点）。
 
         响应携带权威日志条目（``entry``）：服务端先写日志分配身份，前端
         直接以该条目回显，不渲染任何本地合成消息；``client_key`` 为请求侧
@@ -265,7 +269,7 @@ class AssistantService:
         else:
             # New session
             if not client_key:
-                return await self._create_new_session(project_name, content, images, locale, client_key)
+                return await self._create_new_session(project_name, content, images, locale, client_key, sdk_type)
 
             existing = await self._find_accepted_new_session(client_key, project_name)
             if existing is not None:
@@ -279,7 +283,7 @@ class AssistantService:
                 existing = await self._find_accepted_new_session(client_key, project_name)
                 if existing is not None:
                     return existing
-                result = await self._create_new_session(project_name, content, images, locale, client_key)
+                result = await self._create_new_session(project_name, content, images, locale, client_key, sdk_type)
                 self._record_new_session_client_key(client_key, result["session_id"])
                 return result
 
@@ -352,6 +356,7 @@ class AssistantService:
         images: list["ImageAttachment"] | None,
         locale: str,
         client_key: str | None,
+        sdk_type: str = "claude",
     ) -> dict[str, Any]:
         """实际创建新会话并投递首条消息，不涉及 client_key 幂等映射记账。"""
         text, sdk_prompt, echo_blocks = self._prepare_prompt(content, images)
@@ -360,6 +365,7 @@ class AssistantService:
         new_sdk_session_id = await self.session_manager.send_new_session(
             project_name,
             prompt,
+            sdk_type=sdk_type,
             echo_text=text,
             echo_content=echo_blocks,
             locale=locale,
@@ -434,6 +440,15 @@ class AssistantService:
             "session_id": session_id,
             "session_status": session_status,
         }
+
+    async def switch_agent(self, session_id: str, sdk_type: str, *, meta: SessionMeta | None = None) -> dict[str, Any]:
+        """切换会话当前活跃的 Agent SDK 类型（claude ↔ openai）。"""
+        if meta is None:
+            meta = await self.meta_store.get(session_id)
+            if meta is None:
+                raise FileNotFoundError(f"session not found: {session_id}")
+        updated = await self.session_manager.switch_agent(session_id, sdk_type, meta=meta)
+        return {"status": "switched", "session_id": session_id, "meta": updated.model_dump()}
 
     # ==================== 会话事件日志（UI 时间线唯一读源） ====================
 

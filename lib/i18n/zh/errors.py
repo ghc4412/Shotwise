@@ -296,6 +296,8 @@ MESSAGES = {
     "video_prompt_too_long": "{provider}/{model} 的提示词最多 {limit} 个字符，当前 {count} 个；超出部分会被供应商静默截断，已中止生成。请缩短提示词",
     # Agent credentials
     "agent_preset_unknown": "未知预设供应商: {preset_id}",
+    "agent_sdk_type_unknown": "未知 Agent SDK 类型: {sdk_type}",
+    "agent_preset_sdk_type_mismatch": "预设 {preset_id} 不属于 {sdk_type} Agent",
     "agent_base_url_required_custom": "自定义配置需要填写 base_url",
     "agent_no_fields_to_update": "没有需要更新的字段",
     "agent_credential_not_found": "凭证不存在",

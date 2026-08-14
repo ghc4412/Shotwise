@@ -30,6 +30,8 @@ class PresetProvider:
     is_recommended: bool
     # display_name 的 i18n key；为空时直接用 display_name（当前所有预设为英文品牌名）
     name_i18n_key: str | None = None
+    # 归属的 Agent SDK 类型：claude（Anthropic 协议端点）| openai（OpenAI 协议端点）
+    sdk_type: str = "claude"
 
 
 PRESET_PROVIDERS: dict[str, PresetProvider] = {
@@ -269,6 +271,82 @@ PRESET_PROVIDERS: dict[str, PresetProvider] = {
         api_key_pattern=r"^sk-[A-Za-z0-9_-]+$",
         is_recommended=False,
     ),
+    # ── OpenAI Agents SDK (OpenAI 协议端点) ──────────────────────────────────────
+    "openai-official": PresetProvider(
+        id="openai-official",
+        display_name="OpenAI Official",
+        icon_key="OpenAI",
+        messages_url="https://api.openai.com",
+        discovery_url="https://api.openai.com",
+        default_model="",
+        suggested_models=(),
+        docs_url=None,
+        api_key_url="https://platform.openai.com/api-keys",
+        notes_i18n_key=None,
+        api_key_pattern=r"^sk-[A-Za-z0-9_-]+$",
+        is_recommended=False,
+        sdk_type="openai",
+    ),
+    "deepseek-openai": PresetProvider(
+        id="deepseek-openai",
+        display_name="DeepSeek (OpenAI)",
+        icon_key="DeepSeek",
+        messages_url="https://api.deepseek.com",
+        discovery_url="https://api.deepseek.com",
+        default_model="deepseek-chat",
+        suggested_models=("deepseek-chat", "deepseek-reasoner"),
+        docs_url=None,
+        api_key_url="https://platform.deepseek.com/",
+        notes_i18n_key=None,
+        api_key_pattern=r"^sk-[A-Za-z0-9]+$",
+        is_recommended=True,
+        sdk_type="openai",
+    ),
+    "kimi-openai": PresetProvider(
+        id="kimi-openai",
+        display_name="Kimi (Moonshot)",
+        icon_key="Kimi",
+        messages_url="https://api.moonshot.cn",
+        discovery_url="https://api.moonshot.cn",
+        default_model="kimi-k2",
+        suggested_models=(),
+        docs_url=None,
+        api_key_url="https://platform.moonshot.cn/console/api-keys",
+        notes_i18n_key=None,
+        api_key_pattern=r"^sk-[A-Za-z0-9]+$",
+        is_recommended=False,
+        sdk_type="openai",
+    ),
+    "zhipu-openai": PresetProvider(
+        id="zhipu-openai",
+        display_name="Zhipu GLM (OpenAI)",
+        icon_key="Zhipu",
+        messages_url="https://open.bigmodel.cn/api/paas/v4",
+        discovery_url="https://open.bigmodel.cn/api/paas/v4",
+        default_model="glm-5.1",
+        suggested_models=(),
+        docs_url=None,
+        api_key_url="https://www.bigmodel.cn/glm-coding?ic=92O3DUV7NS",
+        notes_i18n_key=None,
+        api_key_pattern=None,
+        is_recommended=False,
+        sdk_type="openai",
+    ),
+    "agnes-openai": PresetProvider(
+        id="agnes-openai",
+        display_name="Agnes",
+        icon_key="Agnes",
+        messages_url="https://apihub.agnes-ai.com/v1",
+        discovery_url="https://apihub.agnes-ai.com/v1",
+        default_model="agnes-2.0-flash",
+        suggested_models=("agnes-2.0-flash",),
+        docs_url=None,
+        api_key_url="https://agnes-ai.com",
+        notes_i18n_key=None,
+        api_key_pattern=None,
+        is_recommended=False,
+        sdk_type="openai",
+    ),
 }
 
 
@@ -288,6 +366,11 @@ PRESET_ORDER: tuple[str, ...] = (
     "tencent-tokenhub-coding",
     "openrouter",
     "siliconflow",
+    "openai-official",
+    "deepseek-openai",
+    "kimi-openai",
+    "zhipu-openai",
+    "agnes-openai",
 )
 
 
@@ -295,5 +378,8 @@ def get_preset(preset_id: str) -> PresetProvider | None:
     return PRESET_PROVIDERS.get(preset_id)
 
 
-def list_presets() -> list[PresetProvider]:
-    return [PRESET_PROVIDERS[k] for k in PRESET_ORDER]
+def list_presets(sdk_type: str | None = None) -> list[PresetProvider]:
+    presets = [PRESET_PROVIDERS[k] for k in PRESET_ORDER]
+    if sdk_type is None:
+        return presets
+    return [p for p in presets if p.sdk_type == sdk_type]

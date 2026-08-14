@@ -12,6 +12,7 @@ import { useWarnUnsaved } from "@/hooks/useWarnUnsaved";
 import { useAppStore } from "@/stores/app-store";
 import { useConfigStatusStore } from "@/stores/config-status-store";
 import type { GetSystemConfigResponse, SystemConfigPatch } from "@/types";
+import type { AgentSdkType } from "@/types/agent-credential";
 import { errMsg, voidCall } from "@/utils/async";
 
 import { TabSaveFooter } from "./TabSaveFooter";
@@ -53,6 +54,8 @@ export function AgentConfigTab({ visible }: AgentConfigTabProps) {
   const { t } = useTranslation("dashboard");
   const [remoteData, setRemoteData] = useState<GetSystemConfigResponse | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // 当前查看的 Agent SDK 分组（Claude / Codex 各有独立凭证与 active）
+  const [sdkType, setSdkType] = useState<AgentSdkType>("claude");
   const [draft, setDraft] = useState<AgentDraft>({
     cleanupDelaySeconds: "300",
     maxConcurrentSessions: "5",
@@ -165,7 +168,25 @@ export function AgentConfigTab({ visible }: AgentConfigTabProps) {
     <div className={visible ? undefined : "hidden"}>
       <div className="space-y-7 pb-0 pt-1">
         <AgentPageIntro />
-        <CredentialsSection />
+        {/* Agent SDK 分组切换：Claude / Codex 两套凭证独立管理 */}
+        <div className="flex gap-1.5">
+          {(["claude", "openai"] as const).map((st) => (
+            <button
+              key={st}
+              type="button"
+              onClick={() => setSdkType(st)}
+              aria-pressed={sdkType === st}
+              className={`rounded-[8px] border px-3 py-1.5 font-mono text-[11px] font-bold uppercase tracking-[0.14em] transition ${
+                sdkType === st
+                  ? "border-accent bg-accent/10 text-accent"
+                  : "border-hairline bg-bg-grad-a/35 text-text-3 hover:border-accent/40 hover:text-text"
+              }`}
+            >
+              {st === "claude" ? t("agent_sdk_claude") : t("agent_sdk_openai")}
+            </button>
+          ))}
+        </div>
+        <CredentialsSection key={sdkType} sdkType={sdkType} />
         <SectionShell kicker="Runtime Tuning" title={t("advanced_settings")}>
           <div className="space-y-4">
             <div>

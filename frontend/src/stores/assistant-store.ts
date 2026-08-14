@@ -55,6 +55,13 @@ interface AssistantState {
   skills: SkillInfo[];
   skillsLoading: boolean;
 
+  // Agent SDK（剪辑台切换 Claude / Codex）
+  sdkType: "claude" | "openai";
+  /** 当前 Agent 可选模型列表（active credential 的 model + 预设 suggested_models）。 */
+  agentModels: string[];
+  /** 当前选择的模型；空串 = 沿用凭证配置的默认模型。 */
+  agentModel: string;
+
   // Scope
   currentProject: string | null;
 
@@ -88,6 +95,9 @@ interface AssistantState {
   setAnsweringQuestion: (answering: boolean) => void;
   setSkills: (skills: SkillInfo[]) => void;
   setSkillsLoading: (loading: boolean) => void;
+  setSdkType: (sdkType: "claude" | "openai") => void;
+  setAgentModels: (models: string[]) => void;
+  setAgentModel: (model: string) => void;
   setCurrentProject: (project: string | null) => void;
   setIsDraftSession: (draft: boolean) => void;
 }
@@ -154,6 +164,9 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
     answeringQuestion: false,
     skills: [],
     skillsLoading: false,
+    sdkType: "claude",
+    agentModels: [],
+    agentModel: "",
     currentProject: null,
     isDraftSession: false,
 
@@ -249,5 +262,8 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
     setSkillsLoading: (loading) => set({ skillsLoading: loading }),
     setCurrentProject: (project) => set({ currentProject: project }),
     setIsDraftSession: (draft) => set({ isDraftSession: draft }),
+    setSdkType: (sdkType) => set({ sdkType }),
+    setAgentModels: (models) => set({ agentModels: models }),
+    setAgentModel: (model) => set({ agentModel: model }),
   };
 });

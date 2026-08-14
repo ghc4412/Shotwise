@@ -851,7 +851,7 @@ async def discover_anthropic_models_endpoint(
     _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Anthropic 协议模型发现：智能体配置专用。
+    """Anthropic 协议模型发现：智能体配置专用（Claude Agent SDK）。
 
     凭据缺失时 fallback 到 active credential（AgentCredentialRepository）。
     """
@@ -863,7 +863,7 @@ async def discover_anthropic_models_endpoint(
     if needs_key or needs_url:
         from lib.db.repositories.agent_credential_repo import AgentCredentialRepository
 
-        cred = await AgentCredentialRepository(session).get_active()
+        cred = await AgentCredentialRepository(session).get_active(sdk_type="claude")
 
     api_key = body_key if not needs_key else (cred.api_key if cred else "").strip()
     if not api_key:
@@ -872,6 +872,36 @@ async def discover_anthropic_models_endpoint(
     base_url = body.base_url if not needs_url else (cred.base_url if cred else None)
 
     return await _run_discover("anthropic", base_url, api_key, _t)
+
+
+@router.post("/discover-openai", response_model=DiscoverResponse)
+async def discover_openai_models_endpoint(
+    body: DiscoverAnthropicRequest,
+    _t: Translator,
+    _user: AdminUser,
+    session: AsyncSession = Depends(get_async_session),
+):
+    """OpenAI 协议模型发现：智能体配置专用（OpenAI Agents SDK）。
+
+    凭据缺失时 fallback 到 active credential（AgentCredentialRepository）。
+    """
+    body_key = (body.api_key or "").strip()
+    needs_key = not body_key
+    needs_url = body.base_url is None
+
+    cred = None
+    if needs_key or needs_url:
+        from lib.db.repositories.agent_credential_repo import AgentCredentialRepository
+
+        cred = await AgentCredentialRepository(session).get_active(sdk_type="openai")
+
+    api_key = body_key if not needs_key else (cred.api_key if cred else "").strip()
+    if not api_key:
+        raise HTTPException(status_code=400, detail=_t("anthropic_discovery_no_key"))
+
+    base_url = body.base_url if not needs_url else (cred.base_url if cred else None)
+
+    return await _run_discover("openai", base_url, api_key, _t)
 
 
 @router.post("/{provider_id}/discover")

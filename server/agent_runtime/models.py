@@ -49,5 +49,25 @@ class SessionMeta(BaseModel):
     project_name: str
     title: str = ""
     status: SessionStatus = "idle"
+    # 当前活跃 Agent SDK 类型："claude" | "openai"
+    sdk_type: str = "claude"
+    # Claude 会话的 SDK resume id（当 sdk_session_id 不是 Claude resume id 时落库）
+    claude_resume_id: str | None = None
     created_at: datetime
     updated_at: datetime
+
+    def resolve_sdk_session_id(self, sdk_type: str) -> str | None:
+        """按目标 sdk_type 解析续接用的 SDK 会话 id。
+
+        - claude：优先读 ``claude_resume_id``；否则当前就是 claude 会话时用
+          ``sdk_session_id``（即 Claude resume id）；否则返回 None（Claude 新建）。
+        - openai：OpenAI Agents SDK 的会话历史由 SQLiteSession 按
+          ``sdk_session_id`` 持久化，续接直接用对外 id。
+        """
+        if sdk_type == "claude":
+            if self.claude_resume_id:
+                return self.claude_resume_id
+            return self.id if self.sdk_type == "claude" else None
+        if sdk_type == "openai":
+            return self.id
+        return None

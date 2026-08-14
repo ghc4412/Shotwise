@@ -18,6 +18,8 @@ def _dict_to_session(d: dict) -> SessionMeta:
         project_name=d["project_name"],
         title=d.get("title") or "",
         status=d["status"],
+        sdk_type=d.get("sdk_type") or "claude",
+        claude_resume_id=d.get("claude_resume_id"),
         created_at=d["created_at"],
         updated_at=d["updated_at"],
     )
@@ -29,11 +31,11 @@ class SessionMetaStore:
     def __init__(self, *, session_factory=None):
         self._session_factory = session_factory or safe_session_factory
 
-    async def create(self, project_name: str, sdk_session_id: str) -> SessionMeta:
+    async def create(self, project_name: str, sdk_session_id: str, sdk_type: str = "claude") -> SessionMeta:
 
         async with self._session_factory() as session:
             repo = SessionRepository(session)
-            d = await repo.create(project_name=project_name, sdk_session_id=sdk_session_id)
+            d = await repo.create(project_name=project_name, sdk_session_id=sdk_session_id, sdk_type=sdk_type)
         return _dict_to_session(d)
 
     async def get(self, session_id: str) -> SessionMeta | None:
@@ -68,6 +70,22 @@ class SessionMetaStore:
         async with self._session_factory() as session:
             repo = SessionRepository(session)
             return await repo.update_status(session_id, status)
+
+    async def update_sdk_type(
+        self,
+        session_id: str,
+        sdk_type: str,
+        *,
+        claude_resume_id: str | None = None,
+    ) -> bool:
+
+        async with self._session_factory() as session:
+            repo = SessionRepository(session)
+            return await repo.update_sdk_type(
+                session_id,
+                sdk_type,
+                claude_resume_id=claude_resume_id,
+            )
 
     async def interrupt_running_sessions(self) -> int:
 

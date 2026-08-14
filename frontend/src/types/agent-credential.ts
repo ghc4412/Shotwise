@@ -1,11 +1,15 @@
 /**
- * Agent Anthropic 凭证 + 预设供应商目录类型。
+ * Agent SDK 凭证 + 预设供应商目录类型。
  *
  * 与后端 server/routers/agent_config.py 的 Pydantic 模型对齐。
+ * ``sdk_type`` 区分 Agent SDK 接入方式：claude（Anthropic 协议）/ openai（OpenAI 协议）。
  */
+
+export type AgentSdkType = "claude" | "openai";
 
 export interface PresetProvider {
   id: string;
+  sdk_type: AgentSdkType;
   display_name: string;
   icon_key: string;
   messages_url: string;
@@ -26,6 +30,7 @@ export interface PresetProvidersResponse {
 
 export interface AgentCredential {
   id: number;
+  sdk_type: AgentSdkType;
   preset_id: string;
   display_name: string;
   icon_key: string | null;
@@ -41,6 +46,7 @@ export interface AgentCredential {
 }
 
 export interface CreateAgentCredentialRequest {
+  sdk_type?: AgentSdkType;
   preset_id: string;
   display_name?: string | null;
   base_url?: string | null;
@@ -89,6 +95,7 @@ export interface TestConnectionResponse {
 }
 
 export interface TestConnectionRequest {
+  sdk_type?: AgentSdkType;
   preset_id?: string | null;
   base_url?: string | null;
   api_key: string;

@@ -14,6 +14,7 @@ beforeEach(() => {
 const presets: PresetProvider[] = [
   {
     id: "deepseek",
+    sdk_type: "claude",
     display_name: "DeepSeek",
     icon_key: "DeepSeek",
     messages_url: "https://api.deepseek.com/anthropic",
@@ -32,6 +33,7 @@ const presetsWithSecond: PresetProvider[] = [
   ...presets,
   {
     id: "moonshot",
+    sdk_type: "claude",
     display_name: "Moonshot",
     icon_key: "Moonshot",
     messages_url: "https://api.moonshot.cn/anthropic",
@@ -51,6 +53,7 @@ describe("AddCredentialModal", () => {
     render(
       <AddCredentialModal
         open
+        sdkType='claude'
         presets={presets}
         customSentinelId="__custom__"
         onSubmit={vi.fn()}
@@ -65,6 +68,7 @@ describe("AddCredentialModal", () => {
     render(
       <AddCredentialModal
         open
+        sdkType='claude'
         presets={presets}
         customSentinelId="__custom__"
         onSubmit={vi.fn()}
@@ -83,6 +87,7 @@ describe("AddCredentialModal", () => {
     render(
       <AddCredentialModal
         open
+        sdkType='claude'
         presets={presets}
         customSentinelId="__custom__"
         onSubmit={vi.fn()}
@@ -103,6 +108,7 @@ describe("AddCredentialModal", () => {
     render(
       <AddCredentialModal
         open
+        sdkType='claude'
         presets={presets}
         customSentinelId="__custom__"
         onSubmit={vi.fn()}
@@ -122,6 +128,7 @@ describe("AddCredentialModal", () => {
     render(
       <AddCredentialModal
         open
+        sdkType='claude'
         presets={presets}
         customSentinelId="__custom__"
         onSubmit={onSubmit}
@@ -146,6 +153,7 @@ describe("AddCredentialModal", () => {
     render(
       <AddCredentialModal
         open
+        sdkType='claude'
         presets={presets}
         customSentinelId="__custom__"
         onSubmit={vi.fn()}
@@ -166,6 +174,7 @@ describe("AddCredentialModal", () => {
     render(
       <AddCredentialModal
         open
+        sdkType='claude'
         presets={presets}
         customSentinelId="__custom__"
         onSubmit={vi.fn()}
@@ -181,6 +190,7 @@ describe("AddCredentialModal", () => {
     render(
       <AddCredentialModal
         open
+        sdkType='claude'
         presets={presets}
         customSentinelId="__custom__"
         onSubmit={vi.fn()}
@@ -196,6 +206,7 @@ describe("AddCredentialModal", () => {
     render(
       <AddCredentialModal
         open
+        sdkType='claude'
         presets={presets}
         customSentinelId="__custom__"
         onSubmit={onSubmit}
@@ -217,6 +228,7 @@ describe("AddCredentialModal", () => {
     render(
       <AddCredentialModal
         open
+        sdkType='claude'
         presets={presetsWithSecond}
         customSentinelId="__custom__"
         onSubmit={vi.fn()}
@@ -241,6 +253,7 @@ describe("AddCredentialModal", () => {
       <AddCredentialModal
         open
         mode="edit"
+        sdkType='claude'
         presets={presets}
         customSentinelId="__custom__"
         initial={{
@@ -264,6 +277,7 @@ describe("AddCredentialModal", () => {
       <AddCredentialModal
         open
         mode="edit"
+        sdkType='claude'
         presets={presets}
         customSentinelId="__custom__"
         initial={{
@@ -299,6 +313,7 @@ describe("AddCredentialModal", () => {
       <AddCredentialModal
         open
         mode="edit"
+        sdkType='claude'
         presets={presets}
         customSentinelId="__custom__"
         initial={{
@@ -336,6 +351,7 @@ describe("AddCredentialModal", () => {
       render(
         <AddCredentialModal
           open
+          sdkType='claude'
           presets={presets}
           customSentinelId="__custom__"
           onSubmit={vi.fn()}
@@ -357,6 +373,7 @@ describe("AddCredentialModal", () => {
       render(
         <AddCredentialModal
           open
+          sdkType='claude'
           presets={presets}
           customSentinelId="__custom__"
           onSubmit={vi.fn()}
@@ -383,6 +400,7 @@ describe("AddCredentialModal", () => {
       render(
         <AddCredentialModal
           open
+          sdkType='claude'
           presets={presets}
           customSentinelId="__custom__"
           onSubmit={vi.fn()}
@@ -415,6 +433,7 @@ describe("AddCredentialModal", () => {
         <AddCredentialModal
           open
           mode="edit"
+          sdkType='claude'
           presets={presets}
           customSentinelId="__custom__"
           initial={{ preset_id: "deepseek", display_name: "DS" }}
@@ -446,6 +465,7 @@ describe("AddCredentialModal", () => {
       render(
         <AddCredentialModal
           open
+          sdkType='claude'
           presets={presets}
           customSentinelId="__custom__"
           onSubmit={vi.fn()}
@@ -462,6 +482,7 @@ describe("AddCredentialModal", () => {
       render(
         <AddCredentialModal
           open
+          sdkType='claude'
           presets={presets}
           customSentinelId="__custom__"
           onSubmit={vi.fn()}
@@ -493,6 +514,7 @@ describe("AddCredentialModal", () => {
       <AddCredentialModal
         open
         mode="edit"
+        sdkType='claude'
         presets={presetsWithSecond}
         customSentinelId="__custom__"
         initial={{

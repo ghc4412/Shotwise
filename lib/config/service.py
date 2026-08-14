@@ -7,7 +7,7 @@ from typing import Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from lib.config.env_keys import ANTHROPIC_ENV_KEYS
+from lib.config.env_keys import ANTHROPIC_ENV_KEYS, OPENAI_AGENTS_ENV_KEYS
 from lib.config.registry import PROVIDER_REGISTRY
 from lib.config.repository import ProviderConfigRepository, SystemSettingRepository
 from lib.db.repositories.credential_repository import CredentialRepository
@@ -99,6 +99,32 @@ async def build_anthropic_env_dict(session: AsyncSession) -> dict[str, str]:
     # 无 active credential — 回退 system_settings（双轨期兼容）
     settings = await SystemSettingRepository(session).get_all()
     return {env_key: settings.get(db_key, "").strip() for db_key, env_key in _ANTHROPIC_ENV_MAP.items()}
+
+
+async def build_openai_agents_env_dict(session: AsyncSession) -> dict[str, str]:
+    """从 DB 读 active OpenAI Agents credential，返回 {ENV_KEY: value} dict，**不写 os.environ**。
+
+    返回值由 OpenAI Agents 装配器注入 OpenAIProvider。无 active openai 凭证时
+    返回全空（OpenAI Agents 侧不允许 system_settings 兜底——凭证只经
+    ``agent_anthropic_credentials`` 管理）。
+    """
+    from lib.db.repositories.agent_credential_repo import AgentCredentialRepository
+
+    repo = AgentCredentialRepository(session)
+    cred = await repo.get_active(sdk_type="openai")
+
+    if cred is None:
+        return {key: "" for key in OPENAI_AGENTS_ENV_KEYS}
+
+    result = {
+        "OPENAI_API_KEY": cred.api_key or "",
+        "OPENAI_BASE_URL": cred.base_url or "",
+        "OPENAI_MODEL": cred.model or "",
+    }
+    # 未消费的 openai env key 补空，保持注入字典键集完整
+    for key in OPENAI_AGENTS_ENV_KEYS:
+        result.setdefault(key, "")
+    return result
 
 
 @dataclass

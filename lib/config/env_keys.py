@@ -16,6 +16,14 @@ ANTHROPIC_ENV_KEYS: tuple[str, ...] = (
     "CLAUDE_CODE_SUBAGENT_MODEL",
 )
 
+# —— SDK 子进程需要的 OpenAI Agents（OpenAI 协议）env keys（通过 options.env 注入）——
+OPENAI_AGENTS_ENV_KEYS: tuple[str, ...] = (
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_MODEL",
+    "OPENAI_REASONING_EFFORT",
+)
+
 # —— 其他 provider env keys（options.env 用空值覆盖兜底）——
 OTHER_PROVIDER_ENV_KEYS: tuple[str, ...] = (
     "ARK_API_KEY",

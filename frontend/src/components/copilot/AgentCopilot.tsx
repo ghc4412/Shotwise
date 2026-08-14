@@ -4,6 +4,7 @@ import { Bot, Send, Square, Plus, ChevronDown, Trash2, MessageSquare, PanelRight
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
+import { ModelCombobox } from "@/components/ui/ModelCombobox";
 import { useAssistantStore } from "@/stores/assistant-store";
 import { useProjectsStore } from "@/stores/projects-store";
 import { useAppStore } from "@/stores/app-store";
@@ -178,8 +179,21 @@ export function AgentCopilot() {
 
   const { currentProjectName } = useProjectsStore();
   const toggleAssistantPanel = useAppStore((s) => s.toggleAssistantPanel);
-  const { sendMessage, answerQuestion, interrupt, createNewSession, switchSession, deleteSession } =
+  const sdkType = useAssistantStore((s) => s.sdkType);
+  const agentModels = useAssistantStore((s) => s.agentModels);
+  const agentModel = useAssistantStore((s) => s.agentModel);
+  const { sendMessage, answerQuestion, interrupt, createNewSession, switchSession, deleteSession, switchAgent, switchAgentModel, loadAgentModels } =
     useAssistantSession(currentProjectName);
+
+  // Agent 切换浮层
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
+  const agentMenuRef = useRef<HTMLDivElement>(null);
+
+  // 挂载与 Agent 切换后加载模型选项
+  useEffect(() => {
+    if (!currentProjectName) return;
+    void loadAgentModels(sdkType);
+  }, [currentProjectName, sdkType, loadAgentModels]);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -197,6 +211,35 @@ export function AgentCopilot() {
   const isRunning = sessionStatus === "running";
   const inputDisabled = Boolean(pendingQuestion) || answeringQuestion || isRunning || sending;
   const attachDisabled = inputDisabled || attachedImages.length >= MAX_IMAGES;
+
+  const handleSwitchAgent = useCallback(
+    async (next: "claude" | "openai") => {
+      if (next === sdkType) {
+        setAgentMenuOpen(false);
+        return;
+      }
+      if (isRunning || sending) {
+        useAppStore.getState().pushToast(t("agent_switch_busy"), "warning");
+        setAgentMenuOpen(false);
+        return;
+      }
+      const confirmed = window.confirm(t("agent_switch_confirm"));
+      if (!confirmed) {
+        setAgentMenuOpen(false);
+        return;
+      }
+      setAgentMenuOpen(false);
+      await switchAgent(next);
+    },
+    [sdkType, isRunning, sending, switchAgent, t],
+  );
+
+  const handleModelChange = useCallback(
+    (model: string) => {
+      voidCall(switchAgentModel(model));
+    },
+    [switchAgentModel],
+  );
   const inputPlaceholder = pendingQuestion
     ? t("answer_above_hint")
     : isRunning
@@ -418,11 +461,19 @@ export function AgentCopilot() {
           </button>
           <div
             className="grid h-6 w-6 shrink-0 place-items-center rounded-md"
-            style={{
-              background:
-                "linear-gradient(135deg, var(--color-accent), oklch(0.60 0.10 280))",
-              color: "oklch(0.12 0 0)",
-            }}
+            style={
+              sdkType === "openai"
+                ? {
+                    background:
+                      "linear-gradient(135deg, var(--color-good), oklch(0.55 0.14 220))",
+                    color: "oklch(0.12 0 0)",
+                  }
+                : {
+                    background:
+                      "linear-gradient(135deg, var(--color-accent), oklch(0.60 0.10 280))",
+                    color: "oklch(0.12 0 0)",
+                  }
+            }
           >
             <Bot className="h-3.5 w-3.5" />
           </div>
@@ -439,12 +490,82 @@ export function AgentCopilot() {
               {t("thinking")}
             </span>
           ) : (
-            <span className="display-serif min-w-0 truncate text-[13px] font-semibold leading-[1.1]">
-              {t("shotwise_agent")}
-            </span>
+            <div className="flex min-w-0 items-center gap-1">
+              <span className="display-serif truncate text-[13px] font-semibold leading-[1.1]">
+                {t(sdkType === "openai" ? "agent_sdk_openai" : "agent_sdk_claude")}
+              </span>
+              <div className="relative" ref={agentMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setAgentMenuOpen((v) => !v)}
+                  aria-haspopup="menu"
+                  aria-expanded={agentMenuOpen}
+                  className="flex shrink-0 items-center rounded p-0.5 transition-colors focus-ring"
+                  style={{ color: "var(--color-text-3)" }}
+                  title={t("switch_agent")}
+                >
+                  <ChevronDown
+                    className={`h-3 w-3 transition-transform ${agentMenuOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+                <GlassPopover
+                  open={agentMenuOpen}
+                  onClose={() => setAgentMenuOpen(false)}
+                  anchorRef={agentMenuRef}
+                  sideOffset={4}
+                  width="w-56"
+                  layer="assistantLocalPopover"
+                  showHairline={false}
+                >
+                  <div role="menu" className="py-1">
+                    {(
+                      [
+                        { id: "claude", label: t("agent_sdk_claude") },
+                        { id: "openai", label: t("agent_sdk_openai") },
+                      ] as const
+                    ).map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => void handleSwitchAgent(opt.id)}
+                        className={`flex w-full items-center justify-between px-3 py-2 text-left text-[12.5px] transition-colors ${
+                          sdkType === opt.id ? "font-medium" : ""
+                        }`}
+                        style={
+                          sdkType === opt.id
+                            ? { color: "var(--color-accent-2)", background: "var(--color-accent-dim)" }
+                            : { color: "var(--color-text-2)" }
+                        }
+                        onMouseEnter={(e) => {
+                          if (sdkType !== opt.id)
+                            e.currentTarget.style.background = "var(--color-shell-copilot-hover)";
+                        }}
+                        onMouseLeave={(e) => {
+                          if (sdkType !== opt.id) e.currentTarget.style.background = "transparent";
+                        }}
+                      >
+                        {opt.label}
+                        {sdkType === opt.id && <span className="text-[10px] opacity-70">✓</span>}
+                      </button>
+                    ))}
+                  </div>
+                </GlassPopover>
+              </div>
+            </div>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <div className="w-28" title={t("agent_model_label")}>
+            <ModelCombobox
+              id="copilot-agent-model"
+              value={agentModel}
+              onChange={handleModelChange}
+              options={agentModels}
+              placeholder={t("agent_model_label")}
+              clearable
+            />
+          </div>
           <SessionSelector onSwitch={voidPromise(switchSession)} onDelete={voidPromise(deleteSession)} />
           <button
             type="button"

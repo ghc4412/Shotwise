@@ -7,6 +7,7 @@ import { CredentialList } from "../CredentialList";
 
 const mockCred = (overrides: Partial<AgentCredential> = {}): AgentCredential => ({
   id: 1,
+  sdk_type: "claude",
   preset_id: "deepseek",
   display_name: "DeepSeek",
   icon_key: "DeepSeek",

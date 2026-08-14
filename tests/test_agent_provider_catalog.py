@@ -26,10 +26,15 @@ def test_anthropic_official_present() -> None:
     assert p.is_recommended is False
 
 
-def test_alibaba_coding_plan_is_only_recommended() -> None:
-    """阿里云 Coding Plan 是推荐的真实 Anthropic 兼容预设。"""
-    recommended = [p for p in list_presets() if p.is_recommended]
-    assert [p.id for p in recommended] == ["alibaba-coding-plan"]
+def test_alibaba_coding_plan_is_only_recommended_for_claude() -> None:
+    """Claude 侧：阿里云 Coding Plan 是推荐的真实 Anthropic 兼容预设。
+
+    OpenAI 侧推荐 DeepSeek (OpenAI)（首批国内可用 OpenAI 兼容端点）。
+    """
+    claude_recommended = [p for p in list_presets(sdk_type="claude") if p.is_recommended]
+    assert [p.id for p in claude_recommended] == ["alibaba-coding-plan"]
+    openai_recommended = [p for p in list_presets(sdk_type="openai") if p.is_recommended]
+    assert [p.id for p in openai_recommended] == ["deepseek-openai"]
 
 
 def test_get_preset_unknown_returns_none() -> None:
@@ -56,7 +61,7 @@ def test_messages_url_https_only() -> None:
 
 
 def test_curated_preset_set() -> None:
-    """目录与用户提供的表格保持一致;11 条预设."""
+    """目录与用户提供的表格保持一致；Claude 14 条 + OpenAI 5 条。"""
     expected = {
         "anthropic-official",
         "alibaba-coding-plan",
@@ -72,9 +77,29 @@ def test_curated_preset_set() -> None:
         "tencent-tokenhub-coding",
         "openrouter",
         "siliconflow",
+        "openai-official",
+        "deepseek-openai",
+        "kimi-openai",
+        "zhipu-openai",
+        "agnes-openai",
     }
     actual = {p.id for p in list_presets()}
     assert actual == expected
+    # sdk_type 过滤：每个预设恰好归属一种 SDK
+    assert {p.id for p in list_presets(sdk_type="claude")} == expected - {
+        "openai-official",
+        "deepseek-openai",
+        "kimi-openai",
+        "zhipu-openai",
+        "agnes-openai",
+    }
+    assert {p.id for p in list_presets(sdk_type="openai")} == {
+        "openai-official",
+        "deepseek-openai",
+        "kimi-openai",
+        "zhipu-openai",
+        "agnes-openai",
+    }
 
 
 def test_default_models_match_table() -> None:
@@ -94,6 +119,11 @@ def test_default_models_match_table() -> None:
         "tencent-tokenhub-coding": "",
         "openrouter": "anthropic/claude-sonnet-4",
         "siliconflow": "Pro/zai-org/GLM-4.7",
+        "openai-official": "",
+        "deepseek-openai": "deepseek-chat",
+        "kimi-openai": "kimi-k2",
+        "zhipu-openai": "glm-5.1",
+        "agnes-openai": "agnes-2.0-flash",
     }
     actual = {p.id: p.default_model for p in list_presets()}
     assert actual == expected

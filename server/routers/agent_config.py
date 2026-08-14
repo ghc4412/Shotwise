@@ -1,4 +1,4 @@
-"""Agent Anthropic 凭证 + 预设供应商目录 API。
+"""Agent SDK 凭证 + 预设供应商目录 API（Claude Agent SDK / OpenAI Agents SDK）。
 
 路由前缀: /api/v1/agent
 """
@@ -8,14 +8,16 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.agent_provider_catalog import CUSTOM_SENTINEL_ID, get_preset, list_presets
-from lib.config.anthropic_probe import DiagnosisCode, run_test
+from lib.config.anthropic_probe import DiagnosisCode
 from lib.config.anthropic_probe import ProbeResult as ProbeResultDC
 from lib.config.anthropic_probe import TestConnectionResponse as TestConnectionResponseDC
+from lib.config.anthropic_probe import run_test as run_anthropic_test
+from lib.config.openai_probe import run_test as run_openai_test
 from lib.config.repository import mask_secret
 from lib.db import get_async_session
 from lib.db.base import dt_to_iso
@@ -27,12 +29,18 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agent", tags=["Agent 配置"])
 
+# Agent SDK 类型；与 credential repo / preset catalog 的 sdk_type 字段对齐
+SDK_TYPE_CLAUDE = "claude"
+SDK_TYPE_OPENAI = "openai"
+SDK_TYPES = (SDK_TYPE_CLAUDE, SDK_TYPE_OPENAI)
+
 
 # ── Response models ─────────────────────────────────────────────────
 
 
 class PresetProviderResponse(BaseModel):
     id: str
+    sdk_type: str
     display_name: str
     icon_key: str
     messages_url: str
@@ -55,11 +63,16 @@ class PresetProvidersResponse(BaseModel):
 
 
 @router.get("/preset-providers", response_model=PresetProvidersResponse)
-async def list_preset_providers(_t: Translator, _user: AdminUser) -> PresetProvidersResponse:
+async def list_preset_providers(
+    _t: Translator,
+    _user: AdminUser,
+    sdk_type: str = Query(default=SDK_TYPE_CLAUDE, pattern="^(claude|openai)$"),
+) -> PresetProvidersResponse:
     return PresetProvidersResponse(
         providers=[
             PresetProviderResponse(
                 id=p.id,
+                sdk_type=p.sdk_type,
                 display_name=_t(p.name_i18n_key) if p.name_i18n_key else p.display_name,
                 icon_key=p.icon_key,
                 messages_url=p.messages_url,
@@ -72,7 +85,7 @@ async def list_preset_providers(_t: Translator, _user: AdminUser) -> PresetProvi
                 api_key_pattern=p.api_key_pattern,
                 is_recommended=p.is_recommended,
             )
-            for p in list_presets()
+            for p in list_presets(sdk_type=sdk_type)
         ],
         custom_sentinel_id=CUSTOM_SENTINEL_ID,
     )
@@ -83,6 +96,7 @@ async def list_preset_providers(_t: Translator, _user: AdminUser) -> PresetProvi
 
 class CredentialResponse(BaseModel):
     id: int
+    sdk_type: str
     preset_id: str
     display_name: str
     icon_key: str | None
@@ -102,6 +116,7 @@ class CredentialListResponse(BaseModel):
 
 
 class CreateCredentialRequest(BaseModel):
+    sdk_type: str = SDK_TYPE_CLAUDE
     preset_id: str
     display_name: str | None = None
     base_url: str | None = None
@@ -111,7 +126,7 @@ class CreateCredentialRequest(BaseModel):
     sonnet_model: str | None = None
     opus_model: str | None = None
     subagent_model: str | None = None
-    activate: bool | None = None  # None = 自动 (无 active 时自动 set active)
+    activate: bool | None = None  # None = 自动 (该 sdk_type 无 active 时自动 set active)
 
 
 class UpdateCredentialRequest(BaseModel):
@@ -129,6 +144,7 @@ def _cred_to_response(cred) -> CredentialResponse:
     preset = get_preset(cred.preset_id) if cred.preset_id != CUSTOM_SENTINEL_ID else None
     return CredentialResponse(
         id=cred.id,
+        sdk_type=cred.sdk_type,
         preset_id=cred.preset_id,
         display_name=cred.display_name,
         icon_key=preset.icon_key if preset else None,
@@ -152,9 +168,10 @@ async def list_credentials(
     _t: Translator,
     _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
+    sdk_type: str | None = Query(default=None, pattern="^(claude|openai)$"),
 ) -> CredentialListResponse:
     repo = AgentCredentialRepository(session)
-    creds = await repo.list_for_user()
+    creds = await repo.list_for_user(sdk_type=sdk_type)
     return CredentialListResponse(credentials=[_cred_to_response(c) for c in creds])
 
 
@@ -165,10 +182,17 @@ async def create_credential(
     _user: AdminUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> CredentialResponse:
+    if body.sdk_type not in SDK_TYPES:
+        raise HTTPException(status_code=422, detail=_t("agent_sdk_type_unknown", sdk_type=body.sdk_type))
     if body.preset_id != CUSTOM_SENTINEL_ID:
         preset = get_preset(body.preset_id)
         if preset is None:
             raise HTTPException(status_code=422, detail=_t("agent_preset_unknown", preset_id=body.preset_id))
+        if preset.sdk_type != body.sdk_type:
+            raise HTTPException(
+                status_code=422,
+                detail=_t("agent_preset_sdk_type_mismatch", preset_id=body.preset_id, sdk_type=body.sdk_type),
+            )
         base_url = body.base_url or preset.messages_url
         display_name = body.display_name or preset.display_name
         model = body.model or preset.default_model
@@ -190,11 +214,12 @@ async def create_credential(
         sonnet_model=body.sonnet_model,
         opus_model=body.opus_model,
         subagent_model=body.subagent_model,
+        sdk_type=body.sdk_type,
     )
-    # 自动 active 策略：activate=True，或 (activate=None 且当前无 active)
+    # 自动 active 策略：activate=True，或 (activate=None 且该 sdk_type 当前无 active)
     should_activate = body.activate is True
     if body.activate is None:
-        existing_active = await repo.get_active()
+        existing_active = await repo.get_active(sdk_type=body.sdk_type)
         if existing_active is None:
             should_activate = True
     if should_activate:
@@ -294,6 +319,7 @@ class TestConnectionResponseModel(BaseModel):
 
 
 class TestConnectionRequest(BaseModel):
+    sdk_type: str = SDK_TYPE_CLAUDE
     preset_id: str | None = None
     base_url: str | None = None
     api_key: str
@@ -322,6 +348,7 @@ def _serialize_test_response(r: TestConnectionResponseDC) -> TestConnectionRespo
 
 async def _run_and_serialize(
     *,
+    sdk_type: str,
     preset_id: str | None,
     base_url: str | None,
     api_key: str,
@@ -329,7 +356,10 @@ async def _run_and_serialize(
     _t: Translator,
 ) -> TestConnectionResponseModel:
     try:
-        result = await run_test(preset_id=preset_id, base_url=base_url, api_key=api_key, model=model)
+        if sdk_type == SDK_TYPE_OPENAI:
+            result = await run_openai_test(preset_id=preset_id, base_url=base_url, api_key=api_key, model=model)
+        else:
+            result = await run_anthropic_test(preset_id=preset_id, base_url=base_url, api_key=api_key, model=model)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=_t("agent_test_validation_error", error=str(exc))) from exc
     return _serialize_test_response(result)
@@ -342,6 +372,7 @@ async def test_connection_draft(
     _user: AdminUser,
 ) -> TestConnectionResponseModel:
     return await _run_and_serialize(
+        sdk_type=body.sdk_type,
         preset_id=body.preset_id,
         base_url=body.base_url,
         api_key=body.api_key,
@@ -362,6 +393,7 @@ async def test_credential(
     if cred is None:
         raise HTTPException(status_code=404, detail=_t("agent_credential_not_found"))
     return await _run_and_serialize(
+        sdk_type=cred.sdk_type,
         preset_id=cred.preset_id,
         base_url=cred.base_url,
         api_key=cred.api_key,

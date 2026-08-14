@@ -1851,7 +1851,8 @@ class API {
     content: string,
     sessionId?: string | null,
     images?: Array<{ data: string; media_type: string }>,
-    clientKey?: string
+    clientKey?: string,
+    sdkType?: "claude" | "openai"
   ): Promise<{ session_id: string; status: string; entry: TimelineEntry | null }> {
     return this.request(`${this.assistantBase(projectName)}/sessions/send`, {
       method: "POST",
@@ -1860,8 +1861,23 @@ class API {
         session_id: sessionId || undefined,
         images: images || [],
         client_key: clientKey || undefined,
+        sdk_type: sdkType || "claude",
       }),
     });
+  }
+
+  static async switchAssistantAgent(
+    projectName: string,
+    sessionId: string,
+    sdkType: "claude" | "openai"
+  ): Promise<{ status: string; session_id: string; meta: SessionMeta }> {
+    return this.request(
+      `${this.assistantBase(projectName)}/sessions/${encodeURIComponent(sessionId)}/switch-agent`,
+      {
+        method: "POST",
+        body: JSON.stringify({ sdk_type: sdkType }),
+      }
+    );
   }
 
   static async interruptAssistantSession(
@@ -2087,12 +2103,15 @@ class API {
 
   // ==================== Agent 配置 / 凭证 API ====================
 
-  static async listAgentPresetProviders(): Promise<PresetProvidersResponse> {
-    return this.request("/agent/preset-providers");
+  static async listAgentPresetProviders(sdkType: "claude" | "openai" = "claude"): Promise<PresetProvidersResponse> {
+    return this.request(`/agent/preset-providers?sdk_type=${sdkType}`);
   }
 
-  static async listAgentCredentials(): Promise<{ credentials: AgentCredential[] }> {
-    return this.request("/agent/credentials");
+  static async listAgentCredentials(
+    sdkType?: "claude" | "openai",
+  ): Promise<{ credentials: AgentCredential[] }> {
+    const query = sdkType ? `?sdk_type=${sdkType}` : "";
+    return this.request(`/agent/credentials${query}`);
   }
 
   static async createAgentCredential(
@@ -2194,6 +2213,17 @@ class API {
     options: { signal?: AbortSignal } = {},
   ): Promise<AnthropicDiscoverResponse> {
     return this.request("/custom-providers/discover-anthropic", {
+      method: "POST",
+      body: JSON.stringify(data),
+      signal: options.signal,
+    });
+  }
+
+  static async discoverOpenAIModels(
+    data: AnthropicDiscoverRequest,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<AnthropicDiscoverResponse> {
+    return this.request("/custom-providers/discover-openai", {
       method: "POST",
       body: JSON.stringify(data),
       signal: options.signal,

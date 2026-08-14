@@ -51,6 +51,7 @@ updates:
           - "claude-agent-sdk"
           - "google-genai"
           - "openai"
+          - "openai-agents"
           - "volcengine-python-sdk*"
           - "xai-sdk"
           - "instructor"

@@ -269,7 +269,7 @@ async def test_test_connection_draft_calls_run_test(authed_client, monkeypatch) 
         derived_discovery_root="https://api.deepseek.com",
     )
     fake = AsyncMock(return_value=expected)
-    monkeypatch.setattr("server.routers.agent_config.run_test", fake)
+    monkeypatch.setattr("server.routers.agent_config.run_anthropic_test", fake)
 
     resp = await authed_client.post(
         "/api/v1/agent/test-connection",
@@ -281,6 +281,9 @@ async def test_test_connection_draft_calls_run_test(authed_client, monkeypatch) 
     assert body["messages_probe"]["success"] is True
     assert body["derived_messages_root"] == "https://api.deepseek.com/anthropic"
     fake.assert_awaited_once()
+    kwargs = fake.await_args.kwargs
+    assert kwargs["preset_id"] == "deepseek"
+    assert kwargs["api_key"] == "sk"
 
 
 @pytest.mark.asyncio
@@ -299,7 +302,7 @@ async def test_test_credential_uses_stored(authed_client, monkeypatch) -> None:
         derived_discovery_root="https://api.deepseek.com",
     )
     fake = AsyncMock(return_value=expected)
-    monkeypatch.setattr("server.routers.agent_config.run_test", fake)
+    monkeypatch.setattr("server.routers.agent_config.run_anthropic_test", fake)
 
     cred = (
         await authed_client.post(
