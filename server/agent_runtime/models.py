@@ -49,6 +49,9 @@ class SessionMeta(BaseModel):
     project_name: str
     title: str = ""
     status: SessionStatus = "idle"
+    superseded_by: str | None = None
+    fork_parent_session_id: str | None = None
+    fork_anchor_uuid: str | None = None
     # 当前活跃 Agent SDK 类型："claude" | "openai"
     sdk_type: str = "claude"
     # Claude 会话的 SDK resume id（当 sdk_session_id 不是 Claude resume id 时落库）

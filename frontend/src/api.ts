@@ -1913,6 +1913,26 @@ class API {
     });
   }
 
+  static async rewriteAssistantMessage(
+    projectName: string,
+    sessionId: string,
+    anchorEntryUuid: string,
+    content: string,
+    clientKey?: string,
+  ): Promise<{ status: string; session_id: string; origin_session_id: string | null; entry: TimelineEntry | null }> {
+    return this.request(
+      `${this.assistantBase(projectName)}/sessions/${encodeURIComponent(sessionId)}/rewrite`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          anchor_entry_uuid: anchorEntryUuid,
+          content,
+          client_key: clientKey || undefined,
+        }),
+      },
+    );
+  }
+
   static async switchAssistantAgent(
     projectName: string,
     sessionId: string,
@@ -2378,6 +2398,42 @@ class API {
       `/projects/${encodeURIComponent(projectName)}/grids/${encodeURIComponent(gridId)}/regenerate`,
       { method: "POST" }
     );
+  }
+
+  /**
+   * 切分落格：按当前联合图覆写各分镜格（唯一覆写分镜格的操作，同步执行）
+   * @param projectName - 项目名称
+   * @param gridId - Grid ID
+   */
+  static async splitGrid(
+    projectName: string,
+    gridId: string
+  ): Promise<{
+    success: boolean;
+    split_at: string | null;
+    updated_scene_ids: string[];
+    missing_scene_ids: string[];
+    asset_fingerprints: Record<string, number>;
+  }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/grids/${encodeURIComponent(gridId)}/split`,
+      { method: "POST" }
+    );
+  }
+
+  /**
+   * 上传联合图替换当前宫格图（仅转 PNG 归一化，不缩放、不校验布局；不触发切分）
+   * @param projectName - 项目名称
+   * @param gridId - Grid ID
+   * @param file - 图片文件
+   */
+  static async uploadGridImage(
+    projectName: string,
+    gridId: string,
+    file: File
+  ): Promise<{ success: boolean; path: string; version: number; asset_fingerprints: Record<string, number> }> {
+    const url = `/projects/${encodeURIComponent(projectName)}/grids/${encodeURIComponent(gridId)}/upload`;
+    return API.postFileUpload(url, file);
   }
 
   // ==================== Global Asset Library ====================

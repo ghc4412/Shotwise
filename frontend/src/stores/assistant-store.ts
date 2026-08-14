@@ -20,6 +20,9 @@ import {
   type DraftMirror,
 } from "@/utils/entry-projection";
 
+/** 启动失败的来源入口——决定故障卡片的重试重放哪一处输入。 */
+export type StartupFailureOrigin = "send" | "rewrite";
+
 interface AssistantState {
   // Sessions
   sessions: SessionMeta[];
@@ -42,6 +45,11 @@ interface AssistantState {
   error: string | null;
   /** 当前面板生命周期内最近一次 Agent 启动失败观测；不做跨刷新持久化。 */
   startupFailure: FailureObservation | null;
+  /**
+   * 该次启动失败由哪条入口产生。故障卡片的重试只重放仍保留原始输入的那一处：
+   * `send` 的输入留在主输入框，`rewrite` 的留在仍开着的原地编辑器里。
+   */
+  startupFailureOrigin: StartupFailureOrigin | null;
 
   // Session status
   sessionStatus: SessionStatus | null;
@@ -67,6 +75,7 @@ interface AssistantState {
 
   // Draft session (lazy creation)
   isDraftSession: boolean;
+  editingTurnUuid: string | null;
 
   // Actions
   setSessions: (sessions: SessionMeta[]) => void;
@@ -88,13 +97,14 @@ interface AssistantState {
   setSending: (sending: boolean) => void;
   setInterrupting: (interrupting: boolean) => void;
   setError: (error: string | null) => void;
-  setStartupFailure: (failure: FailureObservation | null) => void;
+  setStartupFailure: (failure: FailureObservation | null, origin?: StartupFailureOrigin) => void;
   setSessionStatus: (status: SessionStatus | null) => void;
   setSessionStatusDetail: (detail: string | null) => void;
   setPendingQuestion: (question: PendingQuestion | null) => void;
   setAnsweringQuestion: (answering: boolean) => void;
   setSkills: (skills: SkillInfo[]) => void;
   setSkillsLoading: (loading: boolean) => void;
+  setEditingTurnUuid: (uuid: string | null) => void;
   setSdkType: (sdkType: "claude" | "openai") => void;
   setAgentModels: (models: string[]) => void;
   setAgentModel: (model: string) => void;
@@ -158,6 +168,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
     interrupting: false,
     error: null,
     startupFailure: null,
+    startupFailureOrigin: null,
     sessionStatus: null,
     sessionStatusDetail: null,
     pendingQuestion: null,
@@ -169,6 +180,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
     agentModel: "",
     currentProject: null,
     isDraftSession: false,
+    editingTurnUuid: null,
 
     setSessions: (sessions) => set({ sessions }),
     setCurrentSessionId: (id) => set({ currentSessionId: id }),
@@ -245,6 +257,9 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
         turns: [],
         draftTurn: null,
         startupFailure: null,
+        startupFailureOrigin: null,
+        // 编辑态锚在被清空的那条时间线上，重建后锚点不再存在
+        editingTurnUuid: null,
       });
     },
 
@@ -253,13 +268,14 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
     setSending: (sending) => set({ sending }),
     setInterrupting: (interrupting) => set({ interrupting }),
     setError: (error) => set({ error }),
-    setStartupFailure: (failure) => set({ startupFailure: failure }),
+    setStartupFailure: (failure, origin = "send") => set({ startupFailure: failure, startupFailureOrigin: failure ? origin : null }),
     setSessionStatus: (status) => set({ sessionStatus: status }),
     setSessionStatusDetail: (detail) => set({ sessionStatusDetail: detail }),
     setPendingQuestion: (question) => set({ pendingQuestion: question }),
     setAnsweringQuestion: (answering) => set({ answeringQuestion: answering }),
     setSkills: (skills) => set({ skills }),
     setSkillsLoading: (loading) => set({ skillsLoading: loading }),
+    setEditingTurnUuid: (uuid) => set({ editingTurnUuid: uuid }),
     setCurrentProject: (project) => set({ currentProject: project }),
     setIsDraftSession: (draft) => set({ isDraftSession: draft }),
     setSdkType: (sdkType) => set({ sdkType }),

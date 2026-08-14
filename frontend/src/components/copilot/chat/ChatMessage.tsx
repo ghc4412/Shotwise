@@ -4,6 +4,12 @@ import { cn } from "./utils";
 import { getRoleLabel } from "./utils";
 import { ContentBlockRenderer } from "./ContentBlockRenderer";
 import { AgentFailureCard } from "./AgentFailureCard";
+import {
+  BUBBLE_LABEL_CLASS,
+  BUBBLE_LABEL_STYLE,
+  BUBBLE_SHELL_CLASS,
+  USER_BUBBLE_LAYOUT_CLASS,
+} from "./bubble";
 
 // ---------------------------------------------------------------------------
 // ChatMessage – renders a full conversation turn (user, assistant, or system).
@@ -67,19 +73,16 @@ export function ChatMessage({ message, streaming }: ChatMessageProps) {
         };
 
   const labelStyle: React.CSSProperties = {
+    ...BUBBLE_LABEL_STYLE,
     color: isUser ? "var(--color-accent-2)" : "var(--color-text-4)",
-    letterSpacing: "0.06em",
   };
 
   return (
     <article
-      className={cn("rounded-xl px-2.5 py-1.5 min-w-0")}
+      className={cn(BUBBLE_SHELL_CLASS, "min-w-0", isUser && USER_BUBBLE_LAYOUT_CLASS)}
       style={containerStyle}
     >
-      <div
-        className="mb-1 text-[10px] font-semibold uppercase"
-        style={labelStyle}
-      >
+      <div className={BUBBLE_LABEL_CLASS} style={labelStyle}>
         {getRoleLabel(messageType, t)}
       </div>
       <div

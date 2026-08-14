@@ -18,6 +18,9 @@ def _dict_to_session(d: dict) -> SessionMeta:
         project_name=d["project_name"],
         title=d.get("title") or "",
         status=d["status"],
+        superseded_by=d.get("superseded_by"),
+        fork_parent_session_id=d.get("fork_parent_session_id"),
+        fork_anchor_uuid=d.get("fork_anchor_uuid"),
         sdk_type=d.get("sdk_type") or "claude",
         claude_resume_id=d.get("claude_resume_id"),
         created_at=d["created_at"],
@@ -31,11 +34,25 @@ class SessionMetaStore:
     def __init__(self, *, session_factory=None):
         self._session_factory = session_factory or safe_session_factory
 
-    async def create(self, project_name: str, sdk_session_id: str, sdk_type: str = "claude") -> SessionMeta:
+    async def create(
+        self,
+        project_name: str,
+        sdk_session_id: str,
+        sdk_type: str = "claude",
+        *,
+        fork_parent_session_id: str | None = None,
+        fork_anchor_uuid: str | None = None,
+    ) -> SessionMeta:
 
         async with self._session_factory() as session:
             repo = SessionRepository(session)
-            d = await repo.create(project_name=project_name, sdk_session_id=sdk_session_id, sdk_type=sdk_type)
+            d = await repo.create(
+                project_name=project_name,
+                sdk_session_id=sdk_session_id,
+                sdk_type=sdk_type,
+                fork_parent_session_id=fork_parent_session_id,
+                fork_anchor_uuid=fork_anchor_uuid,
+            )
         return _dict_to_session(d)
 
     async def get(self, session_id: str) -> SessionMeta | None:
@@ -46,6 +63,14 @@ class SessionMetaStore:
         if d is None:
             return None
         return _dict_to_session(d)
+
+    async def mark_superseded(self, session_id: str, superseded_by: str) -> bool:
+        async with self._session_factory() as session:
+            return await SessionRepository(session).mark_superseded(session_id, superseded_by)
+
+    async def clear_superseded(self, session_id: str, superseded_by: str) -> bool:
+        async with self._session_factory() as session:
+            return await SessionRepository(session).clear_superseded(session_id, superseded_by)
 
     async def list(
         self,
