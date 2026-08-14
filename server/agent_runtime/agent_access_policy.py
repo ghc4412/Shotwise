@@ -724,7 +724,7 @@ AgentAccessPolicy.PROTECTED_WRITE_RULES = (
             "访问被拒绝：scripts/*.json 与 project.json 不可用 Write/Edit 直改，"
             "请改用 MCP 工具——剧本编辑走 mcp__shotwise__patch_episode_script / "
             "mcp__shotwise__insert_segment / mcp__shotwise__remove_segment / mcp__shotwise__split_segment，"
-            "角色/场景/道具走 mcp__shotwise__patch_project。"
+            "角色/场景/道具走 mcp__shotwise__patch_project，资产改名走 mcp__shotwise__rename_asset。"
         ),
         sandbox_subpaths=("scripts", "project.json"),
     ),
