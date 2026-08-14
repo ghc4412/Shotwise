@@ -53,6 +53,9 @@ describe("AgentCopilot", () => {
   const createNewSession = vi.fn();
   const switchSession = vi.fn().mockResolvedValue(undefined);
   const deleteSession = vi.fn().mockResolvedValue(undefined);
+  const switchAgent = vi.fn().mockResolvedValue(undefined);
+  const switchAgentModel = vi.fn().mockResolvedValue(undefined);
+  const loadAgentModels = vi.fn().mockResolvedValue(undefined);
 
   beforeEach(() => {
     useAssistantStore.setState(useAssistantStore.getInitialState(), true);
@@ -68,6 +71,9 @@ describe("AgentCopilot", () => {
       createNewSession,
       switchSession,
       deleteSession,
+      switchAgent,
+      switchAgentModel,
+      loadAgentModels,
     });
   });
 

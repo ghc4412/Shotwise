@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { errMsg, voidCall } from "@/utils/async";
 import { AgentFailureError, API } from "@/api";
 import { uid } from "@/utils/id";
+import { useAppStore } from "@/stores/app-store";
 import { useAssistantStore } from "@/stores/assistant-store";
 import type {
   DraftDeltaPayload,
@@ -384,9 +385,10 @@ export function useAssistantSession(projectName: string | null) {
         const result = await API.sendAssistantMessage(
           projectName!,
           content,
-          sessionId,  // null for new session
+          sessionId, // null for new session
           imagePayload,
           clientKey,
+          store.getState().sdkType, // 新会话时选择 Agent SDK 通道
         );
 
         if (pendingSendVersionRef.current !== sendVersion) return false;
@@ -406,6 +408,7 @@ export function useAssistantSession(projectName: string | null) {
             project_name: projectName!,
             title: content.trim().slice(0, 30) || "图片消息",
             status: "running",
+            sdk_type: store.getState().sdkType,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           };
@@ -566,7 +569,86 @@ export function useAssistantSession(projectName: string | null) {
     }
   }, [projectName, abortSessionLoad, clearPendingQuestion, closeStream, invalidatePendingSend, switchSession, store]);
 
-  return { sendMessage, answerQuestion, interrupt, createNewSession, switchSession, deleteSession };
+  // 加载当前 Agent 的可选模型列表（active credential 的 model + 预设 suggested_models）
+  const loadAgentModels = useCallback(async (sdkType: "claude" | "openai") => {
+    if (!projectName) return;
+    try {
+      const [credsRes, presetsRes] = await Promise.all([
+        API.listAgentCredentials(sdkType),
+        API.listAgentPresetProviders(sdkType),
+      ]);
+      const active = credsRes.credentials.find((c) => c.is_active);
+      const preset = active
+        ? presetsRes.providers.find((p) => p.id === active.preset_id)
+        : undefined;
+      const models: string[] = [];
+      if (active?.model) models.push(active.model);
+      for (const m of preset?.suggested_models ?? []) {
+        if (!models.includes(m)) models.push(m);
+      }
+      store.getState().setAgentModels(models);
+      store.getState().setAgentModel(active?.model ?? "");
+    } catch {
+      // 静默失败：模型选择器退化为空（用户仍可手动输入）
+    }
+  }, [projectName, store]);
+
+  // 切换 Agent（Claude ↔ Codex）：
+  // - 已有会话：后端把当前 SDK 会话 id 落库，切换后新消息按目标 SDK 续接（共享时间线）
+  // - 无会话：仅切 store 状态，下一条消息按目标 SDK 建新会话
+  const switchAgent = useCallback(
+    async (sdkType: "claude" | "openai") => {
+      if (!projectName) return;
+      const currentSessionId = store.getState().currentSessionId;
+      if (currentSessionId) {
+        try {
+          const res = await API.switchAssistantAgent(projectName, currentSessionId, sdkType);
+          // 更新会话列表里该会话的 sdk_type
+          const sessions = store.getState().sessions.map((s) =>
+            s.id === currentSessionId ? { ...s, sdk_type: res.meta.sdk_type } : s,
+          );
+          store.getState().setSessions(sessions);
+        } catch (err) {
+          useAppStore.getState().pushToast(errMsg(err), "error");
+          return;
+        }
+      }
+      store.getState().setSdkType(sdkType);
+      store.getState().setAgentModel("");
+      await loadAgentModels(sdkType);
+    },
+    [projectName, loadAgentModels, store],
+  );
+
+  // 切换模型：更新 active credential 的 model 字段（后续会话/续接按新模型）
+  const switchAgentModel = useCallback(
+    async (model: string) => {
+      store.getState().setAgentModel(model);
+      if (!projectName) return;
+      try {
+        const sdkType = store.getState().sdkType;
+        const credsRes = await API.listAgentCredentials(sdkType);
+        const active = credsRes.credentials.find((c) => c.is_active);
+        if (!active) return;
+        await API.updateAgentCredential(active.id, { model: model || null });
+      } catch (err) {
+        useAppStore.getState().pushToast(errMsg(err), "error");
+      }
+    },
+    [projectName, store],
+  );
+
+  return {
+    sendMessage,
+    answerQuestion,
+    interrupt,
+    createNewSession,
+    switchSession,
+    deleteSession,
+    switchAgent,
+    switchAgentModel,
+    loadAgentModels,
+  };
 }
 
 function getPendingQuestionFromEvent(payload: Record<string, unknown>): PendingQuestion | null {

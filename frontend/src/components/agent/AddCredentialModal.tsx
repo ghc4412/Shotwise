@@ -25,6 +25,7 @@ import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useAppStore } from "@/stores/app-store";
 import type {
+  AgentSdkType,
   CreateAgentCredentialRequest,
   PresetProvider,
   TestConnectionResponse,
@@ -40,6 +41,9 @@ interface Props {
   /** "create" (default) renders the new-credential form; "edit" locks the preset chips
    * and lets the user leave api_key empty to preserve the existing one. */
   mode?: "create" | "edit";
+  /** Agent SDK 类型：claude（Anthropic 协议）/ openai（OpenAI 协议）。决定 discover
+   * 端点、表单字段（openai 无 haiku/sonnet/opus/subagent 路由）与文案。 */
+  sdkType: AgentSdkType;
   presets: PresetProvider[];
   customSentinelId: string;
   initial?: Partial<CreateAgentCredentialRequest>;
@@ -50,6 +54,7 @@ interface Props {
 export function AddCredentialModal({
   open,
   mode = "create",
+  sdkType,
   presets,
   customSentinelId,
   initial,
@@ -190,10 +195,16 @@ export function AddCredentialModal({
         if (session === sessionRef.current) setDiscoverError(t("discover_api_key_required"));
         return;
       }
-      const res = await API.discoverAnthropicModels({
-        base_url: discoverBase,
-        api_key: form.apiKey,
-      });
+      const res =
+        sdkType === "openai"
+          ? await API.discoverOpenAIModels({
+              base_url: discoverBase,
+              api_key: form.apiKey,
+            })
+          : await API.discoverAnthropicModels({
+              base_url: discoverBase,
+              api_key: form.apiKey,
+            });
       if (session !== sessionRef.current) return;
       setModelOptions(res.models.map((m) => m.model_id));
       const toast = useAppStore.getState().pushToast;
@@ -251,6 +262,7 @@ export function AddCredentialModal({
     setTestedBaseUrl(submitBaseUrl ?? null);
     try {
       const res = await API.testAgentConnectionDraft({
+        sdk_type: sdkType,
         preset_id: form.presetId,
         base_url: submitBaseUrl,
         api_key: form.apiKey,
@@ -428,7 +440,7 @@ export function AddCredentialModal({
           </Field>
 
           <Field
-            label={t("anthropic_api_key")}
+            label={sdkType === "openai" ? t("openai_api_key") : t("anthropic_api_key")}
             htmlFor="cred-key"
             trailing={
               selected?.api_key_url ? (
@@ -495,7 +507,8 @@ export function AddCredentialModal({
             )}
           </Field>
 
-          {/* Advanced model routing - 鎶樺彔鍖?*/}
+          {/* Advanced model routing - 折叠区（仅 Claude：haiku/sonnet/opus/subagent 路由） */}
+          {sdkType === "claude" && (
           <details
             open={advancedOpen}
             onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}
@@ -557,6 +570,7 @@ export function AddCredentialModal({
               />
             </div>
           </details>
+          )}
 
           {selected?.notes && (
             <div className="rounded-[8px] border border-hairline-soft bg-bg-grad-a/45 px-3 py-2 text-[11.5px] text-text-3">

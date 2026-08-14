@@ -342,6 +342,8 @@ MESSAGES = {
     "video_prompt_too_long": "{provider}/{model} chỉ chấp nhận câu lệnh tối đa {limit} ký tự nhưng nhận được {count}; phần vượt quá sẽ bị nhà cung cấp cắt bỏ âm thầm nên đã hủy tạo. Hãy rút ngắn câu lệnh",
     # Agent credentials
     "agent_preset_unknown": "Nhà cung cấp đặt sẵn không xác định: {preset_id}",
+    "agent_sdk_type_unknown": "Loại Agent SDK không xác định: {sdk_type}",
+    "agent_preset_sdk_type_mismatch": "Nhà cung cấp {preset_id} không thuộc Agent {sdk_type}",
     "agent_base_url_required_custom": "Cấu hình tuỳ chỉnh yêu cầu base_url",
     "agent_no_fields_to_update": "Không có trường nào để cập nhật",
     "agent_credential_not_found": "Không tìm thấy xác thực",

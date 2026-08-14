@@ -46,6 +46,7 @@ function makeConfigResponse(): GetSystemConfigResponse {
 function makePreset(overrides?: Partial<PresetProvider>): PresetProvider {
   return {
     id: "anthropic",
+    sdk_type: "claude",
     display_name: "Anthropic",
     icon_key: "anthropic",
     messages_url: "https://api.anthropic.com",
@@ -64,6 +65,7 @@ function makePreset(overrides?: Partial<PresetProvider>): PresetProvider {
 function makeCredential(overrides?: Partial<AgentCredential>): AgentCredential {
   return {
     id: 1,
+    sdk_type: "claude",
     preset_id: "anthropic",
     display_name: "Anthropic 主号",
     icon_key: "anthropic",

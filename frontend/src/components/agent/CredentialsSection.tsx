@@ -11,6 +11,7 @@ import { useAppStore } from "@/stores/app-store";
 import { useConfigStatusStore } from "@/stores/config-status-store";
 import type {
   AgentCredential,
+  AgentSdkType,
   CreateAgentCredentialRequest,
   PresetProvider,
   TestConnectionResponse,
@@ -18,7 +19,12 @@ import type {
 } from "@/types/agent-credential";
 import { errMsg, voidCall } from "@/utils/async";
 
-export function CredentialsSection() {
+interface CredentialsSectionProps {
+  /** Agent SDK 类型：claude（Anthropic 协议）/ openai（OpenAI 协议） */
+  sdkType: AgentSdkType;
+}
+
+export function CredentialsSection({ sdkType }: CredentialsSectionProps) {
   const { t } = useTranslation("dashboard");
 
   const [credentials, setCredentials] = useState<AgentCredential[]>([]);
@@ -35,8 +41,8 @@ export function CredentialsSection() {
   const loadCreds = useCallback(async () => {
     try {
       const [c, p] = await Promise.all([
-        API.listAgentCredentials(),
-        API.listAgentPresetProviders(),
+        API.listAgentCredentials(sdkType),
+        API.listAgentPresetProviders(sdkType),
       ]);
       setCredentials(c.credentials);
       setPresets(p.providers);
@@ -44,7 +50,7 @@ export function CredentialsSection() {
     } catch (err) {
       useAppStore.getState().pushToast(errMsg(err), "error");
     }
-  }, []);
+  }, [sdkType]);
 
   useEffect(() => {
     // mount 时异步拉取凭证后再 setState，属于受控的初始化加载。
@@ -59,12 +65,12 @@ export function CredentialsSection() {
 
   const handleCreate = useCallback(
     async (req: CreateAgentCredentialRequest) => {
-      await API.createAgentCredential(req);
+      await API.createAgentCredential({ ...req, sdk_type: sdkType });
       await loadCreds();
       voidCall(useConfigStatusStore.getState().refresh());
       useAppStore.getState().pushToast(t("agent_config_saved"), "success");
     },
-    [loadCreds, t],
+    [loadCreds, sdkType, t],
   );
 
   const handleUpdate = useCallback(
@@ -161,8 +167,10 @@ export function CredentialsSection() {
     <>
       <SectionShell
         kicker="Credentials"
-        title={t("agent_credentials")}
-        description={t("anthropic_key_required_desc")}
+        title={sdkType === "openai" ? t("openai_agents_credentials") : t("agent_credentials")}
+        description={
+          sdkType === "openai" ? t("openai_key_required_desc") : t("anthropic_key_required_desc")
+        }
         trailing={
           <button
             type="button"
@@ -188,6 +196,7 @@ export function CredentialsSection() {
 
       <AddCredentialModal
         open={addModalOpen}
+        sdkType={sdkType}
         presets={presets}
         customSentinelId={customSentinelId}
         onSubmit={handleCreate}
@@ -198,6 +207,7 @@ export function CredentialsSection() {
         key={editingCred?.id ?? "edit-empty"}
         open={editingCred !== null}
         mode="edit"
+        sdkType={sdkType}
         presets={presets}
         customSentinelId={customSentinelId}
         initial={

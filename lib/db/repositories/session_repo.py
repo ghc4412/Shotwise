@@ -12,6 +12,10 @@ from lib.db.base import DEFAULT_USER_ID, dt_to_iso, utc_now
 from lib.db.models.session import AgentSession
 from lib.db.repositories.base import BaseRepository, rowcount
 
+SDK_TYPE_CLAUDE = "claude"
+SDK_TYPE_OPENAI = "openai"
+SDK_TYPES = (SDK_TYPE_CLAUDE, SDK_TYPE_OPENAI)
+
 
 def _row_to_dict(row: AgentSession) -> dict[str, Any]:
     return {
@@ -20,6 +24,8 @@ def _row_to_dict(row: AgentSession) -> dict[str, Any]:
         "project_name": row.project_name,
         "title": row.title or "",
         "status": row.status,
+        "sdk_type": row.sdk_type,
+        "claude_resume_id": row.claude_resume_id,
         "created_at": dt_to_iso(row.created_at),
         "updated_at": dt_to_iso(row.updated_at),
     }
@@ -27,7 +33,12 @@ def _row_to_dict(row: AgentSession) -> dict[str, Any]:
 
 class SessionRepository(BaseRepository):
     async def create(
-        self, project_name: str, sdk_session_id: str, title: str = "", user_id: str = DEFAULT_USER_ID
+        self,
+        project_name: str,
+        sdk_session_id: str,
+        title: str = "",
+        sdk_type: str = SDK_TYPE_CLAUDE,
+        user_id: str = DEFAULT_USER_ID,
     ) -> dict[str, Any]:
         now = utc_now()
         row = AgentSession(
@@ -36,6 +47,7 @@ class SessionRepository(BaseRepository):
             project_name=project_name,
             title=title,
             status="idle",
+            sdk_type=sdk_type,
             created_at=now,
             updated_at=now,
             user_id=user_id,
@@ -76,6 +88,20 @@ class SessionRepository(BaseRepository):
         now = utc_now()
         result = await self.session.execute(
             update(AgentSession).where(AgentSession.sdk_session_id == session_id).values(status=status, updated_at=now)
+        )
+        await self.session.commit()
+        return rowcount(result) > 0
+
+    async def update_sdk_type(
+        self, session_id: str, sdk_type: str, *, claude_resume_id: str | None = None
+    ) -> bool:
+        """切换会话当前活跃的 SDK 类型；可同时落 Claude resume id 供续接。"""
+        now = utc_now()
+        values: dict[str, Any] = {"sdk_type": sdk_type, "updated_at": now}
+        if claude_resume_id is not None:
+            values["claude_resume_id"] = claude_resume_id
+        result = await self.session.execute(
+            update(AgentSession).where(AgentSession.sdk_session_id == session_id).values(**values)
         )
         await self.session.commit()
         return rowcount(result) > 0

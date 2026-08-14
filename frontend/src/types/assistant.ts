@@ -15,6 +15,8 @@ export interface SessionMeta {
   project_name: string;
   title: string;
   status: SessionStatus;
+  /** 会话当前活跃的 Agent SDK 类型（claude / openai）。 */
+  sdk_type?: "claude" | "openai";
   created_at: string;
   updated_at: string;
 }

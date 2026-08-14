@@ -340,6 +340,8 @@ MESSAGES = {
     "video_prompt_too_long": "{provider}/{model} accepts prompts of at most {limit} characters but received {count}; the provider would silently truncate the excess, so generation was aborted. Shorten the prompt",
     # Agent credentials
     "agent_preset_unknown": "Unknown preset provider: {preset_id}",
+    "agent_sdk_type_unknown": "Unknown Agent SDK type: {sdk_type}",
+    "agent_preset_sdk_type_mismatch": "Preset {preset_id} does not belong to the {sdk_type} Agent",
     "agent_base_url_required_custom": "base_url is required for custom configuration",
     "agent_no_fields_to_update": "No fields to update",
     "agent_credential_not_found": "Credential not found",

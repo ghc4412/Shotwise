@@ -85,10 +85,16 @@ class SendRequest(BaseModel):
     session_id: str | None = None
     # 请求侧幂等键：同键重试返回既有权威条目，不产生重复。
     client_key: str | None = Field(default=None, max_length=128)
+    # 新会话时选择 Agent SDK 通道（claude / openai）；已有会话忽略该字段
+    sdk_type: str = "claude"
 
 
 class AnswerQuestionRequest(BaseModel):
     answers: dict[str, str] = Field(default_factory=dict)
+
+
+class SwitchAgentRequest(BaseModel):
+    sdk_type: str = "claude"
 
 
 @router.post("/sessions/send")
@@ -107,6 +113,7 @@ async def send_message(
             images=req.images,
             locale=get_locale(request),
             client_key=req.client_key,
+            sdk_type=req.sdk_type,
         )
         return result
     except SessionCapacityError as exc:
@@ -278,6 +285,28 @@ async def interrupt_session(project_name: str, session_id: str, _t: Translator):
         raise NotFoundError("session_not_found", session_id=session_id) from exc
     except ValueError as exc:
         logger.warning("会话中断请求非法: %s", exc)
+        raise BadRequestError("request_invalid") from exc
+    except Exception:
+        logger.exception("请求处理失败")
+        raise HTTPException(status_code=500, detail=_t("internal_server_error"))
+
+
+@router.post("/sessions/{session_id}/switch-agent")
+async def switch_agent(project_name: str, session_id: str, req: SwitchAgentRequest, _t: Translator):
+    """切换会话当前活跃的 Agent SDK 类型（claude ↔ openai）。"""
+    try:
+        service = get_assistant_service()
+        meta = await _validate_session_ownership(service, session_id, project_name, _t)
+        if req.sdk_type not in ("claude", "openai"):
+            raise BadRequestError("agent_sdk_type_unknown", sdk_type=req.sdk_type)
+        result = await service.switch_agent(session_id, req.sdk_type, meta=meta)
+        return result
+    except HTTPException:
+        raise
+    except FileNotFoundError as exc:
+        raise NotFoundError("session_not_found", session_id=session_id) from exc
+    except ValueError as exc:
+        logger.warning("会话切换 Agent 请求非法: %s", exc)
         raise BadRequestError("request_invalid") from exc
     except Exception:
         logger.exception("请求处理失败")

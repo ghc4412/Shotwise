@@ -70,6 +70,11 @@ from lib.providers import PROVIDER_ANTHROPIC
 
 SDK_AVAILABLE = True
 
+# Agent SDK 类型常量（与 credential/session 模型的 sdk_type 对齐）
+SDK_TYPE_CLAUDE = "claude"
+SDK_TYPE_OPENAI = "openai"
+SDK_TYPES = (SDK_TYPE_CLAUDE, SDK_TYPE_OPENAI)
+
 
 # inbox 积压告警阈值：~1s 内 100 条 stream_event（典型流式频率上限）；
 # 持续高于此值说明 _process_inbox 被阻塞或下游 I/O 超慢。
@@ -221,6 +226,8 @@ class ManagedSession:
     initial_user_entry_error: Exception | None = None
     last_user_prompt: str = ""
     assistant_model: str = ""
+    sdk_type: str = SDK_TYPE_CLAUDE  # 会话当前活跃的 Agent SDK 类型
+    _cleanup: Any = None  # 会话终结时释放 SDK 专属资源（当前为保留字段）
     interrupt_requested: bool = False
     last_activity: float | None = None  # updated on every send/receive
     _cleanup_task: asyncio.Task | None = None  # current cleanup timer (idle TTL or terminal delay)
@@ -402,6 +409,15 @@ class SessionManager:
             session_factory_provider=lambda: getattr(self, "_session_factory", None),
             user_id_provider=lambda: getattr(self, "_user_id", DEFAULT_USER_ID),
         )
+        # OpenAI Agents SDK 通道的 options 装配器：prompt 复用 Claude 装配器的系统提示构建。
+        from server.agent_runtime.openai_agents_options import OpenAIAgentsOptionsAssembler
+
+        self._openai_agents_options_assembler = OpenAIAgentsOptionsAssembler(
+            projects_root=self.projects_root,
+            resolve_project_cwd=self._resolve_project_cwd,
+            prompt_builder=self._options_assembler._build_append_prompt,
+            max_turns_provider=lambda: self.max_turns,
+        )
 
     def configure_sandbox_runtime(self, *, in_docker: bool, sandbox_enabled: bool) -> None:
         """startup 期注入平台运行时事实（Docker 嵌套、内核沙箱可用性）。
@@ -457,6 +473,57 @@ class SessionManager:
             can_use_tool=can_use_tool,
             locale=locale,
             stderr=stderr,
+        )
+
+    async def _build_client_factory(
+        self,
+        *,
+        sdk_type: str,
+        project_name: str,
+        resume_sdk_id: str | None,
+        managed_ref: list[ManagedSession | None],
+        locale: str,
+        startup_stderr: _StartupStderrCollector,
+    ) -> tuple[Callable[[], Any], str, Any]:
+        """按 sdk_type 装配 SDK client 工厂，返回 (client_factory, assistant_model, cleanup)。
+
+        - claude：OptionsAssembler → ClaudeSDKClient（现有路径）
+        - openai：OpenAIAgentsOptionsAssembler → OpenAIAgentsSessionClient（Agent + Runner）
+        """
+        if sdk_type == SDK_TYPE_OPENAI:
+            from server.agent_runtime.openai_agents_client import OpenAIAgentsSessionClient
+
+            built = await self._openai_agents_options_assembler.build(
+                project_name,
+                session_id=resume_sdk_id or "",
+                locale=locale,
+            )
+            client_factory = lambda: OpenAIAgentsSessionClient(  # noqa: E731
+                provider=built.provider,
+                model=built.model,
+                system_prompt=built.system_prompt,
+                session=built.session,
+                tools=built.tools,
+                max_turns=built.max_turns,
+            )
+            return client_factory, built.model, None
+
+        if not SDK_AVAILABLE or ClaudeSDKClient is None:
+            exc = RuntimeError("claude_agent_sdk is not installed")
+            raise _make_agent_startup_error(exc, project_name=project_name, session_id=None) from exc
+
+        options = await self._build_options(
+            project_name,
+            resume_id=resume_sdk_id,
+            can_use_tool=await self._build_can_use_tool_callback(resume_sdk_id or "new-session", managed_ref),
+            locale=locale,
+            stderr=startup_stderr,
+        )
+        assistant_model = resolve_configured_assistant_model(getattr(options, "env", None))
+        return (
+            lambda: ClaudeSDKClient(options=options),  # noqa: E731
+            assistant_model,
+            None,
         )
 
     def _build_session_store(self):
@@ -554,6 +621,7 @@ class SessionManager:
         project_name: str,
         prompt: str | AsyncIterable[dict],
         *,
+        sdk_type: str = SDK_TYPE_CLAUDE,
         echo_text: str | None = None,
         echo_content: list[dict[str, Any]] | None = None,
         locale: str = DEFAULT_LOCALE,
@@ -562,13 +630,15 @@ class SessionManager:
     ) -> str:
         """Create a new session via send-first: start actor, send query, wait for sdk_session_id.
 
+        ``sdk_type`` 选择 Agent SDK 通道（claude / openai）；新会话没有对侧 SDK id，
+        后续经 ``switch_agent`` 切换时落库对侧 id 供续接。
+
         ``user_entry`` 是本条用户消息的事件日志条目（写入点定型后的形态）；
         sdk_session_id 就绪后由 inbox 任务先写日志（seq 0）再放行等待，权威
         条目落在 ``managed.initial_user_log_entry`` 供受理响应回传。
         """
-        if not SDK_AVAILABLE or ClaudeSDKClient is None:
-            exc = RuntimeError("claude_agent_sdk is not installed")
-            raise _make_agent_startup_error(exc, project_name=project_name, session_id=None) from exc
+        if sdk_type not in SDK_TYPES:
+            raise ValueError(f"unknown sdk_type: {sdk_type!r}")
 
         await self._ensure_capacity()
         temp_id = uuid4().hex
@@ -578,13 +648,18 @@ class SessionManager:
         # 停止并清空，既完整保留启动故障证据，也不让长会话 stderr 占用内存。
         startup_stderr = _StartupStderrCollector()
 
+        # OpenAI Agents SDK 的会话 id 即对外 sdk_session_id（SQLiteSession 按它持久化），
+        # 新会话直接用 temp_id；Claude 侧 resume_id=None 表示由 SDK 生成新会话。
+        resume_sdk_id = temp_id if sdk_type == SDK_TYPE_OPENAI else None
+
         try:
-            options = await self._build_options(
-                project_name,
-                resume_id=None,
-                can_use_tool=await self._build_can_use_tool_callback(temp_id, managed_ref),
+            client_factory, assistant_model, cleanup = await self._build_client_factory(
+                sdk_type=sdk_type,
+                project_name=project_name,
+                resume_sdk_id=resume_sdk_id,
+                managed_ref=managed_ref,
                 locale=locale,
-                stderr=startup_stderr,
+                startup_stderr=startup_stderr,
             )
         except Exception as exc:
             sdk_stderr = startup_stderr.render()
@@ -595,10 +670,9 @@ class SessionManager:
                 session_id=None,
                 sdk_stderr=sdk_stderr,
             ) from exc
-        assistant_model = resolve_configured_assistant_model(getattr(options, "env", None))
 
         actor = SessionActor(
-            client_factory=lambda: ClaudeSDKClient(options=options),
+            client_factory=client_factory,
             on_message=self._make_actor_message_callback(managed_ref),
         )
 
@@ -608,7 +682,9 @@ class SessionManager:
             status="running",
             project_name=project_name,
             assistant_model=assistant_model,
+            sdk_type=sdk_type,
         )
+        managed._cleanup = cleanup
         if user_entry is not None:
             managed.pending_initial_user_entry = {"entry": user_entry, "client_key": client_key}
         managed.entry_pipeline = self._build_entry_pipeline(managed)
@@ -869,9 +945,7 @@ class SessionManager:
                 if meta is None:
                     raise FileNotFoundError(f"session not found: {session_id}")
 
-            if not SDK_AVAILABLE or ClaudeSDKClient is None:
-                exc = RuntimeError("claude_agent_sdk is not installed")
-                raise _make_agent_startup_error(exc, project_name=meta.project_name, session_id=session_id) from exc
+            sdk_type = getattr(meta, "sdk_type", None) or SDK_TYPE_CLAUDE
 
             await self._ensure_capacity()
             managed_ref: list[ManagedSession | None] = [None]
@@ -880,12 +954,13 @@ class SessionManager:
             startup_stderr = _StartupStderrCollector()
 
             try:
-                options = await self._build_options(
-                    meta.project_name,
-                    meta.id,  # SessionMeta.id 就是 sdk_session_id
-                    can_use_tool=await self._build_can_use_tool_callback(session_id, managed_ref),
+                client_factory, assistant_model, cleanup = await self._build_client_factory(
+                    sdk_type=sdk_type,
+                    project_name=meta.project_name,
+                    resume_sdk_id=meta.resolve_sdk_session_id(sdk_type),
+                    managed_ref=managed_ref,
                     locale=locale,
-                    stderr=startup_stderr,
+                    startup_stderr=startup_stderr,
                 )
             except Exception as exc:
                 sdk_stderr = startup_stderr.render()
@@ -896,10 +971,9 @@ class SessionManager:
                     session_id=session_id,
                     sdk_stderr=sdk_stderr,
                 ) from exc
-            assistant_model = resolve_configured_assistant_model(getattr(options, "env", None))
 
             actor = SessionActor(
-                client_factory=lambda: ClaudeSDKClient(options=options),
+                client_factory=client_factory,
                 on_message=self._make_actor_message_callback(managed_ref),
             )
 
@@ -912,8 +986,10 @@ class SessionManager:
                 status=resumed_status,
                 project_name=meta.project_name,
                 assistant_model=assistant_model,
+                sdk_type=sdk_type,
                 resolved_sdk_id=meta.id,  # 标记为已注册，防止重复创建 DB 记录
             )
+            managed._cleanup = cleanup
             managed.sdk_id_event.set()  # 已有会话不需要等待 sdk_id
             managed.entry_pipeline = self._build_entry_pipeline(managed)
             managed_ref[0] = managed
@@ -1178,6 +1254,58 @@ class SessionManager:
             managed._cleanup_task.cancel()
         managed._cleanup_task = asyncio.create_task(self._cleanup_idle(session_id))
 
+    @staticmethod
+    async def _run_cleanup(cleanup: Any) -> None:
+        """执行会话级 SDK 资源清理（同步函数放线程池，避免阻塞事件循环）。"""
+        result = cleanup()
+        if hasattr(result, "__await__"):
+            await result
+
+    async def switch_agent(
+        self,
+        session_id: str,
+        sdk_type: str,
+        *,
+        meta: SessionMeta | None = None,
+    ) -> SessionMeta:
+        """切换会话当前活跃的 Agent SDK 类型（claude ↔ openai）。
+
+        仅允许在会话空闲（无运行中 turn）时切换；内存中已连接的会话先关闭
+        （其 SDK 会话历史已持久化，切回时经 resolve_sdk_session_id 续接），
+        再更新 meta 的 sdk_type。切到 Claude 时若 Claude 尚无 resume id（当前
+        sdk_session_id 是 OpenAI 会话 id），落库 claude_resume_id 供续接。
+        """
+        if sdk_type not in SDK_TYPES:
+            raise ValueError(f"unknown sdk_type: {sdk_type!r}")
+        if meta is None:
+            meta = await self.meta_store.get(session_id)
+            if meta is None:
+                raise FileNotFoundError(f"session not found: {session_id}")
+        current = getattr(meta, "sdk_type", None) or SDK_TYPE_CLAUDE
+        if current == sdk_type:
+            return meta
+
+        managed = self.sessions.get(session_id)
+        if managed is not None:
+            if managed.status == "running":
+                raise ValueError("会话正在处理中，请等待当前回复完成后再切换 Agent")
+            await self.close_session(session_id, reason="switch agent")
+
+        if sdk_type == SDK_TYPE_CLAUDE:
+            # 只落"已存在的 claude id"：当前就是 claude 会话时 sdk_session_id 即 claude id
+            claude_id = meta.claude_resume_id
+            if claude_id is None and (meta.sdk_type or SDK_TYPE_CLAUDE) == SDK_TYPE_CLAUDE:
+                claude_id = meta.id
+            await self.meta_store.update_sdk_type(session_id, sdk_type, claude_resume_id=claude_id)
+        else:
+            # OpenAI Agents SDK 会话历史由 SQLiteSession 按 sdk_session_id 持久化，
+            # 无需落额外 id，仅更新 sdk_type。
+            await self.meta_store.update_sdk_type(session_id, sdk_type)
+        updated = await self.meta_store.get(session_id)
+        if updated is None:  # pragma: no cover
+            raise FileNotFoundError(f"session not found: {session_id}")
+        return updated
+
     async def _cleanup_idle(self, session_id: str) -> None:
         try:
             delay = await self._get_cleanup_delay()
@@ -1229,6 +1357,15 @@ class SessionManager:
             except Exception:
                 logger.exception("actor 关停异常 session_id=%s", session_id)
                 managed.status = "error"
+
+            # SDK 专属资源释放（当前无 openai/claude 通道需要，保留扩展点）
+            cleanup = getattr(managed, "_cleanup", None)
+            if cleanup is not None:
+                try:
+                    await self._run_cleanup(cleanup)
+                except Exception:
+                    logger.exception("会话 SDK 资源清理失败 session_id=%s", session_id)
+                managed._cleanup = None
 
             # Drain the inbox processor
             try:
@@ -1502,7 +1639,7 @@ class SessionManager:
 
                 tag_coro = _tag()
             await asyncio.gather(
-                self.meta_store.create(managed.project_name, sdk_id),
+                self.meta_store.create(managed.project_name, sdk_id, sdk_type=managed.sdk_type),
                 *([] if tag_coro is None else [tag_coro]),
             )
             await self.meta_store.update_status(sdk_id, "running")

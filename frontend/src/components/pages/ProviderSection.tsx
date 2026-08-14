@@ -173,19 +173,20 @@ export function ProviderSection() {
   }
 
   return (
-    <div className="flex">
-      {/* Provider list sidebar */}
+    <div className="flex min-h-full">
+      {/* Provider list sidebar — 外框撑满整列（border-r 延伸到底），内部列表保持 sticky 滚动 */}
       <nav
         aria-label={t("provider_list")}
-        className="sticky top-0 max-h-screen w-56 shrink-0 self-start overflow-y-auto border-r border-hairline-soft px-3 py-5"
+        className="w-56 shrink-0 border-r border-hairline-soft"
         style={{
           background:
             "linear-gradient(180deg, var(--color-shell-side-a), var(--color-shell-side-b))",
         }}
       >
-        <div className="mb-2 px-3 font-mono text-[9.5px] font-bold uppercase tracking-[0.16em] text-text-4">
-          {t("preset_providers")}
-        </div>
+        <div className="sticky top-0 max-h-screen overflow-y-auto px-3 py-5">
+          <div className="mb-2 px-3 font-mono text-[9.5px] font-bold uppercase tracking-[0.16em] text-text-4">
+            {t("preset_providers")}
+          </div>
         {providers.map((p) => {
           const isActive =
             selection?.kind === "preset" && selection.id === p.id;
@@ -233,6 +234,7 @@ export function ProviderSection() {
           onSelect={(id) => setSelection({ kind: "custom", id })}
           onAdd={() => setSelection({ kind: "new-custom" })}
         />
+        </div>
       </nav>
 
       {/* Detail panel */}
