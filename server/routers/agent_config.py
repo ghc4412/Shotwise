@@ -52,6 +52,7 @@ class PresetProviderResponse(BaseModel):
     notes: str | None
     api_key_pattern: str | None
     is_recommended: bool
+    supports_discovery: bool
 
 
 class PresetProvidersResponse(BaseModel):
@@ -84,6 +85,7 @@ async def list_preset_providers(
                 notes=_t(p.notes_i18n_key) if p.notes_i18n_key else None,
                 api_key_pattern=p.api_key_pattern,
                 is_recommended=p.is_recommended,
+                supports_discovery=p.supports_discovery,
             )
             for p in list_presets(sdk_type=sdk_type)
         ],
@@ -92,6 +94,14 @@ async def list_preset_providers(
 
 
 # ── Credential models ──────────────────────────────────────────────
+
+
+class ModelMapEntry(BaseModel):
+    """模型映射表条目：菜单显示名 → 实际请求模型（+ 可选上下文窗口）。"""
+
+    menu_name: str = ""
+    request_model: str = ""
+    context_window: int | None = None
 
 
 class CredentialResponse(BaseModel):
@@ -107,6 +117,7 @@ class CredentialResponse(BaseModel):
     sonnet_model: str | None
     opus_model: str | None
     subagent_model: str | None
+    model_map: list[ModelMapEntry] | None = None
     is_active: bool
     created_at: str | None
 
@@ -126,6 +137,7 @@ class CreateCredentialRequest(BaseModel):
     sonnet_model: str | None = None
     opus_model: str | None = None
     subagent_model: str | None = None
+    model_map: list[ModelMapEntry] | None = None
     activate: bool | None = None  # None = 自动 (该 sdk_type 无 active 时自动 set active)
 
 
@@ -138,6 +150,7 @@ class UpdateCredentialRequest(BaseModel):
     sonnet_model: str | None = None
     opus_model: str | None = None
     subagent_model: str | None = None
+    model_map: list[ModelMapEntry] | None = None
 
 
 def _cred_to_response(cred) -> CredentialResponse:
@@ -155,6 +168,7 @@ def _cred_to_response(cred) -> CredentialResponse:
         sonnet_model=cred.sonnet_model,
         opus_model=cred.opus_model,
         subagent_model=cred.subagent_model,
+        model_map=[ModelMapEntry(**item) for item in (cred.model_map or [])] or None,
         is_active=cred.is_active,
         created_at=dt_to_iso(cred.created_at),
     )
@@ -214,6 +228,7 @@ async def create_credential(
         sonnet_model=body.sonnet_model,
         opus_model=body.opus_model,
         subagent_model=body.subagent_model,
+        model_map=[item.model_dump() for item in body.model_map] if body.model_map is not None else None,
         sdk_type=body.sdk_type,
     )
     # 自动 active 策略：activate=True，或 (activate=None 且该 sdk_type 当前无 active)
@@ -244,6 +259,7 @@ async def update_credential(
     for required in ("display_name", "base_url", "api_key"):
         if fields.get(required) is None:
             fields.pop(required, None)
+    # model_map 已由 model_dump 序列化为 dict 列表，直接落 JSON 列
     if not fields:
         raise HTTPException(status_code=400, detail=_t("agent_no_fields_to_update"))
     cred = await repo.update(cred_id, **fields)

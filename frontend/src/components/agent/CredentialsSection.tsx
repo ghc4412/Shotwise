@@ -84,6 +84,9 @@ export function CredentialsSection({ sdkType }: CredentialsSectionProps) {
         sonnet_model: req.sonnet_model,
         opus_model: req.opus_model,
         subagent_model: req.subagent_model,
+        // 编辑时模型映射必须随 patch 提交：空数组也要显式传（JSON.stringify 会丢弃
+        // undefined，后端 exclude_unset 下「未传」=「不更新」，导致新增/清空映射不生效）
+        model_map: req.model_map ?? [],
       };
       if (req.api_key) patch.api_key = req.api_key;
       await API.updateAgentCredential(editingCred.id, patch);
@@ -221,6 +224,7 @@ export function CredentialsSection({ sdkType }: CredentialsSectionProps) {
                 sonnet_model: editingCred.sonnet_model ?? undefined,
                 opus_model: editingCred.opus_model ?? undefined,
                 subagent_model: editingCred.subagent_model ?? undefined,
+                model_map: editingCred.model_map ?? undefined,
               }
             : undefined
         }

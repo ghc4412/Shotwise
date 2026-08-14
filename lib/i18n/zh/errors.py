@@ -157,6 +157,7 @@ MESSAGES = {
     "provider_not_found": "供应商不存在",
     "at_least_one_field_required": "至少需要提供一个更新字段",
     "discovery_failed": "模型发现失败: {err_msg}",
+    "discovery_not_supported": "模型列表接口不可用（HTTP {status}）：该供应商可能不支持模型自动发现，请从模型下拉选择或手动输入模型名，或检查 API Key",
     "anthropic_discovery_no_key": "未配置 API Key，无法发现模型",
     "unknown_endpoint": "未知 endpoint: {endpoint}",
     "unknown_discovery_format": "不支持的 discovery_format: {discovery_format}",

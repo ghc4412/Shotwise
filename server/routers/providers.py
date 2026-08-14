@@ -158,6 +158,10 @@ class ProviderConfigResponse(BaseModel):
     console_url: str | None = None
     # 供应商级启用开关（默认启用）；关闭后生成链路不再选择/调用该供应商
     enabled: bool = True
+    # 注册表声明的模型清单（model_id -> ModelInfoResponse；只读，真相源：PROVIDER_REGISTRY）。
+    # 与 /providers 目录端点同构（同一序列化点 _build_models_response），供详情页渲染只读模型列表；
+    # 预置供应商模型不落 DB、不可编辑，可编辑模型走自定义供应商。
+    models: dict[str, ModelInfoResponse] = {}
 
 
 class ConnectionTestResponse(BaseModel):
@@ -371,6 +375,38 @@ def _video_reference_audio_mode(provider_id: str, model_id: str) -> str:
     return caps.reference_audio_mode.value
 
 
+def _build_models_response(
+    provider_id: str,
+    models: Mapping[str, Mapping[str, Any]],
+) -> dict[str, ModelInfoResponse]:
+    """把注册表模型 dict 序列化为 ModelInfoResponse（列表与详情接口共用，单一序列化点）。
+
+    预置供应商模型不落 DB、不可编辑，模型清单只读展示注册表真相源；此处与目录端点保持同构：
+    generation_mode 未知（无项目上下文），声音一致性按非参考生视频路径派生（native 恒降格）。
+    """
+    meta = PROVIDER_REGISTRY.get(provider_id)
+    out: dict[str, ModelInfoResponse] = {}
+    for mid, minfo in models.items():
+        model_info = meta.models.get(mid) if meta is not None else None
+        has_audio_track = model_has_audio_track(provider_id, model_info) if model_info is not None else False
+        reference_audio_mode = (
+            _video_reference_audio_mode(provider_id, mid) if minfo.get("media_type") == "video" else "none"
+        )
+        out[mid] = ModelInfoResponse(
+            **minfo,
+            has_audio_track=has_audio_track,
+            audio_switch_controllable=(
+                model_audio_switch_controllable(model_info) if model_info is not None else False
+            ),
+            voice_consistency=derive_voice_consistency(
+                reference_audio_mode=reference_audio_mode,
+                generation_mode=None,
+                has_audio=has_audio_track,
+            ),
+        )
+    return out
+
+
 @router.get("", response_model=ProvidersListResponse)
 async def list_providers(
     _t: Translator,
@@ -381,26 +417,7 @@ async def list_providers(
     providers = []
     for s in statuses:
         meta = PROVIDER_REGISTRY.get(s.name)
-        models: dict[str, ModelInfoResponse] = {}
-        for mid, minfo in (s.models or {}).items():
-            model_info = meta.models.get(mid) if meta is not None else None
-            has_audio_track = model_has_audio_track(s.name, model_info) if model_info is not None else False
-            reference_audio_mode = (
-                _video_reference_audio_mode(s.name, mid) if minfo.get("media_type") == "video" else "none"
-            )
-            models[mid] = ModelInfoResponse(
-                **minfo,
-                has_audio_track=has_audio_track,
-                audio_switch_controllable=(
-                    model_audio_switch_controllable(model_info) if model_info is not None else False
-                ),
-                # generation_mode=None：目录端点无项目上下文，按非参考生视频路径派生。
-                voice_consistency=derive_voice_consistency(
-                    reference_audio_mode=reference_audio_mode,
-                    generation_mode=None,
-                    has_audio=has_audio_track,
-                ),
-            )
+        models = _build_models_response(s.name, s.models or {})
         providers.append(
             ProviderSummary(
                 id=s.name,
@@ -489,6 +506,10 @@ async def get_provider_config(
     # 避免未来新增"无 secret 字段但走普通凭证表单"的 provider 时该分组恒真、静默绕过校验。
     secret_field_groups = meta.credential_groups or ([[f.key for f in secret_fields]] if secret_fields else [])
 
+    # 模型清单只读展示：从注册表 ModelInfo 转 dict（与 ConfigService.get_all_providers_status
+    # 同一转换：排除 pricing，pricing 含 tuple 键非 JSON 可序列化且响应不消费）。
+    models_dict = {mid: {k: v for k, v in mi.__dict__.items() if k != "pricing"} for mid, mi in meta.models.items()}
+
     return ProviderConfigResponse(
         id=provider_id,
         display_name=_t(f"provider_name_{provider_id}"),
@@ -501,6 +522,7 @@ async def get_provider_config(
         secret_field_groups=secret_field_groups,
         console_url=meta.console_url,
         enabled=await svc.get_provider_enabled(provider_id),
+        models=_build_models_response(provider_id, models_dict),
     )
 
 
@@ -912,7 +934,8 @@ def _test_minimax(config: dict[str, str], _t: Callable[..., str]) -> ConnectionT
     models = client.models.list()
     available = sorted(m.id for m in models.data if "minimax" in m.id.lower() or "abab" in m.id.lower())
     return ConnectionTestResponse(
-        success=True,        available_models=available,
+        success=True,
+        available_models=available,
         message=_t("connection_success"),
     )
 

@@ -32,6 +32,9 @@ class PresetProvider:
     name_i18n_key: str | None = None
     # 归属的 Agent SDK 类型：claude（Anthropic 协议端点）| openai（OpenAI 协议端点）
     sdk_type: str = "claude"
+    # 是否提供 GET /v1/models 模型自动发现端点；为 False 的预设（如方舟
+    # Agent/Coding Plan）UI 应隐藏「获取模型列表」按钮，改用 suggested_models 下拉或手动输入
+    supports_discovery: bool = True
 
 
 PRESET_PROVIDERS: dict[str, PresetProvider] = {
@@ -194,6 +197,7 @@ PRESET_PROVIDERS: dict[str, PresetProvider] = {
         api_key_pattern=None,
         is_recommended=False,
         name_i18n_key="provider_name_ark-coding-plan",
+        supports_discovery=False,
     ),
     "ark-agent-plan": PresetProvider(
         id="ark-agent-plan",
@@ -228,6 +232,7 @@ PRESET_PROVIDERS: dict[str, PresetProvider] = {
         api_key_pattern=None,
         is_recommended=False,
         name_i18n_key="provider_name_ark-agent-plan",
+        supports_discovery=False,
     ),
     "tencent-tokenhub-coding": PresetProvider(
         id="tencent-tokenhub-coding",

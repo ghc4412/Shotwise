@@ -10,6 +10,7 @@ import {
   Info,
   KeyRound,
   Languages,
+  Palette,
   Plug,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -19,6 +20,7 @@ import { UserMenu } from "@/components/layout/UserMenu";
 import { AgentConfigTab } from "./AgentConfigTab";
 import { ApiKeysTab } from "./ApiKeysTab";
 import { AboutSection } from "./settings/AboutSection";
+import { AppearanceSection } from "./settings/AppearanceSection";
 import { MediaModelSection } from "./settings/MediaModelSection";
 import { ProviderSection } from "./ProviderSection";
 import { UsageStatsSection } from "./settings/UsageStatsSection";
@@ -35,7 +37,7 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-type SettingsSection = "agent" | "providers" | "media" | "usage" | "api-keys" | "about";
+type SettingsSection = "agent" | "providers" | "media" | "usage" | "api-keys" | "appearance" | "about";
 
 /** 引导第 5/6 步指向的侧栏入口——只有这两项挂锚点，其余小节不在当前引导覆盖范围内。 */
 const SECTION_ONBOARDING_ANCHORS: Partial<Record<SettingsSection, string>> = {
@@ -77,7 +79,10 @@ const SECTION_GROUPS: SectionGroup[] = [
   },
   {
     kickerKey: "dashboard:settings_group_system",
-    items: [{ id: "about", labelKey: "dashboard:about", Icon: Info }],
+    items: [
+      { id: "appearance", labelKey: "dashboard:appearance", Icon: Palette },
+      { id: "about", labelKey: "dashboard:about", Icon: Info },
+    ],
   },
 ];
 
@@ -96,6 +101,7 @@ export function SystemConfigPage() {
     if (section === "media") return "media";
     if (section === "usage") return "usage";
     if (section === "api-keys") return "api-keys";
+    if (section === "appearance") return "appearance";
     if (section === "about") return "about";
     return "providers";
   }, [search]);
@@ -319,6 +325,7 @@ export function SystemConfigPage() {
                   <ApiKeysTab />
                 </div>
               )}
+              {activeSection === "appearance" && <AppearanceSection />}
               {activeSection === "about" && <AboutSection />}
             </div>
           )}

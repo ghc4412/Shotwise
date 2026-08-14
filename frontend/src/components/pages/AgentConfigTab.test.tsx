@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n";
@@ -58,6 +58,7 @@ function makePreset(overrides?: Partial<PresetProvider>): PresetProvider {
     notes: null,
     api_key_pattern: null,
     is_recommended: true,
+    supportsDiscovery: true,
     ...overrides,
   };
 }
@@ -76,6 +77,7 @@ function makeCredential(overrides?: Partial<AgentCredential>): AgentCredential {
     sonnet_model: null,
     opus_model: null,
     subagent_model: null,
+    model_map: null,
     is_active: true,
     created_at: "2026-04-21T00:00:00Z",
     ...overrides,
@@ -151,6 +153,53 @@ describe("AgentConfigTab — credentials directory", () => {
         name: /edit[_ ]credential|编辑凭证|Chỉnh sửa xác thực/i,
       }),
     ).toBeInTheDocument();
+  });
+
+  it("saves multiple model-map entries when editing a credential", async () => {
+    const existing = makeCredential({
+      model_map: [
+        {
+          menu_name: "DeepSeek V4 Flash",
+          request_model: "deepseek-v4-flash",
+          context_window: null,
+        },
+      ],
+    });
+    setupBaseMocks({ credentials: [existing] });
+    const updateSpy = vi.spyOn(API, "updateAgentCredential").mockResolvedValue(
+      makeCredential({ model_map: [] }),
+    );
+    render(<AgentConfigTab visible />);
+
+    await screen.findByText("Anthropic 主号");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /edit|编辑|Chỉnh sửa/i }));
+    await screen.findByRole("heading", { name: /编辑凭证/ });
+
+    // 编辑 modal 初始展示已有的 1 条映射
+    expect(screen.getAllByLabelText(/菜单显示名/)).toHaveLength(1);
+
+    // 添加第 2 条并填写实际请求模型
+    await user.click(screen.getByRole("button", { name: /添加模型/ }));
+    expect(screen.getAllByLabelText(/菜单显示名/)).toHaveLength(2);
+    const requestModelInputs = screen.getAllByLabelText(/实际请求模型/);
+    await user.type(requestModelInputs[1], "deepseek-v4-pro");
+
+    // 编辑 modal 内提交（页面其它区域可能也有「保存」按钮，需限定范围）
+    const dialog = screen.getByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /保存/ }));
+
+    await waitFor(() => {
+      expect(updateSpy).toHaveBeenCalledWith(
+        expect.any(Number),
+        expect.objectContaining({
+          model_map: expect.arrayContaining([
+            expect.objectContaining({ request_model: "deepseek-v4-flash" }),
+            expect.objectContaining({ request_model: "deepseek-v4-pro" }),
+          ]),
+        }),
+      );
+    });
   });
 });
 

@@ -169,6 +169,7 @@ MESSAGES = {
     "provider_not_found": "Nhà cung cấp không tồn tại",
     "at_least_one_field_required": "Phải cung cấp ít nhất một trường để cập nhật",
     "discovery_failed": "Phát hiện mô hình thất bại: {err_msg}",
+    "discovery_not_supported": "Không thể truy cập endpoint danh sách mô hình (HTTP {status}): nhà cung cấp có thể không hỗ trợ tự động phát hiện mô hình — hãy chọn từ danh sách mô hình hoặc nhập tên mô hình thủ công, hoặc kiểm tra API Key",
     "anthropic_discovery_no_key": "API Key chưa được cấu hình, không thể phát hiện mô hình",
     "unknown_endpoint": "Endpoint không xác định: {endpoint}",
     "unknown_discovery_format": "discovery_format không hỗ trợ: {discovery_format}",

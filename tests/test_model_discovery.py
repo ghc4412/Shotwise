@@ -182,6 +182,35 @@ class TestDiscoverModelsOpenAI:
         assert result[0]["display_name"] == "gpt-4o"
 
     @patch("lib.custom_provider.discovery.OpenAI")
+    async def test_context_window_passthrough(self, mock_openai_cls):
+        """端点带 context_window 时透传，缺省时为 None。"""
+        mock_client = MagicMock()
+        mock_openai_cls.return_value = mock_client
+
+        model_a = MagicMock()
+        model_a.id = "gpt-4o"
+        model_a.context_window = 128000
+
+        class FakeModel:
+            """普通对象：无 context_window 属性（MagicMock 会凭空造出子 mock，无法模拟缺省）。"""
+
+            id = "gpt-4o-mini"
+
+        mock_client.models.list.return_value = [model_a, FakeModel()]
+
+        from lib.custom_provider.discovery import discover_models
+
+        result = await discover_models(
+            discovery_format="openai",
+            base_url="https://api.example.com/v1",
+            api_key="sk-test",
+        )
+
+        by_id = {m["model_id"]: m for m in result}
+        assert by_id["gpt-4o"]["context_window"] == 128000
+        assert by_id["gpt-4o-mini"]["context_window"] is None
+
+    @patch("lib.custom_provider.discovery.OpenAI")
     async def test_api_unreachable(self, mock_openai_cls):
         """API 不可达时应抛出异常。"""
         mock_client = MagicMock()
@@ -321,6 +350,27 @@ class TestDiscoverModelsGoogle:
         assert result[0]["display_name"] == "gemini-3-flash"
 
     @patch("lib.custom_provider.discovery.genai")
+    async def test_context_window_from_input_token_limit(self, mock_genai):
+        """Google Model 的 input_token_limit 映射为 context_window。"""
+        mock_client = MagicMock()
+        mock_genai.Client.return_value = mock_client
+
+        model = MagicMock()
+        model.name = "models/gemini-3-flash"
+        model.input_token_limit = 1048576
+        mock_client.models.list.return_value = [model]
+
+        from lib.custom_provider.discovery import discover_models
+
+        result = await discover_models(
+            discovery_format="google",
+            base_url=None,
+            api_key="test-key",
+        )
+
+        assert result[0]["context_window"] == 1048576
+
+    @patch("lib.custom_provider.discovery.genai")
     async def test_no_base_url(self, mock_genai):
         """base_url 为 None 时不传 http_options。"""
         mock_client = MagicMock()
@@ -454,12 +504,56 @@ class TestDiscoverModelsAnthropic:
         result = await discover_models(discovery_format="anthropic", base_url=None, api_key="k")
         assert [m["model_id"] for m in result] == ["claude-x"]
 
+    @patch("lib.custom_provider.discovery.get_http_client")
+    async def test_context_window_passthrough_anthropic(self, mock_get_client):
+        """端点返回 context_window 时透传，缺省时为 None。"""
+        from unittest.mock import AsyncMock
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "data": [
+                {"id": "claude-opus-4-7", "context_window": 200000},
+                {"id": "claude-haiku-4-5"},
+            ]
+        }
+        mock_response.raise_for_status = MagicMock()
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_get_client.return_value = mock_client
+
+        from lib.custom_provider.discovery import discover_models
+
+        result = await discover_models(discovery_format="anthropic", base_url=None, api_key="sk-ant-test")
+
+        by_id = {m["model_id"]: m for m in result}
+        assert by_id["claude-opus-4-7"]["context_window"] == 200000
+        assert by_id["claude-haiku-4-5"]["context_window"] is None
+
     async def test_unknown_format_raises(self):
         """anthropic 仍是已知 format；未知 format 抛 ValueError 含 anthropic。"""
         from lib.custom_provider.discovery import discover_models
 
         with pytest.raises(ValueError, match="anthropic"):
             await discover_models(discovery_format="bogus", base_url=None, api_key="k")
+
+    @patch("lib.custom_provider.discovery.get_http_client")
+    async def test_401_raises_endpoint_unavailable(self, mock_get_client):
+        """网关识别 /v1/models 但拒绝（如方舟套餐只实现 /v1/messages）：抛专用异常而非原始 httpx 错误。"""
+        from unittest.mock import AsyncMock
+
+        from lib.custom_provider.discovery import DiscoveryEndpointUnavailableError, discover_models
+
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_get_client.return_value = mock_client
+
+        with pytest.raises(DiscoveryEndpointUnavailableError) as exc_info:
+            await discover_models(discovery_format="anthropic", base_url=None, api_key="bad-key")
+        assert exc_info.value.status_code == 401
+        # 不应再走到 raise_for_status（原始 httpx.HTTPStatusError 不进入用户可见错误）
+        mock_response.raise_for_status.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

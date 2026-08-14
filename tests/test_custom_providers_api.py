@@ -596,6 +596,26 @@ class TestDiscoverModels:
         assert resp.status_code == 502
 
 
+class TestDiscoverEndpointUnavailable:
+    """anthropic 发现端点 401/403/404：归为「端点不可用」而非泛化失败，给可读提示。"""
+
+    def test_anthropic_401_returns_readable_message(self, client: TestClient):
+        from lib.custom_provider.discovery import DiscoveryEndpointUnavailableError
+
+        with patch(
+            "lib.custom_provider.discovery.discover_models",
+            new_callable=AsyncMock,
+            side_effect=DiscoveryEndpointUnavailableError(401),
+        ):
+            resp = client.post(
+                "/api/v1/custom-providers/discover-anthropic",
+                json={"base_url": "https://ark.cn-beijing.volces.com/api/plan", "api_key": "sk-test"},
+            )
+        assert resp.status_code == 502
+        assert "401" in resp.json()["detail"]
+        assert "Client error" not in resp.json()["detail"]
+
+
 class TestDiscoverModelsByStoredProvider:
     """回归: 编辑已保存供应商时，前端无法重新提交明文 api_key，需用 stored 凭证调用 by-id 端点。"""
 

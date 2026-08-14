@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { API } from "@/api";
+import { useAppStore } from "@/stores/app-store";
 import type { PresetProvider } from "@/types/agent-credential";
 
 import { AddCredentialModal } from "../AddCredentialModal";
@@ -26,6 +27,7 @@ const presets: PresetProvider[] = [
     notes: null,
     api_key_pattern: null,
     is_recommended: true,
+    supportsDiscovery: true,
   },
 ];
 
@@ -45,6 +47,7 @@ const presetsWithSecond: PresetProvider[] = [
     notes: null,
     api_key_pattern: null,
     is_recommended: false,
+    supportsDiscovery: true,
   },
 ];
 
@@ -104,6 +107,67 @@ describe("AddCredentialModal", () => {
     expect(screen.getByRole("option", { name: "deepseek-chat" })).toBeInTheDocument();
   });
 
+  it("fetch button stays visible but shows toast for presets without auto-discovery (ark-agent-plan)", async () => {
+    const arkPresets: PresetProvider[] = [
+      {
+        ...presets[0],
+        id: "ark-agent-plan",
+        display_name: "火山方舟 Agent Plan",
+        messages_url: "https://ark.cn-beijing.volces.com/api/plan",
+        discovery_url: "https://ark.cn-beijing.volces.com",
+        suggested_models: ["doubao-seed-2.0-code"],
+        supportsDiscovery: false,
+      },
+    ];
+    const pushToastSpy = vi.spyOn(useAppStore.getState(), "pushToast");
+    const discoverSpy = vi.spyOn(API, "discoverAnthropicModels").mockResolvedValue({
+      models: [],
+    });
+    render(
+      <AddCredentialModal
+        open
+        sdkType='claude'
+        presets={arkPresets}
+        customSentinelId="__custom__"
+        onSubmit={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /火山方舟 Agent Plan/i }));
+    fireEvent.change(screen.getByLabelText(/anthropic[_ ]?api[_ ]?key|Anthropic API 密钥/i), {
+      target: { value: "sk-test" },
+    });
+    // 按钮保留可点
+    fireEvent.click(screen.getByRole("button", { name: /获取模型列表/ }));
+    // 不发请求，改为弹提示
+    expect(discoverSpy).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(pushToastSpy).toHaveBeenCalledWith(
+        expect.stringContaining("不支持模型自动发现"),
+        "warning",
+      );
+    });
+  });
+
+  it("keeps fetch-model button when preset data lacks supportsDiscovery (legacy response)", () => {
+    // 旧版本后端 / 已加载的旧 presets 数据没有 supports_discovery 字段：
+    // 缺省应视为支持发现，避免误隐藏 DeepSeek 等预设的「获取模型列表」按钮。
+    const legacyPresets: PresetProvider[] = [{ ...presets[0] }];
+    delete (legacyPresets[0] as { supportsDiscovery?: unknown }).supportsDiscovery;
+    render(
+      <AddCredentialModal
+        open
+        sdkType='claude'
+        presets={legacyPresets}
+        customSentinelId="__custom__"
+        onSubmit={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /DeepSeek/i }));
+    expect(screen.getByRole("button", { name: /获取模型列表/ })).toBeInTheDocument();
+  });
+
   it("when custom chosen, base_url input shown and empty", () => {
     render(
       <AddCredentialModal
@@ -139,7 +203,8 @@ describe("AddCredentialModal", () => {
     fireEvent.change(screen.getByLabelText(/anthropic[_ ]?api[_ ]?key|Anthropic API 密钥/i), {
       target: { value: "sk-test" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /add|添加|confirm/i }));
+    // 精确匹配提交按钮「添加」，避免命中模型映射的「添加模型」
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         preset_id: "deepseek",
@@ -218,7 +283,8 @@ describe("AddCredentialModal", () => {
       screen.getByLabelText(/anthropic[_ ]?api[_ ]?key|Anthropic API 密钥/i),
       { target: { value: "sk-test" } },
     );
-    fireEvent.click(screen.getByRole("button", { name: /add|添加|confirm/i }));
+    // 精确匹配提交按钮「添加」，避免命中模型映射的「添加模型」
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
     await waitFor(() => {
       expect(screen.getByText(/boom/)).toBeInTheDocument();
     });
@@ -529,5 +595,28 @@ describe("AddCredentialModal", () => {
     for (const chip of chips) {
       expect(chip).toBeDisabled();
     }
+  });
+
+  it("renders model map editor above default model field", () => {
+    render(
+      <AddCredentialModal
+        open
+        sdkType='claude'
+        presets={presets}
+        customSentinelId="__custom__"
+        onSubmit={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("模型映射")).toBeInTheDocument();
+    // 「获取模型列表」仅保留在模型映射模块（默认模型字段上的已移除）
+    expect(screen.getAllByRole("button", { name: /获取模型列表/ })).toHaveLength(1);
+    expect(screen.getByRole("button", { name: /添加模型/ })).toBeInTheDocument();
+    // 模型映射模块位于默认模型字段之前
+    const defaultModelLabel = screen.getByText("默认模型");
+    const mapTitle = screen.getByText("模型映射");
+    expect(mapTitle.compareDocumentPosition(defaultModelLabel)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
   });
 });

@@ -32,6 +32,7 @@ class AgentCredentialRepository(BaseRepository):
         sonnet_model: str | None = None,
         opus_model: str | None = None,
         subagent_model: str | None = None,
+        model_map: list | None = None,
         sdk_type: str = SDK_TYPE_CLAUDE,
         user_id: str = DEFAULT_USER_ID,
     ) -> AgentAnthropicCredential:
@@ -47,6 +48,7 @@ class AgentCredentialRepository(BaseRepository):
             sonnet_model=sonnet_model,
             opus_model=opus_model,
             subagent_model=subagent_model,
+            model_map=model_map,
             is_active=False,
         )
         self.session.add(cred)

@@ -4,6 +4,7 @@ import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { API } from "@/api";
 import { useConfigStatusStore } from "@/stores/config-status-store";
+import { useAppStore } from "@/stores/app-store";
 import { SystemConfigPage } from "@/components/pages/SystemConfigPage";
 import { BRAND } from "@/branding";
 import type { GetSystemConfigResponse, GetSystemVersionResponse, ProviderInfo } from "@/types";
@@ -96,6 +97,7 @@ function renderPage(path = "/app/settings") {
 describe("SystemConfigPage", () => {
   beforeEach(() => {
     useConfigStatusStore.setState(useConfigStatusStore.getInitialState(), true);
+    useAppStore.setState(useAppStore.getInitialState(), true);
     vi.restoreAllMocks();
 
     // Default: silence child section network calls so tests don't hang
@@ -122,13 +124,14 @@ describe("SystemConfigPage", () => {
     expect(screen.getByText("系统配置与 API 访问管理")).toBeInTheDocument();
   });
 
-  it("renders all 6 sidebar sections", () => {
+  it("renders all 7 sidebar sections", () => {
     renderPage();
     expect(screen.getByRole("button", { name: /智能体/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /供应商/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /模型选择/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /用量统计/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /API 令牌/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /外观/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /关于/ })).toBeInTheDocument();
   });
 
@@ -164,6 +167,21 @@ describe("SystemConfigPage", () => {
     await waitFor(() => {
       expect(usageButton).toHaveAttribute("aria-current", "page");
     });
+  });
+
+  it("opens the appearance section and switches the agent skin", async () => {
+    renderPage();
+    const appearanceButton = screen.getByRole("button", { name: /外观/ });
+    fireEvent.click(appearanceButton);
+    await waitFor(() => {
+      expect(appearanceButton).toHaveAttribute("aria-current", "page");
+    });
+    // 皮肤选择网格渲染，默认皮肤 bot 被选中
+    expect(screen.getByText("智能体图标皮肤")).toBeInTheDocument();
+    expect(useAppStore.getState().assistantSkin).toBe("bot");
+    // 切到「余烬」皮肤：立即生效并持久化
+    fireEvent.click(screen.getByRole("button", { name: /余烬/ }));
+    expect(useAppStore.getState().assistantSkin).toBe("ember");
   });
 
   it("shows config warning banner when there are config issues", async () => {

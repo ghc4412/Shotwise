@@ -39,6 +39,7 @@
 
     /* 状态色 */
     --color-good: oklch(0.78 0.10 155);
+    --color-good-2: oklch(0.55 0.14 220);
     --color-warn: oklch(0.80 0.12 70);
     --color-danger: oklch(0.70 0.18 25);
 
@@ -194,6 +195,7 @@ html.theme-light {
     --color-violet-dim: oklch(0.55 0.17 308 / 0.10);
     --color-violet-glow: oklch(0.55 0.17 308 / 0.24);
     --color-good: oklch(0.58 0.13 155);
+    --color-good-2: oklch(0.62 0.12 220);
     --color-warn: oklch(0.67 0.14 75);
     --color-danger: oklch(0.60 0.16 25);
     --color-warm: oklch(0.68 0.14 75);
@@ -263,9 +265,10 @@ html.theme-light {
     /* Popover 面板默认背景 — 浅色覆盖：近白不透明，与 --color-bg-grad-a 同构 */
     --popover-bg: oklch(0.995 0.004 250);
 
-    /* 玻璃弹窗 / 编辑器日间覆盖 — 白色加 50% 透明度（毛玻璃白），与 --panel-dropdown-bg 同构 */
+    /* 玻璃弹窗 / 编辑器日间覆盖 — 近白不透明，与 --panel-dropdown-bg 同构。
+       半透明白会在深色 backdrop 上混出灰色，浅色主题弹窗须为实底白。 */
     .shotwise-glass-panel {
-        background: linear-gradient(180deg, oklch(1 0 0 / 0.5), oklch(0.985 0.004 250 / 0.5));
+        background: linear-gradient(180deg, oklch(1 0 0 / 0.98), oklch(0.985 0.004 250 / 0.98));
     }
     .shotwise-btn-secondary {
         background: oklch(0.92 0.014 250 / 0.9);

@@ -1,7 +1,7 @@
 """add agent session user message link table
 
 Revision ID: 6a89c9ef8803
-Revises: c4a91f7d2b18
+Revises: 4c2a9f8d1b7e
 Create Date: 2026-08-10 13:19:53.688771
 
 """
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "6a89c9ef8803"
-down_revision: str | Sequence[str] | None = "c4a91f7d2b18"
+down_revision: str | Sequence[str] | None = "4c2a9f8d1b7e"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

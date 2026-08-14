@@ -1378,7 +1378,7 @@ describe("useAssistantSession", () => {
     expect(MockEventSource.instances[0].url).toContain("session-2");
     expect(MockEventSource.instances[0].url).not.toContain("after=");
     // 刷新后仍停在新分支
-    expect(JSON.parse(localStorage.getItem("arcreel:lastSessionByProject") ?? "{}")).toEqual({ demo: "session-2" });
+    expect(JSON.parse(localStorage.getItem("shotwise:lastSessionByProject") ?? "{}")).toEqual({ demo: "session-2" });
   });
 
   it("keeps the user on the origin session when a rewrite is rejected, and reuses the idempotency key on retry", async () => {

@@ -167,7 +167,7 @@ export function AgentConfigTab({ visible }: AgentConfigTabProps) {
   return (
     <div className={visible ? undefined : "hidden"}>
       <div className="space-y-7 pb-0 pt-1">
-        <AgentPageIntro />
+        <AgentPageIntro sdkType={sdkType} />
         {/* Agent SDK 分组切换：Claude / Codex 两套凭证独立管理 */}
         <div className="flex gap-1.5">
           {(["claude", "openai"] as const).map((st) => (

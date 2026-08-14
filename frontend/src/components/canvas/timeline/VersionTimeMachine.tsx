@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronRight, History } from "lucide-react";
 import { API, type VersionInfo } from "@/api";
+import { DROPDOWN_PANEL_STYLE } from "@/components/ui/darkroom-tokens";
 import { useAppStore } from "@/stores/app-store";
 import { useProjectsStore } from "@/stores/projects-store";
 import { errMsg } from "@/utils/async";
@@ -232,7 +233,7 @@ export function VersionTimeMachine({
           aria-label={t("version_mgmt")}
           aria-haspopup="dialog"
           aria-expanded={open}
-          className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-[oklch(1_0_0_/_0.05)]"
+          className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-bg-grad-a"
           style={{ color: "var(--color-text-3)" }}
         >
           <History className="h-3.5 w-3.5" />
@@ -244,7 +245,7 @@ export function VersionTimeMachine({
           onClick={() => setOpen((prev) => !prev)}
           aria-haspopup="dialog"
           aria-expanded={open}
-          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-gray-400 transition-colors hover:bg-gray-800 hover:text-gray-200"
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-text-3 transition-colors hover:bg-bg-grad-a hover:text-text"
         >
           <History className="h-3 w-3" />
           <span>{t("version_mgmt")}</span>
@@ -262,15 +263,16 @@ export function VersionTimeMachine({
               top: panelPos.top,
               left: panelPos.left,
               transform: "translateX(-100%)",
+              ...DROPDOWN_PANEL_STYLE,
             }}
-            className="z-[9999] w-64 rounded-xl border border-gray-700 bg-gray-900/95 p-3 shadow-2xl shadow-black/40 backdrop-blur"
+            className="z-[9999] w-64 rounded-xl border border-hairline p-3 shadow-2xl shadow-black/40"
           >
             {loading ? (
-              <span className="text-xs text-gray-500">{t("common:loading")}</span>
+              <span className="text-xs text-text-4">{t("common:loading")}</span>
             ) : versions.length === 0 ? (
               <div className="space-y-1">
-                <p className="text-[11px] font-medium text-gray-300">{t("no_history")}</p>
-                <p className="text-[11px] leading-5 text-gray-500">
+                <p className="text-[11px] font-medium text-text-2">{t("no_history")}</p>
+                <p className="text-[11px] leading-5 text-text-4">
                   {t("history_hint")}
                 </p>
               </div>
@@ -278,11 +280,11 @@ export function VersionTimeMachine({
               <div className="space-y-3">
                 {/* Header */}
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-text-3">
                     {t("history_versions")}
                   </span>
                   {currentVersion > 0 && (
-                    <span className="rounded-full border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-medium text-indigo-200">
+                    <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
                       {t("current_version", { version: currentVersion })}
                     </span>
                   )}
@@ -305,10 +307,10 @@ export function VersionTimeMachine({
                         className={
                           "rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors " +
                           (isSelected
-                            ? "bg-indigo-600 text-white ring-1 ring-indigo-400"
+                            ? "bg-accent text-[oklch(0.14_0_0)] ring-1 ring-accent-2/70"
                             : isCurrent
-                              ? "bg-indigo-500/15 text-indigo-300 ring-1 ring-indigo-500/30"
-                              : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white")
+                              ? "bg-accent/15 text-accent ring-1 ring-accent/30"
+                              : "bg-bg-grad-a text-text-3 hover:bg-bg-grad-b hover:text-text")
                         }
                       >
                         v{v.version}
@@ -318,28 +320,28 @@ export function VersionTimeMachine({
                 </div>
 
                 {!selectedInfo && (
-                  <p className="text-[10px] leading-4 text-gray-400">
+                  <p className="text-[10px] leading-4 text-text-4">
                     {t("version_click_hint")}
                   </p>
                 )}
 
                 {/* Preview area */}
                 {selectedInfo && (
-                  <div className="rounded-xl border border-gray-700 bg-gray-950/80 p-2.5">
+                  <div className="rounded-xl border border-hairline bg-bg-grad-a/55 p-2.5">
                     <div className="mb-2 flex items-center justify-between gap-2">
-                      <span className="flex items-center gap-1.5 text-[11px] font-medium text-gray-200">
+                      <span className="flex items-center gap-1.5 text-[11px] font-medium text-text-2">
                         v{selectedInfo.version}
                         {selectedInfo.source === "image_edit" && (
-                          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-200">
+                          <span className="rounded-full border border-warm/40 bg-warm/10 px-1.5 py-0.5 text-[9px] font-medium text-warm">
                             {t("version_image_edit_badge")}
                           </span>
                         )}
-                        <span className="text-[10px] font-normal text-gray-500">
+                        <span className="text-[10px] font-normal text-text-4">
                           {selectedInfo.created_at}
                         </span>
                       </span>
                       {selectedInfo.is_current ? (
-                        <span className="shrink-0 rounded-full bg-indigo-500/10 px-2 py-0.5 text-[10px] font-medium text-indigo-300">
+                        <span className="shrink-0 rounded-full bg-accent/10 px-2 py-0.5 text-[10px] font-medium text-accent">
                           {t("current_version_badge")}
                         </span>
                       ) : (
@@ -348,7 +350,7 @@ export function VersionTimeMachine({
                           disabled={restoringVersion !== null || busy}
                           onClick={() => void handleRestore(selectedInfo.version)}
                           title={busy ? t("version_restore_busy_hint") : undefined}
-                          className="shrink-0 rounded-full bg-indigo-600 px-2.5 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                          className="shrink-0 rounded-full bg-accent px-2.5 py-0.5 text-[10px] font-medium text-[oklch(0.14_0_0)] transition-colors hover:bg-accent-2 disabled:opacity-50"
                         >
                           {restoringVersion === selectedInfo.version ? t("switching_version") : t("switch_to_version")}
                         </button>
@@ -361,14 +363,14 @@ export function VersionTimeMachine({
                         // eslint-disable-next-line jsx-a11y/media-has-caption -- 生成式预览视频暂无字幕源，将来如引入字幕生成则移除此 disable
                         <video
                           src={selectedInfo.file_url}
-                          className="mb-2 w-full rounded-lg border border-gray-800 bg-black object-contain"
+                          className="mb-2 w-full rounded-lg border border-hairline-strong bg-black object-contain"
                           controls
                           playsInline
                           preload="none"
                         />
                       ) : (
                         <div
-                          className={`mb-2 flex w-full items-center justify-center rounded-lg border border-gray-800 bg-gray-900/70 p-2 ${getImagePreviewHeightClass(resourceType)}`}
+                          className={`mb-2 flex w-full items-center justify-center rounded-lg border border-hairline bg-bg-grad-a/45 p-2 ${getImagePreviewHeightClass(resourceType)}`}
                         >
                           <img
                             src={selectedInfo.file_url}
@@ -379,7 +381,7 @@ export function VersionTimeMachine({
                       ))}
 
                     {/* Prompt text */}
-                    <p className="line-clamp-4 text-[11px] leading-5 text-gray-400">
+                    <p className="line-clamp-4 text-[11px] leading-5 text-text-3">
                       {selectedInfo.prompt ||
                         (selectedInfo.source === "manual_upload"
                           ? t("version_manual_upload")

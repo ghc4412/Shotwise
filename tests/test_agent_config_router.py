@@ -133,6 +133,53 @@ async def test_create_with_preset(authed_client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_with_model_map(authed_client) -> None:
+    body = {
+        "preset_id": "deepseek",
+        "api_key": "sk-testkey12345",
+        "model_map": [
+            {"menu_name": "DeepSeek V4 Flash", "request_model": "deepseek-v4-flash", "context_window": 1048576},
+            {"menu_name": "DeepSeek V4 Pro", "request_model": "deepseek-v4-pro", "context_window": None},
+        ],
+    }
+    resp = await authed_client.post("/api/v1/agent/credentials", json=body)
+    assert resp.status_code == 201
+    assert resp.json()["model_map"] == [
+        {"menu_name": "DeepSeek V4 Flash", "request_model": "deepseek-v4-flash", "context_window": 1048576},
+        {"menu_name": "DeepSeek V4 Pro", "request_model": "deepseek-v4-pro", "context_window": None},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_patch_model_map(authed_client) -> None:
+    created = (
+        await authed_client.post(
+            "/api/v1/agent/credentials",
+            json={"preset_id": "deepseek", "api_key": "sk1"},
+        )
+    ).json()
+    cid = created["id"]
+    assert created["model_map"] is None
+
+    resp = await authed_client.patch(
+        f"/api/v1/agent/credentials/{cid}",
+        json={"model_map": [{"menu_name": "Pro", "request_model": "deepseek-v4-pro", "context_window": 131072}]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["model_map"] == [
+        {"menu_name": "Pro", "request_model": "deepseek-v4-pro", "context_window": 131072}
+    ]
+
+    # 显式传 null 清空
+    resp = await authed_client.patch(
+        f"/api/v1/agent/credentials/{cid}",
+        json={"model_map": None},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["model_map"] is None
+
+
+@pytest.mark.asyncio
 async def test_create_custom_requires_base_url(authed_client) -> None:
     body = {"preset_id": "__custom__", "api_key": "sk"}
     resp = await authed_client.post("/api/v1/agent/credentials", json=body)

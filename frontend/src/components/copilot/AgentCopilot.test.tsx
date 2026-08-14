@@ -4,7 +4,6 @@ import { useAssistantSession } from "@/hooks/useAssistantSession";
 import { useAppStore } from "@/stores/app-store";
 import { useAssistantStore } from "@/stores/assistant-store";
 import { useProjectsStore } from "@/stores/projects-store";
-import { UI_LAYERS } from "@/utils/ui-layers";
 import { AgentCopilot } from "./AgentCopilot";
 
 vi.mock("@/hooks/useAssistantSession", () => ({
@@ -55,6 +54,7 @@ describe("AgentCopilot", () => {
   const switchSession = vi.fn().mockResolvedValue(undefined);
   const deleteSession = vi.fn().mockResolvedValue(undefined);
   const switchAgent = vi.fn().mockResolvedValue(undefined);
+  const switchAgentProvider = vi.fn().mockResolvedValue(undefined);
   const switchAgentModel = vi.fn().mockResolvedValue(undefined);
   const loadAgentModels = vi.fn().mockResolvedValue(undefined);
 
@@ -74,6 +74,7 @@ describe("AgentCopilot", () => {
       switchSession,
       deleteSession,
       switchAgent,
+      switchAgentProvider,
       switchAgentModel,
       loadAgentModels,
     });
@@ -108,7 +109,7 @@ describe("AgentCopilot", () => {
     });
   });
 
-  it("keeps assistant root isolated and uses local popover layer for session history", () => {
+  it("keeps assistant root isolated and opens a centered dialog for session history", () => {
     useAssistantStore.setState({
       sessions: [
         {
@@ -128,7 +129,86 @@ describe("AgentCopilot", () => {
     expect(container.firstElementChild).toHaveClass("isolate");
 
     fireEvent.click(screen.getByTitle("切换会话"));
-    expect(document.querySelector(`.${UI_LAYERS.assistantLocalPopover}`)).toBeTruthy();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("会话历史")).toBeInTheDocument();
+    expect(screen.getByText("当前会话")).toBeInTheDocument();
+  });
+
+  it("hides the session entry until a session exists, keeping only the create button", () => {
+    render(<AgentCopilot />);
+    // 草稿态：无会话切换入口，只有右侧 + 新建
+    expect(screen.queryByTitle("切换会话")).not.toBeInTheDocument();
+    expect(screen.getByTitle("新会话")).toBeInTheDocument();
+  });
+
+  it("switches between Claude Agent and OpenAI Agent from the header title", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<AgentCopilot />);
+
+    // 标题显示短名（无 SDK 后缀），点击标题弹出 Claude / OpenAI 切换菜单
+    expect(screen.getByTitle("切换智能体")).toBeInTheDocument();
+    expect(screen.getByText("Claude Agent")).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle("切换智能体"));
+    expect(screen.getByRole("menuitem", { name: /OpenAI Agent/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("menuitem", { name: /OpenAI Agent/ }));
+    await waitFor(() => {
+      expect(switchAgent).toHaveBeenCalledWith("openai");
+    });
+  });
+
+  it("lists configured providers from the icon button and switches the active one", async () => {
+    useAssistantStore.setState({
+      agentCredentials: [
+        {
+          id: 1,
+          sdk_type: "claude",
+          preset_id: "anthropic",
+          display_name: "Anthropic 主账号",
+          icon_key: "Anthropic",
+          base_url: "",
+          api_key_masked: "sk-***",
+          model: null,
+          haiku_model: null,
+          sonnet_model: null,
+          opus_model: null,
+          subagent_model: null,
+          model_map: null,
+          is_active: true,
+          created_at: null,
+        },
+        {
+          id: 2,
+          sdk_type: "claude",
+          preset_id: "claude",
+          display_name: "备用端点",
+          icon_key: "Claude",
+          base_url: "",
+          api_key_masked: "sk-***",
+          model: null,
+          haiku_model: null,
+          sonnet_model: null,
+          opus_model: null,
+          subagent_model: null,
+          model_map: null,
+          is_active: false,
+          created_at: null,
+        },
+      ],
+      activeCredentialId: 1,
+    });
+    render(<AgentCopilot />);
+
+    // 图标按钮（title=切换供应商）平时只显示图标；点击后列出配置的供应商名称
+    fireEvent.click(screen.getByTitle("切换供应商"));
+    expect(screen.getByRole("menuitem", { name: /Anthropic 主账号/ })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /备用端点/ })).toBeInTheDocument();
+
+    // 切换到另一个供应商
+    fireEvent.click(screen.getByRole("menuitem", { name: /备用端点/ }));
+    await waitFor(() => {
+      expect(switchAgentProvider).toHaveBeenCalledWith(2);
+    });
   });
 
   it("does not send when Enter is used to confirm an IME composition", () => {

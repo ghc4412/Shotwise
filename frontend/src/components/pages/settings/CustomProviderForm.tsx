@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
-import { Loader2, Plus, Trash2, Eye, EyeOff, CheckCircle2, XCircle, Search, Link2 } from "lucide-react";
+import { Loader2, Plus, Trash2, Eye, EyeOff, CheckCircle2, XCircle, Search, Link2, Copy } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { API } from "@/api";
 import { useAppStore } from "@/stores/app-store";
@@ -60,6 +60,24 @@ const DISCOVERY_FORMAT_OPTIONS: { value: DiscoveryFormat; labelKey: string }[] =
   { value: "openai", labelKey: "discovery_format_openai" },
   { value: "google", labelKey: "discovery_format_google" },
 ];
+
+// 媒体类型 → i18n key（模型卡片标签 + 分组标题）。
+// endpoint 目录外的模型类型未知：不显示标签、不分组，排在已知组之后。
+const MEDIA_LABELS: Record<string, string> = {
+  text: "media_type_text",
+  image: "media_type_image",
+  video: "media_type_video",
+  audio: "media_type_audio",
+};
+
+// 分组显示顺序：文本 → 图片 → 视频 → 音频；未知类型（"other"）排最后
+const MEDIA_GROUP_ORDER: Record<string, number> = {
+  text: 0,
+  image: 1,
+  video: 2,
+  audio: 3,
+  other: 4,
+};
 
 interface ModelRow {
   key: string; // unique key for React
@@ -324,6 +342,8 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
   // --- Loading / status ---
   const [discovering, setDiscovering] = useState(false);
   const [testing, setTesting] = useState(false);
+  // 最近一次「获取上游模型」发现的可调用模型名（只读展示 + 复制按钮）
+  const [discoveredModelNames, setDiscoveredModelNames] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const showError = useCallback((msg: string) => useAppStore.getState().pushToast(msg, "error"), []);
@@ -339,6 +359,14 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
     () => filteredModels.length > 0 && filteredModels.every((m) => m.is_enabled),
     [filteredModels],
   );
+
+  // 按媒体类型分组排序（文本→图片→视频→音频→其他）；组内保持原有相对顺序（稳定排序）。
+  const sortedModels = useMemo(() => {
+    const mediaOf = (m: ModelRow) => endpointToMediaType[m.endpoint] ?? "other";
+    return [...filteredModels].sort(
+      (a, b) => (MEDIA_GROUP_ORDER[mediaOf(a)] ?? 4) - (MEDIA_GROUP_ORDER[mediaOf(b)] ?? 4),
+    );
+  }, [filteredModels, endpointToMediaType]);
 
   // base_url 相对存储值是否变更：变更后必须用 UI 上的新地址 + 新 key 走明文路径，
   // 否则 by-id 端点会用 DB 中的旧 base_url，与保存的新地址错位。
@@ -369,6 +397,8 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
       const { endpointToMediaType: mediaMap, endpointToImageCapabilities: capsMap } =
         useEndpointCatalogStore.getState();
       setModels((prev) => mergeDiscoveredModels(prev, discovered, mediaMap, capsMap));
+      // 记录本次发现的可调用模型名，供只读列表展示 + 复制
+      setDiscoveredModelNames(discovered.map((d) => d.model_id));
       setModelFilter("");
     } catch (e) {
       showError(errMsg(e, t("fetch_models_failed")));
@@ -376,6 +406,15 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
       setDiscovering(false);
     }
   }, [discoveryFormat, baseUrl, apiKey, useStoredCredential, baseUrlChanged, existing, showError, t]);
+
+  const handleCopyModelName = useCallback(async (name: string) => {
+    try {
+      await navigator.clipboard.writeText(name);
+      useAppStore.getState().pushToast(t("message_copied"), "success");
+    } catch {
+      useAppStore.getState().pushToast(t("copy_failed"), "error");
+    }
+  }, [t]);
 
   // --- Test connection ---
   const handleTest = useCallback(async () => {
@@ -643,6 +682,36 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
           </button>
         </div>
 
+        {/* 已发现模型：上游 API 可调用的模型名（只读 + 复制） */}
+        {discoveredModelNames.length > 0 && (
+          <div>
+            <div className="mb-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-text-3">
+              {t("discovered_models")}
+            </div>
+            <div className="max-h-56 space-y-0.5 overflow-y-auto rounded-[10px] border border-hairline-soft bg-bg-grad-a/35 p-2.5">
+              {discoveredModelNames.map((name) => (
+                <div
+                  key={name}
+                  className="flex items-center gap-2 rounded px-1 py-0.5 transition-colors hover:bg-bg-grad-a"
+                >
+                  <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-text-2">
+                    {name}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void handleCopyModelName(name)}
+                    className="rounded p-1 text-text-4 transition-colors hover:text-accent-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    aria-label={t("copy_model_id")}
+                    title={t("copy_model_id")}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Model list */}
         {models.length > 0 && (
           <div>
@@ -678,15 +747,27 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
               </div>
             )}
             <div className="space-y-2">
-              {filteredModels.map((m) => {
+              {sortedModels.map((m, idx) => {
                 const pl = priceLabel(m.endpoint, endpointToMediaType, t);
+                // 未知媒体类型（endpoint 不在目录）= undefined：不显示标签、不分组标题
                 const media = endpointToMediaType[m.endpoint];
+                const prevMedia =
+                  idx > 0 ? endpointToMediaType[sortedModels[idx - 1].endpoint] : null;
+                // 媒体类型切换时插入分组标题：文本 → 图片 → 视频 → 音频
+                const groupStart = prevMedia !== media;
                 return (
-                  <div
-                    key={m.key}
-                    className="rounded-[10px] border border-hairline p-3"
-                    style={CARD_STYLE}
-                  >
+                  <div key={m.key}>
+                    {groupStart && media && (
+                      <div className={`mb-1.5 flex items-center gap-2 ${idx > 0 ? "mt-3" : ""}`}>
+                        <span className="rounded-full border border-hairline-soft bg-bg-grad-a/55 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-text-2">
+                          {t(MEDIA_LABELS[media])}
+                        </span>
+                      </div>
+                    )}
+                    <div
+                      className="rounded-[10px] border border-hairline p-3"
+                      style={CARD_STYLE}
+                    >
                     <div className="flex flex-wrap items-center gap-2">
                       {/* Enable toggle */}
                       <label className="flex cursor-pointer items-center gap-1.5">
@@ -698,6 +779,13 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
                           aria-label={t("enable_model")}
                         />
                       </label>
+
+                      {/* 媒体类型标签（文本/图片/视频/音频）；类型未知则不显示 */}
+                      {media && (
+                        <span className="rounded-full border border-hairline-soft bg-bg-grad-a/55 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-text-3">
+                          {t(MEDIA_LABELS[media])}
+                        </span>
+                      )}
 
                       {/* Model ID */}
                       <input
@@ -858,6 +946,7 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
                         }
                       />
                     )}
+                    </div>
                   </div>
                 );
               })}
