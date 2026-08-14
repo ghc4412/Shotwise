@@ -16,9 +16,9 @@ import { PendingQuestionWizard } from "./PendingQuestionWizard";
 import { SlashCommandMenu } from "./SlashCommandMenu";
 import type { SlashCommandMenuHandle } from "./SlashCommandMenu";
 import { TodoListPanel } from "./TodoListPanel";
-import { ChatMessage } from "./chat/ChatMessage";
+import { MessageRow } from "./chat/MessageRow";
 import { AgentFailureCard } from "./chat/AgentFailureCard";
-import { composeAllTurns } from "./chat/utils";
+import { canEditUserTurn, composeAllTurns } from "./chat/utils";
 import { uid } from "@/utils/id";
 import { formatShortDateTime } from "@/utils/date-format";
 
@@ -174,7 +174,7 @@ export function AgentCopilot() {
   const { t } = useTranslation(["dashboard", "common"]);
   const {
     turns, draftTurn, messagesLoading,
-    sending, sessionStatus, pendingQuestion, answeringQuestion, error, startupFailure,
+    sending, sessionStatus, pendingQuestion, answeringQuestion, error, startupFailure, startupFailureOrigin, editingTurnUuid,
   } = useAssistantStore();
 
   const { currentProjectName } = useProjectsStore();
@@ -182,7 +182,8 @@ export function AgentCopilot() {
   const sdkType = useAssistantStore((s) => s.sdkType);
   const agentModels = useAssistantStore((s) => s.agentModels);
   const agentModel = useAssistantStore((s) => s.agentModel);
-  const { sendMessage, answerQuestion, interrupt, createNewSession, switchSession, deleteSession, switchAgent, switchAgentModel, loadAgentModels } =
+  const setEditingTurnUuid = useAssistantStore((s) => s.setEditingTurnUuid);
+  const { sendMessage, rewriteMessage, answerQuestion, interrupt, createNewSession, switchSession, deleteSession, switchAgent, switchAgentModel, loadAgentModels } =
     useAssistantSession(currentProjectName);
 
   // Agent 切换浮层
@@ -326,6 +327,12 @@ export function AgentCopilot() {
       ),
     );
   }, [inputDisabled, localInput, attachedImages, sendMessage]);
+
+  // 改写成功后由会话切换重建时间线（编辑态随 resetTimeline 清空）；失败保留编辑态，
+  // 用户可以改完再试，错误经消息区上方的错误条呈现
+  const handleSubmitEdit = useCallback((turnUuid: string, text: string) => {
+    voidCall(rewriteMessage(turnUuid, text));
+  }, [rewriteMessage]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Delegate to slash menu when open
@@ -624,10 +631,29 @@ export function AgentCopilot() {
           </div>
         )}
         {allTurns.map((turn, i) => (
-          <ChatMessage key={turn.uuid || `turn-${i}`} message={turn} streaming={turn === draftTurn} />
+          <MessageRow
+            key={turn.uuid || `turn-${i}`}
+            turn={turn}
+            streaming={turn === draftTurn}
+            editable={canEditUserTurn(turn, {
+              sessionStatus,
+              hasPendingQuestion: Boolean(pendingQuestion),
+              isSending: sending,
+            })}
+            editing={Boolean(turn.uuid) && turn.uuid === editingTurnUuid}
+            submitting={sending}
+            onStartEdit={setEditingTurnUuid}
+            onCancelEdit={() => setEditingTurnUuid(null)}
+            onSubmitEdit={handleSubmitEdit}
+          />
         ))}
         {startupFailure && (
-          <AgentFailureCard failure={startupFailure} onRetry={handleSend} />
+          // 改写失败时原始输入留在仍开着的编辑器里，重试由它的「重新发送」发起：
+          // 卡片这里给重试只会重放主输入框的无关内容（为空时更是毫无反应）
+          <AgentFailureCard
+            failure={startupFailure}
+            onRetry={startupFailureOrigin === "rewrite" ? undefined : handleSend}
+          />
         )}
       </div>
 

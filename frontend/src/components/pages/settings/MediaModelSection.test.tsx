@@ -192,6 +192,7 @@ describe("MediaModelSection", () => {
         display_name: providerId,
         description: "",
         status: "ready",
+        enabled: true,
         media_types: ["video"],
         capabilities: [],
         configured_keys: [],

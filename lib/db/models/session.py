@@ -24,6 +24,9 @@ class AgentSession(TimestampMixin, UserOwnedMixin, Base):
     project_name: Mapped[str] = mapped_column(String, nullable=False)
     title: Mapped[str] = mapped_column(String, server_default="")
     status: Mapped[str] = mapped_column(String, server_default="idle")
+    superseded_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    fork_parent_session_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    fork_anchor_uuid: Mapped[str | None] = mapped_column(String, nullable=True)
     # 当前活跃 Agent SDK 类型："claude" | "openai"
     sdk_type: Mapped[str] = mapped_column(String(16), server_default="claude", nullable=False)
     # Claude SDK 会话 id（resume id）；sdk_type=openai 且该会话曾切到 claude 时记录

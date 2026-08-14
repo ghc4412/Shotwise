@@ -14,7 +14,7 @@ POST /api/v1/services/aigc/video-generation/video-synthesis
 
 ```json
 {
-  "model": "happyhorse-1.0-r2v",
+  "model": "happyhorse-1.1-r2v",
   "input": {
     "prompt": "[Image 1]中身着红色旗袍的女性,镜头先以侧面中景勾勒...",
     "media": [
@@ -33,7 +33,7 @@ POST /api/v1/services/aigc/video-generation/video-synthesis
 
 ### `model`
 
-固定值 `happyhorse-1.0-r2v`。
+`happyhorse-1.1-r2v` 或 `happyhorse-1.0-r2v`。
 
 ### `input.prompt`（必选)
 
@@ -61,7 +61,7 @@ POST /api/v1/services/aigc/video-generation/video-synthesis
 
 | 参数 | 类型 | 默认 | 取值 | 说明 |
 |------|------|------|------|------|
-| `resolution` | string | `1080P` | `720P` / `1080P` | 分辨率档位 |
+| `resolution` | string | `1080P` | `480P` / `720P` / `1080P` | 分辨率档位。官方参数表为 1.1 / 1.0 合并呈现,480P 的版本归属见[版本差异](#版本差异11-vs-10) |
 | `ratio` | string | `16:9` | `16:9` / `9:16` / `3:4` / `4:3` / `4:5` / `5:4` / `1:1` / `9:21` / `21:9` | 宽高比 |
 | `duration` | integer | `5` | `3 ~ 15` 整数(秒) | 视频时长,按秒计费 |
 | `watermark` | bool | `true` | `true` / `false` | 右下角水印,文案固定 "Happy Horse" |
