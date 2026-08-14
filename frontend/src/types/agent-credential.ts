@@ -21,11 +21,27 @@ export interface PresetProvider {
   notes: string | null;
   api_key_pattern: string | null;
   is_recommended: boolean;
+  /** 是否提供 GET /v1/models 模型自动发现；false（如方舟 Agent/Coding Plan）时隐藏「获取模型列表」。 */
+  supportsDiscovery: boolean;
 }
 
 export interface PresetProvidersResponse {
   providers: PresetProvider[];
   custom_sentinel_id: string;
+}
+
+/** 模型映射表条目：菜单显示名 → 实际请求模型（+ 可选上下文窗口）。 */
+export interface AgentModelMapEntry {
+  menu_name: string;
+  request_model: string;
+  context_window: number | null;
+}
+
+/** 模型发现返回的模型信息（模型映射选择器使用）。 */
+export interface AgentDiscoveredModel {
+  model_id: string;
+  display_name: string;
+  context_window: number | null;
 }
 
 export interface AgentCredential {
@@ -41,6 +57,7 @@ export interface AgentCredential {
   sonnet_model: string | null;
   opus_model: string | null;
   subagent_model: string | null;
+  model_map: AgentModelMapEntry[] | null;
   is_active: boolean;
   created_at: string | null;
 }
@@ -56,6 +73,7 @@ export interface CreateAgentCredentialRequest {
   sonnet_model?: string | null;
   opus_model?: string | null;
   subagent_model?: string | null;
+  model_map?: AgentModelMapEntry[] | null;
   activate?: boolean | null;
 }
 

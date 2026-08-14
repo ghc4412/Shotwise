@@ -3,7 +3,6 @@ import {
   Download,
   ExternalLink,
   Loader2,
-  Search,
   SlidersHorizontal,
   X,
 } from "lucide-react";
@@ -25,6 +24,7 @@ import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useAppStore } from "@/stores/app-store";
 import type {
+  AgentDiscoveredModel,
   AgentSdkType,
   CreateAgentCredentialRequest,
   PresetProvider,
@@ -33,6 +33,7 @@ import type {
 import type { CustomProviderInfo } from "@/types/custom-provider";
 import { errMsg } from "@/utils/async";
 
+import { ModelMapEditor } from "./ModelMapEditor";
 import { PresetIcon } from "./PresetIcon";
 import { TestResultPanel } from "./TestResultPanel";
 
@@ -68,6 +69,7 @@ export function AddCredentialModal({
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [discoveredModels, setDiscoveredModels] = useState<AgentDiscoveredModel[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [discoverError, setDiscoverError] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(
@@ -124,6 +126,7 @@ export function AddCredentialModal({
     // 閲嶅紑 modal 鏃剁殑鎵归噺閲嶇疆锛屾槸鍔ㄤ綔椹卞姩鐨勭姸鎬佸綊闆躲€?
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setModelOptions([]);
+    setDiscoveredModels([]);
     setDiscoverError(null);
     setSubmitError(null);
     setTestResult(null);
@@ -144,6 +147,12 @@ export function AddCredentialModal({
     if (form.presetId === customSentinelId) return null;
     return presets.find((p) => p.id === form.presetId) ?? null;
   }, [form.presetId, presets, customSentinelId]);
+
+  // 预设未提供发现端点时（如火山方舟 Agent/Coding Plan）点击「获取模型列表」
+  // 直接弹提示，不发请求；自定义供应商保留请求。字段缺失（旧版本后端 / 已加载的
+  // 旧 presets 数据）时视为支持发现，避免误伤 DeepSeek 等预设。
+  const presetDiscoveryUnavailable =
+    selected != null && (selected.supportsDiscovery === false || !selected.discovery_url);
 
   useEscapeClose(onClose, open);
 
@@ -166,6 +175,7 @@ export function AddCredentialModal({
   // 鍙樹簡锛屾棫鍒楄〃閲岀殑 id 鍦ㄦ柊 endpoint 涓嶄竴瀹氭敮鎸侊紝璁╁畠澶辨晥閬垮厤鐢ㄦ埛淇濆瓨鏃犳晥閰嶇疆銆?
   const invalidateDiscoveredModels = () => {
     setModelOptions([]);
+    setDiscoveredModels([]);
     setDiscoverError(null);
   };
 
@@ -177,6 +187,13 @@ export function AddCredentialModal({
 
   const handleDiscover = async () => {
     const session = sessionRef.current;
+    // 预设声明不支持模型自动发现（如火山方舟 Agent/Coding Plan）：不发请求，弹提示
+    if (presetDiscoveryUnavailable) {
+      if (session === sessionRef.current) {
+        useAppStore.getState().pushToast(t("model_map_no_discovery"), "warning");
+      }
+      return;
+    }
     setDiscovering(true);
     setDiscoverError(null);
     try {
@@ -207,6 +224,13 @@ export function AddCredentialModal({
             });
       if (session !== sessionRef.current) return;
       setModelOptions(res.models.map((m) => m.model_id));
+      setDiscoveredModels(
+        res.models.map((m) => ({
+          model_id: m.model_id,
+          display_name: m.display_name,
+          context_window: m.context_window ?? null,
+        })),
+      );
       const toast = useAppStore.getState().pushToast;
       if (res.models.length === 0) {
         toast(t("discover_no_models"), "warning");
@@ -472,24 +496,19 @@ export function AddCredentialModal({
             />
           </Field>
 
+          {/* Model map - 模型映射（默认模型上方） */}
+          <ModelMapEditor
+            entries={form.modelMap}
+            onChange={form.setModelMap}
+            discoveredModels={discoveredModels}
+            onDiscover={() => void handleDiscover()}
+            discovering={discovering}
+            discoverError={discoverError}
+          />
+
           <Field
             label={t("default_model")}
             htmlFor="cred-model"
-            trailing={
-              <button
-                type="button"
-                onClick={() => void handleDiscover()}
-                disabled={discovering}
-                className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.14em] text-text-3 transition-colors hover:text-accent-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {discovering ? (
-                  <Loader2 className="h-3 w-3 motion-safe:animate-spin" aria-hidden />
-                ) : (
-                  <Search className="h-3 w-3" aria-hidden />
-                )}
-                {discovering ? t("discovering_models") : t("discover_models")}
-              </button>
-            }
           >
             <ModelCombobox
               id="cred-model"

@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Index, String, Text, text
+from sqlalchemy import JSON, Boolean, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from lib.db.base import DEFAULT_USER_ID, Base, TimestampMixin
@@ -46,4 +46,7 @@ class AgentAnthropicCredential(TimestampMixin, Base):
     sonnet_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     opus_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     subagent_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # 模型映射表（菜单显示名 → 实际请求模型 → 上下文窗口）；JSON 数组，条目可含
+    # menu_name / request_model / context_window(可空)。仅供智能体配置界面读写。
+    model_map: Mapped[list | None] = mapped_column(JSON, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

@@ -948,7 +948,11 @@ async def _run_discover(
     discovery_format: str, base_url: str | None, api_key: str, _t: Callable[..., str]
 ) -> DiscoverResponse:
     """共用的模型发现逻辑（明文凭证 / 已存储凭证两条入口共用）。"""
-    from lib.custom_provider.discovery import UnsupportedDiscoveryFormatError, discover_models
+    from lib.custom_provider.discovery import (
+        DiscoveryEndpointUnavailableError,
+        UnsupportedDiscoveryFormatError,
+        discover_models,
+    )
 
     try:
         models = await discover_models(
@@ -957,6 +961,10 @@ async def _run_discover(
             api_key=api_key,
         )
         return DiscoverResponse(models=models)
+    except DiscoveryEndpointUnavailableError as exc:
+        # 网关已识别 /v1/models 但拒绝：多为供应商根本不提供模型列表端点
+        # （如方舟 Agent/Coding Plan），与 Key 是否正确无关，给可读提示
+        raise HTTPException(status_code=502, detail=_t("discovery_not_supported", status=exc.status_code)) from exc
     except UnsupportedDiscoveryFormatError as exc:
         raise BadRequestError("invalid_discovery_format", discovery_format=discovery_format) from exc
     except Exception as exc:

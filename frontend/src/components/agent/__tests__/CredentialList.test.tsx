@@ -18,6 +18,7 @@ const mockCred = (overrides: Partial<AgentCredential> = {}): AgentCredential => 
   sonnet_model: null,
   opus_model: null,
   subagent_model: null,
+  model_map: null,
   is_active: false,
   created_at: "2026-05-11T00:00:00Z",
   ...overrides,

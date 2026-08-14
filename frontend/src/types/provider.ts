@@ -77,6 +77,9 @@ export interface ProviderConfigDetail {
   console_url?: string | null;
   // 供应商级启用开关（后端按 system_setting 返回）；关闭后生成链路不再选择/调用该供应商
   enabled: boolean;
+  // 注册表声明的模型清单（model_id -> 模型信息；只读展示，真相源：PROVIDER_REGISTRY）。
+  // 与 /providers 目录端点同构；预置供应商模型不落 DB、不可编辑，可编辑模型走自定义供应商。
+  models?: Record<string, ModelInfoResponse>;
 }
 
 export interface ProviderTestResult {

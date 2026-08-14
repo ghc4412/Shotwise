@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type {
+  AgentModelMapEntry,
   CreateAgentCredentialRequest,
   PresetProvider,
 } from "@/types/agent-credential";
@@ -15,6 +16,7 @@ export interface CredentialForm {
   sonnetModel: string;
   opusModel: string;
   subagentModel: string;
+  modelMap: AgentModelMapEntry[];
   setApiKey: (v: string) => void;
   setBaseUrl: (v: string) => void;
   setDisplayName: (v: string) => void;
@@ -23,6 +25,7 @@ export interface CredentialForm {
   setSonnetModel: (v: string) => void;
   setOpusModel: (v: string) => void;
   setSubagentModel: (v: string) => void;
+  setModelMap: (v: AgentModelMapEntry[]) => void;
   /** 切预设：清空 model 字段；预设带 base_url+display_name 覆盖；自定义则清空。 */
   setPreset: (id: string) => void;
   /** 与 initial 比对，判断是否有可保存的变更（apiKey 任意非空即视为脏）。 */
@@ -45,6 +48,7 @@ export function useCredentialForm(
   const [sonnetModel, setSonnetModel] = useState(initial?.sonnet_model ?? "");
   const [opusModel, setOpusModel] = useState(initial?.opus_model ?? "");
   const [subagentModel, setSubagentModel] = useState(initial?.subagent_model ?? "");
+  const [modelMap, setModelMap] = useState<AgentModelMapEntry[]>(initial?.model_map ?? []);
 
   const setPreset = (id: string) => {
     if (id === presetId) return;
@@ -72,7 +76,8 @@ export function useCredentialForm(
     haikuModel !== (init?.haiku_model ?? "") ||
     sonnetModel !== (init?.sonnet_model ?? "") ||
     opusModel !== (init?.opus_model ?? "") ||
-    subagentModel !== (init?.subagent_model ?? "");
+    subagentModel !== (init?.subagent_model ?? "") ||
+    JSON.stringify(modelMap) !== JSON.stringify(init?.model_map ?? []);
 
   const buildRequest = (): CreateAgentCredentialRequest => ({
     preset_id: presetId,
@@ -84,6 +89,7 @@ export function useCredentialForm(
     sonnet_model: sonnetModel || undefined,
     opus_model: opusModel || undefined,
     subagent_model: subagentModel || undefined,
+    model_map: modelMap.length > 0 ? modelMap : undefined,
   });
 
   return {
@@ -96,6 +102,7 @@ export function useCredentialForm(
     sonnetModel,
     opusModel,
     subagentModel,
+    modelMap,
     setApiKey,
     setBaseUrl,
     setDisplayName,
@@ -104,6 +111,7 @@ export function useCredentialForm(
     setSonnetModel,
     setOpusModel,
     setSubagentModel,
+    setModelMap,
     setPreset,
     isDirty,
     buildRequest,

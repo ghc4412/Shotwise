@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { Bot } from "lucide-react";
-import { useTranslation } from "react-i18next";
 import { GlobalHeader } from "./GlobalHeader";
 import { AssetSidebar } from "./AssetSidebar";
 import { AssistantResizeHandle } from "./AssistantResizeHandle";
+import { AssistantPeekTab } from "./AssistantPeekTab";
 import { AgentCopilot } from "@/components/copilot/AgentCopilot";
 import { useTaskRefresh } from "@/hooks/useTaskRefresh";
 import { useProjectEventsSSE } from "@/hooks/useProjectEventsSSE";
@@ -20,7 +19,6 @@ import {
   clampAssistantPanelWidth,
   useAppStore,
 } from "@/stores/app-store";
-import { UI_LAYERS } from "@/utils/ui-layers";
 
 interface StudioLayoutProps {
   children: React.ReactNode;
@@ -28,15 +26,16 @@ interface StudioLayoutProps {
 
 /**
  * 工作台三栏布局壳：顶栏 + （侧栏 / 主区 / 助手面板）。
+ * 助手是右侧停靠栏（占布局宽度、可拖宽、可收起）；收起后由 AssistantPeekTab
+ * 缩角角标承接，角标可拖到任意边缘隐藏一角。演示态保留静态停靠面板
+ * （引导锚点依赖其固定位置），不渲染角标。
  */
 export function StudioLayout({ children }: StudioLayoutProps) {
-  const { t } = useTranslation("dashboard");
   const [, setLocation] = useLocation();
   const currentProjectName = useProjectsStore((s) => s.currentProjectName);
   // 演示项目在后端不存在：任务 / 项目事件流和助手都是真实写路径，演示态下整条都不接
   const demoMode = useDemoWorkbench();
   const assistantPanelOpen = useAppStore((s) => s.assistantPanelOpen);
-  const toggleAssistantPanel = useAppStore((s) => s.toggleAssistantPanel);
   const assistantPanelWidth = useAppStore((s) => s.assistantPanelWidth);
   const setAssistantPanelWidth = useAppStore((s) => s.setAssistantPanelWidth);
   const persistAssistantPanelWidth = useAppStore(
@@ -185,71 +184,45 @@ export function StudioLayout({ children }: StudioLayoutProps) {
             <DemoAssistantPanel />
           </div>
         ) : (
-        <div
-          className={`relative shrink-0 overflow-hidden ${
-            isResizing
-              ? "transition-[min-width,border-color]"
-              : "transition-[width,min-width,border-color] duration-300 ease-in-out"
-          }`}
-          style={{
-            width: assistantPanelOpen ? displayedPanelWidth : 0,
-            background: "var(--color-shell-side-a)",
-            borderLeft: assistantPanelOpen
-              ? "1px solid var(--color-hairline)"
-              : "1px solid transparent",
-          }}
-        >
-          {assistantPanelOpen ? (
-            <AssistantResizeHandle
-              width={displayedPanelWidth}
-              isResizing={isResizing}
-              onMouseDown={handleResizeMouseDown}
-              onDoubleClick={handleResizeDoubleClick}
-            />
-          ) : null}
-          {/* 始终渲染但收起时透明 + 不可达，保持内部状态；invisible + aria-hidden 防止 Tab 仍可聚焦内部控件 */}
           <div
-            aria-hidden={!assistantPanelOpen}
-            inert={!assistantPanelOpen}
-            className={`h-full transition-opacity duration-200 ${
-              assistantPanelOpen
-                ? "opacity-100"
-                : "pointer-events-none invisible opacity-0"
+            className={`relative shrink-0 overflow-hidden ${
+              isResizing
+                ? "transition-[min-width,border-color]"
+                : "transition-[width,min-width,border-color] duration-300 ease-in-out"
             }`}
+            style={{
+              width: assistantPanelOpen ? displayedPanelWidth : 0,
+              background: "var(--color-shell-side-a)",
+              borderLeft: assistantPanelOpen
+                ? "1px solid var(--color-hairline)"
+                : "1px solid transparent",
+            }}
           >
-            <AgentCopilot />
+            {assistantPanelOpen ? (
+              <AssistantResizeHandle
+                width={displayedPanelWidth}
+                isResizing={isResizing}
+                onMouseDown={handleResizeMouseDown}
+                onDoubleClick={handleResizeDoubleClick}
+              />
+            ) : null}
+            {/* 始终渲染但收起时透明 + 不可达，保持内部状态；invisible + aria-hidden 防止 Tab 仍可聚焦内部控件 */}
+            <div
+              aria-hidden={!assistantPanelOpen}
+              inert={!assistantPanelOpen}
+              className={`h-full transition-opacity duration-200 ${
+                assistantPanelOpen
+                  ? "opacity-100"
+                  : "pointer-events-none invisible opacity-0"
+              }`}
+            >
+              <AgentCopilot />
+            </div>
           </div>
-        </div>
         )}
       </div>
-
-      {/* 悬浮助手球：收起时显示在右上角 */}
-      {demoMode ? null : (
-      <button
-        type="button"
-        onClick={toggleAssistantPanel}
-        disabled={assistantPanelOpen}
-        tabIndex={assistantPanelOpen ? -1 : 0}
-        aria-hidden={assistantPanelOpen}
-        className={`fixed right-4 top-14 grid h-10 w-10 place-items-center rounded-xl transition-all duration-300 ease-in-out ${UI_LAYERS.workspaceFloating} ${
-          assistantPanelOpen
-            ? "scale-0 pointer-events-none opacity-0"
-            : "scale-100 cursor-pointer opacity-100"
-        }`}
-        style={{
-          background:
-            "linear-gradient(135deg, var(--color-accent), oklch(0.60 0.10 280))",
-          color: "oklch(0.12 0 0)",
-          boxShadow:
-            "0 0 0 1px oklch(1 0 0 / 0.1), 0 6px 20px -6px var(--color-accent-glow)",
-          transitionDelay: assistantPanelOpen ? "0ms" : "200ms",
-        }}
-        title={t("open_assistant_panel")}
-        aria-label={t("open_assistant_panel")}
-      >
-        <Bot className="h-5 w-5" />
-      </button>
-      )}
+      {/* 收起后的缩角角标：可拖到任意边缘隐藏一角 */}
+      {demoMode ? null : <AssistantPeekTab />}
     </div>
   );
 }

@@ -341,6 +341,30 @@ class TestGetProviderConfig:
         assert isinstance(body["fields"], list)
 
     @pytest.mark.unit
+    def test_config_includes_registry_models(self):
+        """详情响应带注册表模型清单（只读；派生字段与目录端点同构）。
+
+        预置供应商模型不落 DB、不可编辑，models 字段展示注册表真相源；视频模型的
+        has_audio_track / voice_consistency 等派生字段应与 /providers 目录端点一致。
+        """
+        app, _ = _make_session_app()
+        with (
+            patch("server.routers.providers.ConfigService", return_value=self._mock_svc_ready()),
+            patch("server.routers.providers.CredentialRepository", return_value=self._mock_cred_repo_active()),
+        ):
+            with TestClient(app) as client:
+                resp = client.get("/api/v1/providers/gemini-aistudio/config")
+        models = resp.json()["models"]
+        assert models, "gemini-aistudio 注册表模型清单不应为空"
+        imagen = models["gemini-3-pro-image-preview"]
+        assert imagen["media_type"] == "image"
+        assert "text_to_image" in imagen["capabilities"]
+        veo = models["veo-3.1-generate-preview"]
+        assert veo["media_type"] == "video"
+        assert isinstance(veo["has_audio_track"], bool)
+        assert veo["voice_consistency"] in {"native", "soft", "none"}
+
+    @pytest.mark.unit
     def test_credential_fields_not_in_response(self):
         """api_key / base_url / credentials_path 不应出现在 fields 中。"""
         app, _ = _make_session_app()
@@ -910,7 +934,9 @@ class TestTestProviderConnection:
                 self.models = _FakeModels()
 
         with patch("openai.OpenAI", _FakeOpenAI):
-            resp = providers._test_agnes({"api_key": "sk", "base_url": "https://apihub.agnes-ai.com"}, lambda k, **kw: k)
+            resp = providers._test_agnes(
+                {"api_key": "sk", "base_url": "https://apihub.agnes-ai.com"}, lambda k, **kw: k
+            )
         # host → {host}/v1（OpenAI 协议，apihub 网关缺省同样归一化），api_key 透传
         assert captured["base_url"] == "https://apihub.agnes-ai.com/v1"
         assert captured["api_key"] == "sk"

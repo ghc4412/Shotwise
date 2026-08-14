@@ -152,7 +152,7 @@ export function useAssistantSession(projectName: string | null) {
     // 时滤掉外来会话，否则新建/改写会把它们一起固化进来，而本项目在途的权威列表又
     // 因为这次写入被判过期丢弃，侧边栏就一直挂着一串在本项目里打不开的会话
     store.getState().setSessions(sessions.filter((s) => s.project_name === projectName));
-  }, [projectName, store, writeSessions]);
+  }, [projectName, store]);
 
   // 补拉会话列表。纳入项目级取消域，挂起期间切换项目时迟到响应不得覆盖已切到的
   // 新项目会话列表；空列表不写入，避免一次失败的读把列表清空。
@@ -752,11 +752,30 @@ export function useAssistantSession(projectName: string | null) {
         }
       }
     } catch {
-      // 静默失败
+      // 删除失败：会话仍在。删的是当前会话时，在途发送/改写可能已被服务端受理，
+      // 本地时间线已落后于服务端——补一次重载，已落库的新条目/新分支不再停在
+      // 本地不可见。静默失败（重载失败已有自己的报错路径）。
+      if (invalidatedForDelete && store.getState().currentSessionId === sessionId) {
+        void loadSession(sessionId, { signal: beginSessionLoad() }).catch(() => {});
+      }
+    } finally {
+      // 删除已尘埃落定（成败不论）：撤掉删除保护，并把被它压下的改写列表补拉补上。
+      // 服务端此刻可能已开出新分支，早先那次作废想做的对账不应一直停在记账里——
+      // 否则新分支要等到刷新页面才出现在列表。
+      if (invalidatedForDelete) {
+        deletingCurrentRef.current[deleteKey] -= 1;
+        if (deletingCurrentRef.current[deleteKey] <= 0) {
+          delete deletingCurrentRef.current[deleteKey];
+          if (deferredRefreshRef.current.delete(deleteKey)) {
+            refreshSessions();
+          }
+        }
+      }
     }
-  }, [projectName, abortSessionLoad, clearPendingQuestion, closeStream, invalidatePendingSend, switchSession, store]);
+  }, [projectName, abortSessionLoad, beginSessionLoad, clearPendingQuestion, closeStream, invalidatePendingSend, loadSession, refreshSessions, store, switchSession, writeSessions]);
 
-  // 加载当前 Agent 的可选模型列表（active credential 的 model + 预设 suggested_models）
+  // 加载当前 Agent 的可选模型列表（active credential 的 model + 预设 suggested_models），
+  // 同时把该 sdkType 下配置的供应商（credential）写入 store 供头部供应商切换菜单使用。
   const loadAgentModels = useCallback(async (sdkType: "claude" | "openai") => {
     if (!projectName) return;
     try {
@@ -765,6 +784,8 @@ export function useAssistantSession(projectName: string | null) {
         API.listAgentPresetProviders(sdkType),
       ]);
       const active = credsRes.credentials.find((c) => c.is_active);
+      store.getState().setAgentCredentials(credsRes.credentials);
+      store.getState().setActiveCredentialId(active?.id ?? null);
       const preset = active
         ? presetsRes.providers.find((p) => p.id === active.preset_id)
         : undefined;
@@ -825,6 +846,26 @@ export function useAssistantSession(projectName: string | null) {
     [projectName, store],
   );
 
+  // 切换供应商（同一 sdkType 下激活另一个 credential）：
+  // 激活后重载模型列表；后续会话/续接按新激活的 credential 走（后端读 active）。
+  const switchAgentProvider = useCallback(
+    async (credentialId: number) => {
+      if (!projectName) return;
+      try {
+        await API.activateAgentCredential(credentialId);
+        const creds = store
+          .getState()
+          .agentCredentials.map((c) => ({ ...c, is_active: c.id === credentialId }));
+        store.getState().setAgentCredentials(creds);
+        store.getState().setActiveCredentialId(credentialId);
+        await loadAgentModels(store.getState().sdkType);
+      } catch (err) {
+        useAppStore.getState().pushToast(errMsg(err), "error");
+      }
+    },
+    [projectName, loadAgentModels, store],
+  );
+
   return {
     sendMessage,
     rewriteMessage,
@@ -834,6 +875,7 @@ export function useAssistantSession(projectName: string | null) {
     switchSession,
     deleteSession,
     switchAgent,
+    switchAgentProvider,
     switchAgentModel,
     loadAgentModels,
   };

@@ -6,6 +6,7 @@ import type {
   WorkspaceNotificationInput,
   WorkspaceNotificationTarget,
 } from "@/types";
+import { DEFAULT_ASSISTANT_SKIN_ID, isAssistantSkinId } from "@/utils/assistant-skins";
 
 interface Toast {
   id: string;
@@ -47,6 +48,45 @@ export function clampAssistantPanelWidth(value: number): number {
   );
 }
 
+/** 缩角角标吸附的边缘；offset 为角标中心沿该边缘的像素位置（resolve 时 clamp）。 */
+export type PeekEdge = "left" | "right" | "top" | "bottom";
+
+export interface AssistantPeekAnchor {
+  edge: PeekEdge;
+  offset: number;
+}
+
+export const ASSISTANT_PEEK_ANCHOR_STORAGE_KEY = "shotwise_assistant_peek_anchor";
+export const ASSISTANT_SKIN_STORAGE_KEY = "shotwise_assistant_skin";
+
+// 缩角角标贴边隐藏时露出的可见条宽度
+export const ASSISTANT_PEEK_INSET = 12;
+
+const PEEK_EDGES: readonly PeekEdge[] = ["left", "right", "top", "bottom"];
+
+function isPeekEdge(value: unknown): value is PeekEdge {
+  return typeof value === "string" && (PEEK_EDGES as readonly string[]).includes(value);
+}
+
+function isPeekAnchor(value: unknown): value is AssistantPeekAnchor {
+  if (!value || typeof value !== "object") return false;
+  const { edge, offset } = value as Partial<AssistantPeekAnchor>;
+  return isPeekEdge(edge) && typeof offset === "number" && Number.isFinite(offset);
+}
+
+/** 读取持久化角标锚点；null 表示从未自定义，渲染时取默认右下角。 */
+function readPersistedAssistantPeekAnchor(): AssistantPeekAnchor | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(ASSISTANT_PEEK_ANCHOR_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    return isPeekAnchor(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function readPersistedAssistantPanelWidth(): number {
   if (typeof window === "undefined") return ASSISTANT_PANEL_DEFAULT_WIDTH;
   try {
@@ -57,6 +97,17 @@ function readPersistedAssistantPanelWidth(): number {
     return clampAssistantPanelWidth(parsed);
   } catch {
     return ASSISTANT_PANEL_DEFAULT_WIDTH;
+  }
+}
+
+/** 读取持久化皮肤 id，非法值回退默认。 */
+function readPersistedAssistantSkin(): string {
+  if (typeof window === "undefined") return DEFAULT_ASSISTANT_SKIN_ID;
+  try {
+    const raw = window.localStorage.getItem(ASSISTANT_SKIN_STORAGE_KEY);
+    return isAssistantSkinId(raw) ? raw : DEFAULT_ASSISTANT_SKIN_ID;
+  } catch {
+    return DEFAULT_ASSISTANT_SKIN_ID;
   }
 }
 
@@ -139,6 +190,14 @@ interface AppState {
   assistantPanelWidth: number;
   setAssistantPanelWidth: (width: number) => void;
   persistAssistantPanelWidth: () => void;
+  // 缩角角标锚点：null 表示从未自定义（渲染时取默认右下角）
+  assistantPeekAnchor: AssistantPeekAnchor | null;
+  setAssistantPeekAnchor: (anchor: AssistantPeekAnchor | null) => void;
+  persistAssistantPeekAnchor: () => void;
+  // 智能体角标皮肤 id（assistant-skins.ts 注册）
+  assistantSkin: string;
+  setAssistantSkin: (id: string) => void;
+  persistAssistantSkin: () => void;
   taskHudOpen: boolean;
   setTaskHudOpen: (open: boolean) => void;
 
@@ -322,6 +381,35 @@ export const useAppStore = create<AppState>((set, get) => ({
       );
     } catch {
       // localStorage 不可用（隐私模式 / quota exceeded）静默失败，内存值仍生效
+    }
+  },
+  assistantPeekAnchor: readPersistedAssistantPeekAnchor(),
+  setAssistantPeekAnchor: (anchor) =>
+    set({ assistantPeekAnchor: anchor ? { ...anchor } : null }),
+  persistAssistantPeekAnchor: () => {
+    if (typeof window === "undefined") return;
+    const anchor = get().assistantPeekAnchor;
+    try {
+      if (!anchor) {
+        window.localStorage.removeItem(ASSISTANT_PEEK_ANCHOR_STORAGE_KEY);
+        return;
+      }
+      window.localStorage.setItem(
+        ASSISTANT_PEEK_ANCHOR_STORAGE_KEY,
+        JSON.stringify(anchor),
+      );
+    } catch {
+      // 静默失败
+    }
+  },
+  assistantSkin: readPersistedAssistantSkin(),
+  setAssistantSkin: (id) => set({ assistantSkin: id }),
+  persistAssistantSkin: () => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(ASSISTANT_SKIN_STORAGE_KEY, get().assistantSkin);
+    } catch {
+      // 静默失败
     }
   },
   taskHudOpen: false,

@@ -21,6 +21,19 @@ class UnsupportedDiscoveryFormatError(ValueError):
     pass
 
 
+class DiscoveryEndpointUnavailableError(RuntimeError):
+    """模型列表端点对当前供应商不可用（认证被拒 / 路径不存在）。
+
+    Anthropic 兼容网关（如火山方舟 Agent/Coding Plan）往往只实现 POST
+    /v1/messages，不提供 GET /v1/models；此时 401/403/404 与 API Key
+    是否正确无关，需要与「认证失败」区分开给用户可读提示。
+    """
+
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+        super().__init__(f"discovery endpoint unavailable (HTTP {status_code})")
+
+
 async def discover_models(
     *,
     discovery_format: str,
@@ -30,7 +43,8 @@ async def discover_models(
     """查询供应商可用模型列表，每项标注 endpoint。
 
     Returns:
-        list of dict: model_id, display_name, endpoint, is_default, is_enabled
+        list of dict: model_id, display_name, endpoint, is_default, is_enabled,
+        context_window (尽力而为；端点未提供时为 None)
     """
     if discovery_format == "openai":
         return await _discover_openai(base_url, api_key)
@@ -51,7 +65,8 @@ async def _discover_openai(base_url: str | None, api_key: str) -> list[dict]:
         client = OpenAI(api_key=api_key, base_url=ensure_openai_base_url(base_url))
         raw_models = client.models.list()
         models = sorted(raw_models, key=lambda m: m.id)
-        return _build_result_list([(m.id, infer_endpoint(m.id, "openai")) for m in models])
+        entries = [(m.id, infer_endpoint(m.id, "openai"), getattr(m, "context_window", None)) for m in models]
+        return _build_result_list(entries)
 
     return await asyncio.to_thread(_sync)
 
@@ -67,14 +82,15 @@ async def _discover_google(base_url: str | None, api_key: str) -> list[dict]:
         client = genai.Client(**kwargs)
         raw_models = client.models.list()
 
-        entries: list[tuple[str, str]] = []
+        entries: list[tuple[str, str, int | None]] = []
         for m in raw_models:
             if not m.name:
                 continue
             model_id: str = m.name
             if model_id.startswith("models/"):
                 model_id = model_id[len("models/") :]
-            entries.append((model_id, infer_endpoint(model_id, "google")))
+            # Gemini Model 对象自带 input_token_limit，作为上下文窗口的上限参考
+            entries.append((model_id, infer_endpoint(model_id, "google"), getattr(m, "input_token_limit", None)))
 
         entries.sort(key=lambda e: e[0])
         return _build_result_list(entries)
@@ -98,6 +114,10 @@ async def _discover_anthropic(base_url: str | None, api_key: str) -> list[dict]:
         },
         timeout=15.0,
     )
+    if resp.status_code in (401, 403, 404):
+        # 网关已识别该路径并拒绝：多为端点根本不提供模型列表（如方舟套餐），
+        # 与 Key 无关；原始响应体没有可复用的诊断信息，直接归为「端点不可用」
+        raise DiscoveryEndpointUnavailableError(resp.status_code)
     resp.raise_for_status()
     data = resp.json()
     entries = sorted(
@@ -111,16 +131,17 @@ async def _discover_anthropic(base_url: str | None, api_key: str) -> list[dict]:
             "endpoint": "",
             "is_default": False,
             "is_enabled": True,
+            "context_window": m.get("context_window"),
         }
         for m in entries
     ]
 
 
-def _build_result_list(entries: list[tuple[str, str]]) -> list[dict]:
+def _build_result_list(entries: list[tuple[str, str, int | None]]) -> list[dict]:
     """每个推算 media_type 取首项为 default。"""
     seen_media: set[str] = set()
     result: list[dict] = []
-    for model_id, endpoint in entries:
+    for model_id, endpoint, context_window in entries:
         media = endpoint_to_media_type(endpoint)
         is_default = media not in seen_media
         seen_media.add(media)
@@ -131,6 +152,7 @@ def _build_result_list(entries: list[tuple[str, str]]) -> list[dict]:
                 "endpoint": endpoint,
                 "is_default": is_default,
                 "is_enabled": True,
+                "context_window": context_window,
             }
         )
     return result

@@ -10,6 +10,7 @@ import type {
   TimelineEntry,
   Turn,
 } from "@/types";
+import type { AgentCredential } from "@/types/agent-credential";
 import {
   applyDraftDelta,
   buildDraftTurn,
@@ -69,6 +70,10 @@ interface AssistantState {
   agentModels: string[];
   /** 当前选择的模型；空串 = 沿用凭证配置的默认模型。 */
   agentModel: string;
+  /** 当前 sdkType 下配置的供应商（credential）列表，用于头部供应商图标按钮的切换菜单。 */
+  agentCredentials: AgentCredential[];
+  /** 当前激活的供应商 id；null = 该 sdkType 下无激活凭证。 */
+  activeCredentialId: number | null;
 
   // Scope
   currentProject: string | null;
@@ -108,6 +113,8 @@ interface AssistantState {
   setSdkType: (sdkType: "claude" | "openai") => void;
   setAgentModels: (models: string[]) => void;
   setAgentModel: (model: string) => void;
+  setAgentCredentials: (creds: AgentCredential[]) => void;
+  setActiveCredentialId: (id: number | null) => void;
   setCurrentProject: (project: string | null) => void;
   setIsDraftSession: (draft: boolean) => void;
 }
@@ -178,6 +185,8 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
     sdkType: "claude",
     agentModels: [],
     agentModel: "",
+    agentCredentials: [],
+    activeCredentialId: null,
     currentProject: null,
     isDraftSession: false,
     editingTurnUuid: null,
@@ -281,5 +290,7 @@ export const useAssistantStore = create<AssistantState>((set, get) => {
     setSdkType: (sdkType) => set({ sdkType }),
     setAgentModels: (models) => set({ agentModels: models }),
     setAgentModel: (model) => set({ agentModel: model }),
+    setAgentCredentials: (creds) => set({ agentCredentials: creds }),
+    setActiveCredentialId: (id) => set({ activeCredentialId: id }),
   };
 });

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, type CSSProperties } from "react";
+import { useState, useEffect, useCallback, useMemo, type CSSProperties } from "react";
 import { errMsg, voidCall, voidPromise } from "@/utils/async";
 import { ChevronRight, ExternalLink, Eye, EyeOff, Loader2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -8,6 +8,7 @@ import { useAppStore } from "@/stores/app-store";
 import { ProviderIcon } from "@/components/ui/ProviderIcon";
 import { PillSwitch } from "@/components/ui/PillSwitch";
 import { CredentialList } from "@/components/pages/CredentialList";
+import { formatDurationsLabel } from "@/utils/duration_format";
 import { ACCENT_BTN_CLS, ACCENT_BUTTON_STYLE, CARD_STYLE, GHOST_BTN_CLS, INPUT_CLS } from "@/components/ui/darkroom-tokens";
 import { FieldLabel } from "@/components/ui/FieldLabel";
 import type { ProviderConfigDetail, ProviderField } from "@/types";
@@ -243,22 +244,51 @@ function capabilityPillRank(kind: string): number {
   return idx === -1 ? CAPABILITY_PILL_ORDER.length : idx;
 }
 
+function mediaTypeLabel(kind: string, t: (key: string) => string): string {
+  return kind === "video"
+    ? t("media_type_video")
+    : kind === "image"
+      ? t("media_type_image")
+      : kind === "text"
+        ? t("media_type_text")
+        : kind === "audio"
+          ? t("media_type_audio")
+          : kind;
+}
+
 function CapabilityPill({ kind }: { kind: string }) {
   const { t } = useTranslation("dashboard");
-  const label =
-    kind === "video"
-      ? t("media_type_video")
-      : kind === "image"
-        ? t("media_type_image")
-        : kind === "text"
-          ? t("media_type_text")
-          : kind === "audio"
-            ? t("media_type_audio")
-            : kind;
   return (
     <span className="rounded-full border border-hairline-soft bg-bg-grad-a/55 px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-text-3">
-      {label}
+      {mediaTypeLabel(kind, t)}
     </span>
+  );
+}
+
+// 模型列表顶部的媒体类型筛选按钮（「全部」+ 该供应商存在的类型）
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={
+        "rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-[0.14em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent " +
+        (active
+          ? "border-accent/40 bg-accent-dim text-accent-2"
+          : "border-hairline-soft bg-bg-grad-a/55 text-text-3 hover:border-hairline hover:text-text")
+      }
+    >
+      {children}
+    </button>
   );
 }
 
@@ -281,9 +311,19 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [togglingEnabled, setTogglingEnabled] = useState(false);
+  // 模型列表的媒体类型筛选；null = 全部
+  const [modelTypeFilter, setModelTypeFilter] = useState<string | null>(null);
 
   const hasDraft = Object.keys(draft).length > 0;
   useWarnUnsaved(hasDraft);
+
+  // 模型列表可选筛的媒体类型（该供应商实际存在，按 图片→视频→文本→音频 排序）
+  const availableTypes = useMemo(() => {
+    if (!detail?.models) return [];
+    return [...new Set(Object.values(detail.models).map((m) => m.media_type))].sort(
+      (a, b) => capabilityPillRank(a) - capabilityPillRank(b),
+    );
+  }, [detail]);
 
   const handleCredentialChanged = useCallback(async () => {
     const updated = await API.getProviderConfig(providerId);
@@ -299,12 +339,13 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
 
   useEffect(() => {
     let disposed = false;
-    // providerId 变化时重置草稿/详情/错误后再异步拉取，属于动作驱动重置
+    // providerId 变化时重置草稿/详情/错误/类型筛选后再异步拉取，属于动作驱动重置
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDraft({});
     setDetail(null);
     setLoadError(null);
     setSaveError(null);
+    setModelTypeFilter(null);
     voidCall(
       API.getProviderConfig(providerId)
         .then((res) => {
@@ -437,17 +478,6 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
         </div>
       </div>
 
-      {/* Capabilities */}
-      {detail.media_types && detail.media_types.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {[...detail.media_types]
-            .sort((a, b) => capabilityPillRank(a) - capabilityPillRank(b))
-            .map((mt) => (
-              <CapabilityPill key={mt} kind={mt} />
-            ))}
-        </div>
-      )}
-
       {/* Credentials */}
       <CredentialList
         providerId={providerId}
@@ -456,6 +486,53 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
         secretFieldGroups={detail.secret_field_groups}
         onChanged={voidPromise(handleCredentialChanged)}
       />
+
+      {/* Models — 注册表声明的模型清单（只读，真相源 PROVIDER_REGISTRY，不可编辑）。
+          位于密钥管理下方；顶部类型标签筛选下方列表（默认全部）。 */}
+      {detail.models && Object.keys(detail.models).length > 0 && (
+        <div>
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-accent-2">
+              {t("model_list")}
+            </span>
+            <div role="group" aria-label={t("model_list")} className="flex flex-wrap gap-1">
+              <FilterChip active={modelTypeFilter === null} onClick={() => setModelTypeFilter(null)}>
+                {t("all")}
+              </FilterChip>
+              {availableTypes.map((mt) => (
+                <FilterChip
+                  key={mt}
+                  active={modelTypeFilter === mt}
+                  onClick={() => setModelTypeFilter(mt)}
+                >
+                  {mediaTypeLabel(mt, t)}
+                </FilterChip>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            {Object.entries(detail.models)
+              .filter(([, m]) => modelTypeFilter === null || m.media_type === modelTypeFilter)
+              .map(([modelId, m]) => (
+                <div
+                  key={modelId}
+                  className="flex flex-wrap items-center gap-2 rounded-[8px] border border-hairline px-3 py-2 text-[12.5px] text-text"
+                  style={CARD_STYLE}
+                >
+                  <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">{modelId}</span>
+                  {m.supported_durations.length > 0 && (
+                    <span className="font-mono text-[10.5px] text-text-4">
+                      {t("supported_durations_summary", {
+                        value: formatDurationsLabel(m.supported_durations),
+                      })}
+                    </span>
+                  )}
+                  <CapabilityPill kind={m.media_type} />
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
 
       {/* Advanced */}
       {detail.fields.length > 0 && (

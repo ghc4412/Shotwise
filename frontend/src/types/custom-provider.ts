@@ -82,6 +82,8 @@ export interface DiscoveredModel {
   endpoint: EndpointKey;
   is_default: boolean;
   is_enabled: boolean;
+  /** 上下文窗口（token）；发现端点未提供时为 null/undefined。 */
+  context_window?: number | null;
 }
 
 export interface CustomProviderCreateRequest {
@@ -145,5 +147,6 @@ export interface AnthropicDiscoverResponse {
     endpoint: string;
     is_default: boolean;
     is_enabled: boolean;
+    context_window?: number | null;
   }>;
 }

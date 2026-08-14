@@ -139,6 +139,20 @@ describe("stores", () => {
     expect(app.getEntityRevision("clue:missing")).toBe(1);
   });
 
+  it("manages assistant peek anchor and skin", () => {
+    const app = useAppStore.getState();
+    expect(app.assistantPeekAnchor).toBeNull();
+    expect(app.assistantSkin).toBe("bot");
+
+    app.setAssistantPeekAnchor({ edge: "left", offset: 100.4 });
+    expect(useAppStore.getState().assistantPeekAnchor).toEqual({ edge: "left", offset: 100.4 });
+    app.setAssistantPeekAnchor(null);
+    expect(useAppStore.getState().assistantPeekAnchor).toBeNull();
+
+    app.setAssistantSkin("ember");
+    expect(useAppStore.getState().assistantSkin).toBe("ember");
+  });
+
   it("replaces tasks via setTasks and updates task stats", () => {
     const tasks = useTasksStore.getState();
     const first = makeTask();

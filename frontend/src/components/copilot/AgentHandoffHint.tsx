@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Sparkles, X } from "lucide-react";
-import { useAppStore } from "@/stores/app-store";
+import { ASSISTANT_PEEK_INSET, useAppStore } from "@/stores/app-store";
 import { UI_LAYERS } from "@/utils/ui-layers";
 
 const AUTO_DISMISS_MS = 6500;
-
-// 助手面板宽度（与 StudioLayout 中保持一致）
-const ASSISTANT_PANEL_WIDTH = 505;
+/** 顶栏高度：停靠面板从顶栏下方开始，提示卡锚在其左缘。 */
+const WORKSPACE_HEADER_HEIGHT = 48;
 
 interface AgentHandoffHintProps {
   /** 当 overview 在当前会话内首次从 null → 有值，外部把这个 key 递增触发一次引导。 */
@@ -18,8 +17,9 @@ interface AgentHandoffHintProps {
 
 export function AgentHandoffHint({ triggerKey, storageScope }: AgentHandoffHintProps) {
   const { t } = useTranslation("dashboard");
-  // 不订阅 assistantPanelOpen —— 避免触发时调用 setAssistantPanelOpen(true) 让 effect cleanup 清掉计时器
-  const assistantPanelOpen = useAppStore((s) => s.assistantPanelOpen);
+  // 订阅面板宽度用于锚定提示卡（面板右侧停靠、可调宽）；不订阅 assistantPanelOpen，
+  // 避免触发时调用 setAssistantPanelOpen(true) 让 effect cleanup 清掉计时器
+  const assistantPanelWidth = useAppStore((s) => s.assistantPanelWidth);
 
   const [visible, setVisible] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -86,8 +86,21 @@ export function AgentHandoffHint({ triggerKey, storageScope }: AgentHandoffHintP
 
   if (!visible) return null;
 
-  // 紧贴 agent 面板左边沿；面板收起时（理论上不会，触发时强制打开了）退到右上角
-  const cardRight = assistantPanelOpen ? ASSISTANT_PANEL_WIDTH + 12 : 80;
+  // 锚到右侧停靠栏左缘：面板占布局宽度、贴视口右缘，提示卡出现在其左上方、尾巴指向面板。
+  // 提示触发时会强制展开面板，故恒按展开态定位。
+  const viewportW = window.innerWidth;
+  const viewportH = window.innerHeight;
+  const winWidth = Math.min(
+    assistantPanelWidth,
+    Math.max(0, viewportW - 2 * ASSISTANT_PEEK_INSET),
+  );
+  const winLeft = Math.max(0, viewportW - winWidth);
+  const winTop = WORKSPACE_HEADER_HEIGHT;
+  const cardRight = Math.min(
+    Math.max(12, viewportW - winLeft + 12),
+    Math.max(12, viewportW - 340 - 12),
+  );
+  const cardTop = Math.min(Math.max(12, winTop + 12), viewportH - 200);
 
   return (
     <div
@@ -99,7 +112,7 @@ export function AgentHandoffHint({ triggerKey, storageScope }: AgentHandoffHintP
         className="agent-handoff-card pointer-events-auto absolute"
         data-leaving={leaving}
         style={{
-          top: 72,
+          top: cardTop,
           right: cardRight,
           width: 340,
           borderRadius: 14,
