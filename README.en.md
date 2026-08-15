@@ -52,6 +52,8 @@ Shotwise uses a production-focused workspace layout across the project lobby, st
 
 The browser tab, PWA manifest, login page, and project lobby share the `shotwise-mark.svg` brand mark.
 
+The project lobby supports production-phase filters, keyword search, and sorting by recent activity, active work, completion, or creation time. Filter, search, and sort state is persisted in the URL so refreshes, back/forward navigation, and shared links restore the same view. The local-time greeting updates automatically and pauses while the page is hidden.
+
 ## Core Features
 
 <table>
@@ -131,11 +133,13 @@ See [Deployment and Operations](docs/deployment.md) for upgrades, backups, and r
 
 ### 🤖 Agent-driven, resumable workflow
 
-Shotwise uses an orchestration Skill and focused Subagents built on the Claude Agent SDK. The main Agent detects the current project stage and delegates character extraction, episode planning, screenplay normalization, and asset generation to focused workers.
+The AI assistant supports both the Claude Agent SDK and OpenAI Agents SDK. Both use the Orchestration Skill + Focused Subagent architecture; Agent settings select the SDK channel for each credential. The main Agent detects the current project stage and delegates character extraction, episode planning, screenplay normalization, and asset generation to focused workers.
 
 ### 🎨 Reusable character, scene, and prop assets
 
 Character designs, style references, scene assets, and prop assets act as cross-shot references to reduce visual drift across generated media.
+
+Asset names can be edited directly; renaming cascades through project references.
 
 SHOTWISE supports multiple built-in and custom providers through unified `ImageBackend` / `VideoBackend` / `TextBackend` protocols, switchable at global or project level:
 
@@ -149,7 +153,7 @@ Image, video, and audio jobs use independent concurrency channels with RPM limit
 
 ### 🕰️ Version history and project archives
 
-Regeneration preserves earlier versions. Entire projects can be exported and imported for backup, migration, and handoff.
+Regeneration preserves earlier versions. Entire projects can be exported and imported for backup, migration, and handoff. ZIP imports are preflighted in a temporary staging directory: Shotwise checks archive structure, repairable issues, and warnings, and reports project-name conflicts before writing; preflight does not install or modify the target project.
 
 ### 💰 Estimates and actual usage
 
@@ -163,7 +167,7 @@ Generate and audition narration tracks, fill an episode in bulk, and export CapC
 
 Shotwise can issue `shotwise-` API keys and expose a synchronous Agent chat endpoint for platforms such as OpenClaw.
 
-SHOTWISE's AI assistant is built on the Claude Agent SDK, using an **Orchestration Skill + Focused Subagent** multi-agent architecture:
+SHOTWISE's AI assistant supports the Claude Agent SDK and OpenAI Agents SDK, using an **Orchestration Skill + Focused Subagent** multi-agent architecture:
 
 Shotwise hides provider differences behind `TextBackend`, `ImageBackend`, and `VideoBackend` protocols. Models, parameters, availability, and pricing change over time, so the **Shotwise Settings page and provider documentation are the source of truth**.
 
@@ -197,7 +201,7 @@ Technical implementation: API Key authentication (Bearer Token) + synchronous Ag
 ```mermaid
 flowchart TB
     UI["React 19 Web UI"] --> API["FastAPI API / SSE"]
-    API --> AGENT["Agent Runtime<br/>Skill + Subagent"]
+    API --> AGENT["Agent Runtime<br/>Claude / OpenAI Agents + Skill"]
     API --> CORE["Core Services"]
     AGENT --> CORE
     CORE --> PROVIDERS["Text / Image / Video / TTS Backends"]
@@ -206,7 +210,7 @@ flowchart TB
     CORE --> DB["SQLAlchemy 2.0<br/>SQLite / PostgreSQL"]
 ```
 
-The stack includes React 19, TypeScript, FastAPI, Python 3.12+, the Claude Agent SDK, SQLAlchemy 2.0, FFmpeg, Docker, and Docker Compose. See [Architecture](docs/architecture.md) for boundaries and extension points.
+The stack includes React 19, TypeScript, FastAPI, Python 3.12+, the Claude Agent SDK, OpenAI Agents SDK, SQLAlchemy 2.0, FFmpeg, Docker, and Docker Compose. See [Architecture](docs/architecture.md) for boundaries and extension points.
 
 ## Important limitations
 
