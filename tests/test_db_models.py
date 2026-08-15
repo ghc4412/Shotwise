@@ -60,6 +60,13 @@ class TestModelsCreateTables:
         assert loaded.project_name == "demo"
         assert loaded.status == "queued"
 
+    async def test_task_maps_provider_endpoint(self, engine):
+        async with engine.connect() as conn:
+            columns = await conn.run_sync(
+                lambda sync_conn: {column["name"] for column in inspect(sync_conn).get_columns("tasks")}
+            )
+        assert "provider_endpoint" in columns
+
     async def test_agent_session_round_trip(self, session):
         now = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)
         s = AgentSession(
