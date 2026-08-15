@@ -3,10 +3,13 @@
 
 启动方式:
     cd Shotwise
-    uv run uvicorn server.app:app --reload --reload-dir server --reload-dir lib --port 1241
+    uv run python server/run_dev.py
+    # 等价于：uv run uvicorn server.app:app --reload --reload-dir server --reload-dir lib --port 1241
 
-注意：必须用 --reload-dir 限定监视目录，否则 watchfiles 会扫描
-node_modules / .venv / .git / .worktrees 等十几万个文件，单核 CPU 50%+。
+注意：Windows 上必须用 run_dev.py 入口启动 —— uvicorn --reload 会先创建事件循环
+再加载 app，且 Windows 上退化为 SelectorEventLoop（Python 3.14 起不支持子进程），
+Claude Agent 启动 claude.exe 会失败；run_dev.py 在 uvicorn.run() 之前完成事件循环
+修正（见 server/_win_loop_patch.py）。
 """
 
 import asyncio
@@ -40,6 +43,7 @@ from lib.logging_config import attach_file_handler, migrate_legacy_log_dir, setu
 from lib.path_safety import try_safe_join
 from lib.project_migrations import cleanup_stale_backups, run_project_migrations
 from lib.source_loader.migration import migrate_project_source_encoding
+from server._win_loop_patch import patch_windows_uvicorn_event_loop
 from server.auth import ensure_auth_password, ensure_default_user, get_current_user
 from server.error_handlers import register_error_handlers
 from server.routers import (
@@ -74,6 +78,10 @@ from server.routers import (
 )
 from server.routers import auth as auth_router
 from server.services.project_events import ProjectEventService
+
+# Windows 事件循环修正的兜底：reload 模式的完整修复见 server/run_dev.py（uvicorn
+# 先创建事件循环再加载本模块，模块级 patch 覆盖不到 reload worker 的时序）。
+patch_windows_uvicorn_event_loop()
 
 
 def assert_no_provider_secrets_in_environ() -> None:
