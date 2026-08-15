@@ -67,8 +67,6 @@ class ModelInfo:
     # 图像 / 视频两个 registry 条目）用此字段让两条目共用一个 API 模型名，而 registry 键名各自
     # 唯一——键名兼作 UI 标识与计费查表键，不能重复，故 API 模型名需与键名解耦。
     api_model_name: str | None = None
-    # 成片恒有声且供应商不提供音轨开关的型号级声明。
-    audio_always_on: bool = False
 
 
 #: `generate_audio` token 语义是「音轨开关可控」，不是「有无音轨」——AI Studio 的 Veo、
@@ -104,7 +102,9 @@ def model_audio_switch_controllable(model_info: ModelInfo) -> bool:
 
 def model_audio_always_on(provider_id: str, model_info: ModelInfo) -> bool:
     """成片恒有声且开关不可控——请求里没有可下发的音轨开关，关闭音频的意图必然落空。"""
-    return (model_info.audio_always_on or model_has_audio_track(provider_id, model_info)) and not model_audio_switch_controllable(model_info)
+    return (
+        model_info.audio_always_on or model_has_audio_track(provider_id, model_info)
+    ) and not model_audio_switch_controllable(model_info)
 
 
 # 合法并发 lane 名，与 CapacityTable 的 image/video/audio 三条容量通道对齐。

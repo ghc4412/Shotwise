@@ -101,9 +101,7 @@ class SessionRepository(BaseRepository):
         await self.session.commit()
         return rowcount(result) > 0
 
-    async def update_sdk_type(
-        self, session_id: str, sdk_type: str, *, claude_resume_id: str | None = None
-    ) -> bool:
+    async def update_sdk_type(self, session_id: str, sdk_type: str, *, claude_resume_id: str | None = None) -> bool:
         """切换会话当前活跃的 SDK 类型；可同时落 Claude resume id 供续接。"""
         now = utc_now()
         values: dict[str, Any] = {"sdk_type": sdk_type, "updated_at": now}
