@@ -24,7 +24,7 @@ export function AgentPageIntro({ sdkType }: { sdkType: AgentSdkType }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-accent-2">
-            {isOpenAI ? t("agent_sdk_openai") : "Anthropic Bridge"}
+            {isOpenAI ? t("agent_sdk_openai") : t("agent_sdk_claude")}
           </div>
           <h2
             className="font-editorial mt-1"

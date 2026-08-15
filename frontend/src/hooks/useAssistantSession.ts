@@ -12,6 +12,7 @@ import type {
   SessionMeta,
   TimelineEntry,
 } from "@/types";
+import type { AgentModelMenuEntry } from "@/types/agent-credential";
 
 export interface AttachedImage {
   id: string;
@@ -774,7 +775,7 @@ export function useAssistantSession(projectName: string | null) {
     }
   }, [projectName, abortSessionLoad, beginSessionLoad, clearPendingQuestion, closeStream, invalidatePendingSend, loadSession, refreshSessions, store, switchSession, writeSessions]);
 
-  // 加载当前 Agent 的可选模型列表（active credential 的 model + 预设 suggested_models），
+  // 加载当前 Agent 的可选模型菜单（active credential 的 model + model_map；无映射时补预设 suggested_models），
   // 同时把该 sdkType 下配置的供应商（credential）写入 store 供头部供应商切换菜单使用。
   const loadAgentModels = useCallback(async (sdkType: "claude" | "openai") => {
     if (!projectName) return;
@@ -789,12 +790,27 @@ export function useAssistantSession(projectName: string | null) {
       const preset = active
         ? presetsRes.providers.find((p) => p.id === active.preset_id)
         : undefined;
-      const models: string[] = [];
-      if (active?.model) models.push(active.model);
-      for (const m of preset?.suggested_models ?? []) {
-        if (!models.includes(m)) models.push(m);
+      // 菜单项顺序：当前默认模型 → 模型映射表（用户显式配置）。
+      // 去重按 request_model：model_map 条目展示自定义 menu_name，选中写回 request_model；
+      // 其余条目 menu_name 即模型 id；映射名优先于默认模型的 id 展示。
+      // 预设 suggested_models 仅作兜底：未配置模型映射时才展开，避免官方旧模型
+      // （如 deepseek-chat / deepseek-reasoner）混入用户自定义的映射清单。
+      const options: AgentModelMenuEntry[] = [];
+      const pushOption = (menuName: string, requestModel: string) => {
+        if (!requestModel) return;
+        const existing = options.find((o) => o.request_model === requestModel);
+        if (existing) {
+          if (menuName && existing.menu_name === existing.request_model) existing.menu_name = menuName;
+          return;
+        }
+        options.push({ menu_name: menuName || requestModel, request_model: requestModel });
+      };
+      if (active?.model) pushOption(active.model, active.model);
+      for (const entry of active?.model_map ?? []) pushOption(entry.menu_name, entry.request_model);
+      if ((active?.model_map?.length ?? 0) === 0) {
+        for (const m of preset?.suggested_models ?? []) pushOption(m, m);
       }
-      store.getState().setAgentModels(models);
+      store.getState().setAgentModels(options);
       store.getState().setAgentModel(active?.model ?? "");
     } catch {
       // 静默失败：模型选择器退化为空（用户仍可手动输入）

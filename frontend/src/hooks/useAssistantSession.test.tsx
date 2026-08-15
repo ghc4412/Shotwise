@@ -2115,4 +2115,120 @@ describe("useAssistantSession", () => {
       expect(useAssistantStore.getState().sessions.map((s) => s.id)).toEqual(["session-2", "session-3"]);
     });
   });
+
+  it("expands model_map into the model menu, keeping the active default model first", async () => {
+    vi.spyOn(API, "listAgentCredentials").mockResolvedValue({
+      credentials: [
+        {
+          id: 1,
+          sdk_type: "openai",
+          preset_id: "deepseek-openai",
+          display_name: "DeepSeek (OpenAI)",
+          icon_key: "DeepSeek",
+          base_url: "https://api.deepseek.com",
+          api_key_masked: "sk-***",
+          model: "deepseek-v4-flash",
+          haiku_model: null,
+          sonnet_model: null,
+          opus_model: null,
+          subagent_model: null,
+          model_map: [
+            { menu_name: "deepseek-v4-flash", request_model: "deepseek-v4-flash", context_window: 1048576 },
+            { menu_name: "deepseek-v4-pro", request_model: "deepseek-v4-pro", context_window: 1048576 },
+          ],
+          is_active: true,
+          created_at: null,
+        },
+      ],
+    });
+    vi.spyOn(API, "listAgentPresetProviders").mockResolvedValue({
+      providers: [
+        {
+          id: "deepseek-openai",
+          sdk_type: "openai",
+          display_name: "DeepSeek (OpenAI)",
+          icon_key: "DeepSeek",
+          messages_url: "https://api.deepseek.com",
+          discovery_url: "https://api.deepseek.com",
+          default_model: "deepseek-v4-pro",
+          suggested_models: ["deepseek-chat", "deepseek-reasoner"],
+          docs_url: null,
+          api_key_url: null,
+          notes: null,
+          api_key_pattern: null,
+          is_recommended: true,
+          supportsDiscovery: true,
+        },
+      ],
+      custom_sentinel_id: "custom",
+    });
+
+    const { result } = renderHook(() => useAssistantSession("demo"));
+    await act(async () => {
+      await result.current.loadAgentModels("openai");
+    });
+
+    // 默认模型占首位；model_map 条目完整展示；已配置映射时预设 suggested_models
+    // （deepseek-chat / deepseek-reasoner）不再混入——映射清单是用户显式配置
+    expect(useAssistantStore.getState().agentModels).toEqual([
+      { menu_name: "deepseek-v4-flash", request_model: "deepseek-v4-flash" },
+      { menu_name: "deepseek-v4-pro", request_model: "deepseek-v4-pro" },
+    ]);
+    expect(useAssistantStore.getState().agentModel).toBe("deepseek-v4-flash");
+  });
+
+  it("falls back to preset suggested_models when the credential has no model_map", async () => {
+    vi.spyOn(API, "listAgentCredentials").mockResolvedValue({
+      credentials: [
+        {
+          id: 1,
+          sdk_type: "openai",
+          preset_id: "deepseek-openai",
+          display_name: "DeepSeek (OpenAI)",
+          icon_key: "DeepSeek",
+          base_url: "https://api.deepseek.com",
+          api_key_masked: "sk-***",
+          model: null,
+          haiku_model: null,
+          sonnet_model: null,
+          opus_model: null,
+          subagent_model: null,
+          model_map: null,
+          is_active: true,
+          created_at: null,
+        },
+      ],
+    });
+    vi.spyOn(API, "listAgentPresetProviders").mockResolvedValue({
+      providers: [
+        {
+          id: "deepseek-openai",
+          sdk_type: "openai",
+          display_name: "DeepSeek (OpenAI)",
+          icon_key: "DeepSeek",
+          messages_url: "https://api.deepseek.com",
+          discovery_url: "https://api.deepseek.com",
+          default_model: "deepseek-v4-pro",
+          suggested_models: ["deepseek-chat", "deepseek-reasoner"],
+          docs_url: null,
+          api_key_url: null,
+          notes: null,
+          api_key_pattern: null,
+          is_recommended: true,
+          supportsDiscovery: true,
+        },
+      ],
+      custom_sentinel_id: "custom",
+    });
+
+    const { result } = renderHook(() => useAssistantSession("demo"));
+    await act(async () => {
+      await result.current.loadAgentModels("openai");
+    });
+
+    expect(useAssistantStore.getState().agentModels).toEqual([
+      { menu_name: "deepseek-chat", request_model: "deepseek-chat" },
+      { menu_name: "deepseek-reasoner", request_model: "deepseek-reasoner" },
+    ]);
+  });
 });

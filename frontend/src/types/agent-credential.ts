@@ -37,6 +37,12 @@ export interface AgentModelMapEntry {
   context_window: number | null;
 }
 
+/** 助手面板模型下拉菜单条目：展示名 → 选中后写回凭证的实际请求模型。 */
+export interface AgentModelMenuEntry {
+  menu_name: string;
+  request_model: string;
+}
+
 /** 模型发现返回的模型信息（模型映射选择器使用）。 */
 export interface AgentDiscoveredModel {
   model_id: string;

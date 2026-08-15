@@ -158,10 +158,14 @@ export function AddCredentialModal({
 
   if (!open) return null;
 
-  // 妯″瀷涓嬫媺閫夐」锛氫紭鍏堜娇鐢ㄦā鍨嬪彂鐜扮粨鏋滐紱鏈彂鐜帮紙鎴栦緵搴斿晢涓嶆敮鎸佸彂鐜帮紝濡傜伀灞辨柟鑸燂級
-  // 鏃跺洖閫€鍒伴璁剧殑 suggested_models锛堝畼鏂规敮鎸佺殑妯″瀷鍚嶏級锛岀敤鎴蜂粛鍙墜鍔ㄨ緭鍏ャ€?
-  const selectableModels =
-    modelOptions.length > 0 ? modelOptions : (selected?.suggested_models ?? []);
+  // 模型下拉选项：优先使用模型发现结果；未发现（或供应商不支持发现，如火山方舟）
+  // 时回退到预设的 suggested_models（官方支持的模型名），用户仍可手动输入。
+  // 模型映射表里的实际请求模型一并纳入，保证映射过的模型在默认模型下拉可选中。
+  const baseModels = modelOptions.length > 0 ? modelOptions : (selected?.suggested_models ?? []);
+  const mappedModels = form.modelMap
+    .map((e) => e.request_model)
+    .filter((v): v is string => Boolean(v));
+  const selectableModels = Array.from(new Set([...baseModels, ...mappedModels]));
 
   // 鑽夌浠绘剰鍙奖鍝嶈繛閫氭€х殑瀛楁锛坧reset / base_url / api_key / model锛夊彉鍖栧悗锛?
   // 鏃?testResult 宸茬粡涓嶅搴斿綋鍓嶈崏绋夸簡锛屽繀椤诲け鏁堬紝閬垮厤鐢ㄦ埛鎶婃湭閲嶆柊楠岃瘉鐨勯厤缃?
