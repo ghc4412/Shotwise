@@ -35,6 +35,8 @@ from server.services.grid_resolution import resolve_image_resolution
 async def resolve_grid_image_resolution(r: ConfigResolver, project: dict) -> str | None:
     """Compatibility seam for grid-specific resolution tests and callers."""
     return await resolve_image_resolution(r, project)
+
+
 from server.services.reference_video_tasks import (
     ProjectDurationContext,
     precheck_unit,
