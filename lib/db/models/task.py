@@ -33,6 +33,7 @@ class Task(UserOwnedMixin, Base):
     cancelled_by: Mapped[str | None] = mapped_column(String)
     provider_id: Mapped[str | None] = mapped_column(String)
     provider_job_id: Mapped[str | None] = mapped_column(String)
+    provider_endpoint: Mapped[str | None] = mapped_column(String)
     workflow_run_id: Mapped[str | None] = mapped_column(String(36), index=True)
     workflow_node_run_id: Mapped[str | None] = mapped_column(String(36), index=True)
     workflow_node_run_item_id: Mapped[str | None] = mapped_column(String(36), index=True)
