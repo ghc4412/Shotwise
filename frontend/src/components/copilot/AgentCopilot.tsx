@@ -49,9 +49,6 @@ function SessionSelector({
   const [open, setOpen] = useState(false);
   const titleId = useId();
 
-  // 无历史会话（草稿态）时不显示入口，新建会话走头部右侧 + 按钮
-  if (sessions.length === 0) return null;
-
   return (
     <>
       <button
@@ -89,62 +86,71 @@ function SessionSelector({
             {t("session_history")}
           </div>
           <div className="mt-3 max-h-[52vh] space-y-1 overflow-y-auto">
-            {sessions.map((session) => {
-              const isActive = session.id === currentSessionId;
-              const title = session.title || formatTime(session.created_at, t);
-              return (
-                <div
-                  key={session.id}
-                  className="group flex items-center gap-2 rounded-[8px] px-2.5 py-2 text-[12.5px] transition-colors"
-                  style={
-                    isActive
-                      ? {
-                          background: "var(--color-accent-dim)",
-                          color: "var(--color-accent-2)",
-                        }
-                      : { color: "var(--color-text-2)" }
-                  }
-                  onMouseEnter={(e) => {
-                    if (!isActive)
-                      e.currentTarget.style.background = "var(--color-shell-copilot-hover)";
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive) e.currentTarget.style.background = "transparent";
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSwitch(session.id);
-                      setOpen(false);
-                    }}
-                    className="flex flex-1 items-center gap-2 truncate text-left"
-                  >
-                    <StatusDot status={session.status} />
-                    <span className="truncate">{title}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm(t("confirm_delete_session"))) onDelete(session.id);
-                    }}
-                    className="focus-ring shrink-0 rounded p-0.5 opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100"
-                    style={{ color: "var(--color-text-4)" }}
+            {sessions.length === 0 ? (
+              <div
+                className="px-2.5 py-2 text-[12px] leading-relaxed"
+                style={{ color: "var(--color-text-3)" }}
+              >
+                {t("session_history_empty")}
+              </div>
+            ) : (
+              sessions.map((session) => {
+                const isActive = session.id === currentSessionId;
+                const title = session.title || formatTime(session.created_at, t);
+                return (
+                  <div
+                    key={session.id}
+                    className="group flex items-center gap-2 rounded-[8px] px-2.5 py-2 text-[12.5px] transition-colors"
+                    style={
+                      isActive
+                        ? {
+                            background: "var(--color-accent-dim)",
+                            color: "var(--color-accent-2)",
+                          }
+                        : { color: "var(--color-text-2)" }
+                    }
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.color = "var(--color-danger)";
+                      if (!isActive)
+                        e.currentTarget.style.background = "var(--color-shell-copilot-hover)";
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.color = "var(--color-text-4)";
+                      if (!isActive) e.currentTarget.style.background = "transparent";
                     }}
-                    title={t("delete_session")}
-                    aria-label={t("delete_session")}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              );
-            })}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSwitch(session.id);
+                        setOpen(false);
+                      }}
+                      className="flex flex-1 items-center gap-2 truncate text-left"
+                    >
+                      <StatusDot status={session.status} />
+                      <span className="truncate">{title}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(t("confirm_delete_session"))) onDelete(session.id);
+                      }}
+                      className="focus-ring shrink-0 rounded p-0.5 opacity-0 transition-all group-hover:opacity-100 focus-visible:opacity-100"
+                      style={{ color: "var(--color-text-4)" }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.color = "var(--color-danger)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.color = "var(--color-text-4)";
+                      }}
+                      title={t("delete_session")}
+                      aria-label={t("delete_session")}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </GlassModal>
@@ -718,16 +724,16 @@ export function AgentCopilot() {
                     {t("no_agent_models")}
                   </div>
                 ) : (
-                  agentModels.map((model) => {
-                    const isActive = model === agentModel;
+                  agentModels.map((option) => {
+                    const isActive = option.request_model === agentModel;
                     return (
                       <button
-                        key={model}
+                        key={option.request_model}
                         type="button"
                         role="menuitem"
                         onClick={() => {
                           setModelMenuOpen(false);
-                          handleModelChange(model);
+                          handleModelChange(option.request_model);
                         }}
                         className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[12.5px] transition-colors ${
                           isActive ? "font-medium" : ""
@@ -745,7 +751,7 @@ export function AgentCopilot() {
                           if (!isActive) e.currentTarget.style.background = "transparent";
                         }}
                       >
-                        <span className="truncate font-mono">{model}</span>
+                        <span className="truncate font-mono">{option.menu_name}</span>
                         {isActive && <span className="text-[10px] opacity-70">✓</span>}
                       </button>
                     );
@@ -868,7 +874,7 @@ export function AgentCopilot() {
 
       {/* Input area */}
       <div
-        className="p-3"
+        className="px-3 pb-3"
         style={{ borderTop: "1px solid var(--color-hairline-soft)" }}
       >
         {/* Thumbnail strip */}

@@ -10,7 +10,7 @@ import type {
   TimelineEntry,
   Turn,
 } from "@/types";
-import type { AgentCredential } from "@/types/agent-credential";
+import type { AgentCredential, AgentModelMenuEntry } from "@/types/agent-credential";
 import {
   applyDraftDelta,
   buildDraftTurn,
@@ -66,8 +66,12 @@ interface AssistantState {
 
   // Agent SDK（剪辑台切换 Claude / Codex）
   sdkType: "claude" | "openai";
-  /** 当前 Agent 可选模型列表（active credential 的 model + 预设 suggested_models）。 */
-  agentModels: string[];
+  /**
+   * 当前 Agent 可选模型菜单（active credential 的 model + model_map + 预设 suggested_models）。
+   * menu_name 为下拉展示名（model_map 的「菜单显示名」，其余场景等于模型 id），
+   * request_model 为选中后写回凭证的实际请求模型。
+   */
+  agentModels: AgentModelMenuEntry[];
   /** 当前选择的模型；空串 = 沿用凭证配置的默认模型。 */
   agentModel: string;
   /** 当前 sdkType 下配置的供应商（credential）列表，用于头部供应商图标按钮的切换菜单。 */
@@ -111,7 +115,7 @@ interface AssistantState {
   setSkillsLoading: (loading: boolean) => void;
   setEditingTurnUuid: (uuid: string | null) => void;
   setSdkType: (sdkType: "claude" | "openai") => void;
-  setAgentModels: (models: string[]) => void;
+  setAgentModels: (models: AgentModelMenuEntry[]) => void;
   setAgentModel: (model: string) => void;
   setAgentCredentials: (creds: AgentCredential[]) => void;
   setActiveCredentialId: (id: number | null) => void;

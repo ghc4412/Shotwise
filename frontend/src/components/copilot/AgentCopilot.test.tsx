@@ -134,11 +134,15 @@ describe("AgentCopilot", () => {
     expect(screen.getByText("当前会话")).toBeInTheDocument();
   });
 
-  it("hides the session entry until a session exists, keeping only the create button", () => {
+  it("always shows the session entry and renders an empty-state hint inside the dialog", () => {
     render(<AgentCopilot />);
-    // 草稿态：无会话切换入口，只有右侧 + 新建
-    expect(screen.queryByTitle("切换会话")).not.toBeInTheDocument();
+    // 草稿态：入口常显，点开弹窗显示空态提示
+    expect(screen.getByTitle("切换会话")).toBeInTheDocument();
     expect(screen.getByTitle("新会话")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle("切换会话"));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("暂无历史会话，发送消息后即可创建")).toBeInTheDocument();
   });
 
   it("switches between Claude Agent and OpenAI Agent from the header title", async () => {
@@ -237,6 +241,28 @@ describe("AgentCopilot", () => {
     });
 
     expect(sendMessage).toHaveBeenCalledWith("你好", undefined);
+  });
+
+  it("renders model_map entries in the model menu and switches by request_model", async () => {
+    useAssistantStore.setState({
+      agentModels: [
+        { menu_name: "V4 Flash", request_model: "deepseek-v4-flash" },
+        { menu_name: "V4 Pro", request_model: "deepseek-v4-pro" },
+      ],
+      agentModel: "deepseek-v4-flash",
+    });
+    render(<AgentCopilot />);
+
+    // 菜单展示 menu_name，当前模型（agentModel = request_model）高亮
+    fireEvent.click(screen.getByTitle("Agent 模型"));
+    expect(screen.getByRole("menuitem", { name: /V4 Flash/ })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: /V4 Pro/ })).toBeInTheDocument();
+
+    // 选中后写回实际请求模型（request_model），而非展示名
+    fireEvent.click(screen.getByRole("menuitem", { name: /V4 Pro/ }));
+    await waitFor(() => {
+      expect(switchAgentModel).toHaveBeenCalledWith("deepseek-v4-pro");
+    });
   });
 
   it("consumes a one-shot prefill dispatched via the assistant store's input field", async () => {
