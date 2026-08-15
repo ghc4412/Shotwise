@@ -14,8 +14,12 @@ pytestmark = pytest.mark.integration
 async def _enable_sqlite_foreign_keys(async_session) -> None:
     if async_session.get_bind().dialect.name == "sqlite":
         await async_session.execute(text("PRAGMA foreign_keys=ON"))
-    async_session.add(User(id="default", username="workflow-test-default"))
-    async_session.add(User(id="intruder", username="workflow-test-intruder"))
+    for user_id, username in (
+        ("default", "workflow-test-default"),
+        ("intruder", "workflow-test-intruder"),
+    ):
+        if await async_session.get(User, user_id) is None:
+            async_session.add(User(id=user_id, username=username))
     await async_session.flush()
 
 
