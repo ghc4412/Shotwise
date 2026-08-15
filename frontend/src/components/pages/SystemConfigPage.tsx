@@ -1,6 +1,6 @@
 
 import { useEffect, useMemo } from "react";
-import { Link, useLocation, useSearch } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import {
   AlertTriangle,
   BarChart3,
@@ -29,6 +29,7 @@ import {
   LANGUAGE_DISPLAY_LABELS,
   type SupportedLanguage,
 } from "@/i18n";
+import { consumeSettingsReturnTo } from "@/utils/settings-return-to";
 
 // 全局设置页 · "Control Booth"
 // 延续 Darkroom 美学：editorial 大标题 + mono kicker + 分组侧栏 + accent 紫色高亮。
@@ -157,14 +158,18 @@ export function SystemConfigPage() {
         }}
       >
         <div className="mx-auto flex max-w-[1320px] items-center gap-5 px-6 py-4">
-          <Link
-            href="/app/projects"
+          <button
+            type="button"
+            onClick={() => {
+              const returnTo = consumeSettingsReturnTo();
+              navigate(returnTo && returnTo.startsWith("/app/") ? returnTo : "/app/projects");
+            }}
             className="inline-flex items-center gap-1.5 rounded-md border border-hairline-soft bg-bg-grad-a/45 px-2.5 py-1.5 text-[12px] text-text-3 transition-colors hover:border-hairline hover:bg-bg-grad-a hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             aria-label={t("common:back")}
           >
             <ChevronLeft className="h-3.5 w-3.5" />
             <span>{t("common:back")}</span>
-          </Link>
+          </button>
           <span aria-hidden className="h-5 w-px bg-hairline-soft" />
           <div className="min-w-0 flex-1">
             <div className="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-accent-2">

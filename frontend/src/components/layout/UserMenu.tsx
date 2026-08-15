@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { ChevronDown, LogOut } from "lucide-react";
+import { ChevronDown, LogOut, Settings } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAuthStore } from "@/stores/auth-store";
+import { useProjectsStore } from "@/stores/projects-store";
+import { useDemoWorkbench } from "@/onboarding/use-demo-workbench";
+import { rememberSettingsReturnTo } from "@/utils/settings-return-to";
 import { voidPromise } from "@/utils/async";
 import { DROPDOWN_PANEL_STYLE, GHOST_BTN_CLS } from "@/components/ui/darkroom-tokens";
 
@@ -12,10 +15,12 @@ interface UserMenuProps {
 }
 
 /**
- * 用户菜单：显示当前登录用户名与角色，提供登出入口。
+ * 用户菜单：显示当前登录用户名与角色，提供设置跳转与登出入口。
  *
  * 用户名/角色来自 auth-store（登录时写入、刷新后经 /auth/verify 恢复）；
  * 匿名模式（AUTH_ENABLED=false，username 为 null）下不渲染。
+ * 设置：总是跳转全局设置页（CONTROL BOOTH，admin-only）——与顶栏齿轮
+ * （项目内 → 项目设置）区分；普通用户无项目/非演示时不渲染该入口。
  * 登出：调用后端 /auth/logout（仅审计日志，失败不阻塞），随后清除本地
  * token 并回到登录页——JWT 无状态，本地清除即失效。
  */
@@ -24,6 +29,8 @@ export function UserMenu({ compact = false }: UserMenuProps) {
   const [, setLocation] = useLocation();
   const username = useAuthStore((s) => s.username);
   const role = useAuthStore((s) => s.role);
+  const currentProjectName = useProjectsStore((s) => s.currentProjectName);
+  const demoMode = useDemoWorkbench();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -50,6 +57,8 @@ export function UserMenu({ compact = false }: UserMenuProps) {
 
   const initial = username.trim().charAt(0).toUpperCase() || "?";
   const isAdmin = role === "admin";
+  // 可见性与顶栏齿轮一致：普通用户无项目/非演示时看不到设置入口（全局设置 admin-only）
+  const showSettings = !(role === "user" && !currentProjectName && !demoMode);
 
   const handleLogout = async () => {
     setOpen(false);
@@ -110,6 +119,28 @@ export function UserMenu({ compact = false }: UserMenuProps) {
               {isAdmin ? t("role_admin") : t("role_user")}
             </div>
           </div>
+          {showSettings && (
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              // 普通用户进全局设置会被 AdminGuard 重定向回项目列表，有项目时直接进
+              // 项目设置（与顶栏齿轮口径一致）；admin / 演示模式走全局设置（CONTROL
+              // BOOTH），并记录来源路径，返回按钮回到原地
+              if (role === "user" && currentProjectName) {
+                setLocation(`~/app/projects/${encodeURIComponent(currentProjectName)}/settings`);
+              } else {
+                rememberSettingsReturnTo(window.location.pathname);
+                setLocation("~/app/settings");
+              }
+            }}
+            className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[12.5px] text-text-2 transition-colors hover:bg-bg-grad-a hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <Settings aria-hidden className="h-3.5 w-3.5 text-text-3" />
+            {t("settings")}
+          </button>
+          )}
           <button
             type="button"
             role="menuitem"
