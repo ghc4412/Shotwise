@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
@@ -6,14 +6,14 @@ import { API } from "@/api";
 import { useAppStore } from "@/stores/app-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useProjectsStore } from "@/stores/projects-store";
-import { ProjectsPage } from "@/components/pages/ProjectsPage";
+import { getGreetingKey, getNextMinuteDelay, ProjectsPage } from "@/components/pages/ProjectsPage";
 
 vi.mock("@/components/pages/CreateProjectModal", () => ({
   CreateProjectModal: () => <div data-testid="create-project-modal">Create Project Modal</div>,
 }));
 
-function renderPage() {
-  const location = memoryLocation({ path: "/app/projects", record: true });
+function renderPage(path = "/app/projects") {
+  const location = memoryLocation({ path, record: true });
   return {
     ...render(
       <Router hook={location.hook}>
@@ -29,6 +29,64 @@ describe("ProjectsPage", () => {
     useProjectsStore.setState(useProjectsStore.getInitialState(), true);
     useAppStore.setState(useAppStore.getInitialState(), true);
     vi.restoreAllMocks();
+    vi.spyOn(API, "preflightProjectImport").mockResolvedValue({
+      project_name: "imported-demo",
+      project_title: "Imported Demo",
+      conflict_project_name: null,
+      diagnostics: { auto_fixed: [], warnings: [] },
+    });
+  });
+
+  it("selects the greeting from the browser's local hour", () => {
+    expect(getGreetingKey(new Date(2026, 7, 15, 4, 59))).toBe("lobby_hero_greeting_late");
+    expect(getGreetingKey(new Date(2026, 7, 15, 5, 0))).toBe("lobby_hero_greeting_morning");
+    expect(getGreetingKey(new Date(2026, 7, 15, 9, 5))).toBe("lobby_hero_greeting_morning");
+    expect(getGreetingKey(new Date(2026, 7, 15, 10, 59))).toBe("lobby_hero_greeting_morning");
+    expect(getGreetingKey(new Date(2026, 7, 15, 11, 0))).toBe("lobby_hero_greeting_afternoon");
+    expect(getGreetingKey(new Date(2026, 7, 15, 14, 0))).toBe("lobby_hero_greeting_afternoon");
+    expect(getGreetingKey(new Date(2026, 7, 15, 17, 59))).toBe("lobby_hero_greeting_afternoon");
+    expect(getGreetingKey(new Date(2026, 7, 15, 18, 0))).toBe("lobby_hero_greeting_evening");
+    expect(getGreetingKey(new Date(2026, 7, 15, 22, 59))).toBe("lobby_hero_greeting_evening");
+    expect(getGreetingKey(new Date(2026, 7, 15, 23, 0))).toBe("lobby_hero_greeting_late");
+  });
+
+  it("restores project filters from the URL", async () => {
+    vi.spyOn(API, "listProjects").mockResolvedValue({
+      projects: [{
+        name: "night-project",
+        title: "Night Project",
+        style: "Anime",
+        thumbnail: null,
+        status: {
+          current_phase: "production",
+          phase_progress: 0.5,
+          characters: { total: 0, completed: 0 },
+          scenes: { total: 0, completed: 0 },
+          props: { total: 0, completed: 0 },
+          episodes_summary: { total: 0, scripted: 0, in_production: 0, completed: 0 },
+        },
+      }],
+    });
+
+    renderPage("/app/projects?q=night&phase=production");
+
+    await screen.findByText("新建项目");
+    expect(screen.getByRole("searchbox", { name: "搜索项目..." })).toHaveValue("night");
+    expect(screen.getByRole("button", { name: /制作/ })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("schedules minute-aligned refreshes and clears them on unmount", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(API, "listProjects").mockResolvedValue({ projects: [] });
+
+    const { unmount } = renderPage();
+    await act(async () => {});
+    expect(getNextMinuteDelay(new Date("2026-08-15T10:59:59.000Z"))).toBe(1_000);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
   });
 
   it("shows loading state while projects are being fetched", () => {

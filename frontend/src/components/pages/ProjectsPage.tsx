@@ -9,7 +9,7 @@ import {
 } from "react";
 import { errMsg, voidCall, voidPromise } from "@/utils/async";
 import { formatDate } from "@/utils/date-format";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { AlertTriangle, Clapperboard, Library, Loader2, Plus, Search, Settings, Sparkles, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -59,6 +59,7 @@ import {
 // 数据：仅消费 ProjectSummary 真实字段；hue 由 project.name 哈希派生
 
 type PhaseFilter = Phase | "all";
+type ProjectSort = "recent" | "active" | "completion" | "created";
 type GreetingKey =
   | "lobby_hero_greeting_morning"
   | "lobby_hero_greeting_afternoon"
@@ -102,12 +103,42 @@ function styleLabelOf(p: ProjectSummary, t: TFunction): string {
   return t("dashboard:style_not_set");
 }
 
-function getGreetingKey(d = new Date()): GreetingKey {
+export function getGreetingKey(d = new Date()): GreetingKey {
   const h = d.getHours();
   if (h >= 5 && h < 11) return "lobby_hero_greeting_morning";
-  if (h >= 11 && h < 14) return "lobby_hero_greeting_afternoon";
-  if (h >= 14 && h < 22) return "lobby_hero_greeting_evening";
+  if (h >= 11 && h < 18) return "lobby_hero_greeting_afternoon";
+  if (h >= 18 && h < 23) return "lobby_hero_greeting_evening";
   return "lobby_hero_greeting_late";
+}
+
+export function getNextMinuteDelay(d = new Date()): number {
+  return 60_000 - (d.getTime() % 60_000);
+}
+
+function parsePhaseFilter(value: string | null): PhaseFilter {
+  return value === "setup" || value === "worldbuilding" || value === "scripting" || value === "production" || value === "completed"
+    ? value
+    : "all";
+}
+
+function parseProjectSort(value: string | null): ProjectSort {
+  return value === "active" || value === "completion" || value === "created" ? value : "recent";
+}
+
+function timestampOf(value: string | null | undefined): number {
+  const timestamp = value ? Date.parse(value) : Number.NaN;
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function compareProjects(a: ProjectSummary, b: ProjectSummary, sort: ProjectSort): number {
+  const aStatus = asProjectStatus(a.status);
+  const bStatus = asProjectStatus(b.status);
+  if (sort === "recent") return timestampOf(b.updated_at) - timestampOf(a.updated_at) || a.name.localeCompare(b.name);
+  if (sort === "created") return timestampOf(b.created_at) - timestampOf(a.created_at) || a.name.localeCompare(b.name);
+  if (sort === "completion") {
+    return (bStatus?.phase_progress ?? -1) - (aStatus?.phase_progress ?? -1) || a.name.localeCompare(b.name);
+  }
+  return projectActivityScore(b) - projectActivityScore(a) || a.name.localeCompare(b.name);
 }
 
 // -- NowEditingCard -----------------------------------------------------------
@@ -558,6 +589,8 @@ const KICKER_DATE_OPTS: Intl.DateTimeFormatOptions = {
   month: "2-digit",
   day: "2-digit",
   weekday: "short",
+  hour: "2-digit",
+  minute: "2-digit",
 };
 
 interface HeroStripProps {
@@ -574,11 +607,39 @@ interface HeroStripProps {
 
 function HeroStrip({ totals, t }: HeroStripProps) {
   const { i18n } = useTranslation();
-  const greetingKey = useMemo<GreetingKey>(() => getGreetingKey(), []);
+  const [now, setNow] = useState(() => new Date());
+  const greetingKey = getGreetingKey(now);
   const dateLine = useMemo(
-    () => formatDate(new Date(), i18n.language || "zh", KICKER_DATE_OPTS, new Date().toISOString().slice(0, 10)),
-    [i18n.language],
+    () => formatDate(now, i18n.language || "zh", KICKER_DATE_OPTS, now.toISOString().slice(0, 10)),
+    [i18n.language, now],
   );
+
+  useEffect(() => {
+    let timer: ReturnType<typeof window.setTimeout> | undefined;
+    const refresh = () => setNow(new Date());
+    const schedule = () => {
+      if (document.visibilityState === "hidden") return;
+      const delay = getNextMinuteDelay();
+      timer = window.setTimeout(() => {
+        refresh();
+        schedule();
+      }, delay);
+    };
+    const onVisibilityChange = () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      timer = undefined;
+      if (document.visibilityState !== "hidden") {
+        refresh();
+        schedule();
+      }
+    };
+    schedule();
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
 
   let subtitle: string;
   if (totals.production > 0) {
@@ -730,12 +791,14 @@ function HeroStrip({ totals, t }: HeroStripProps) {
 interface FilterPillsProps {
   active: PhaseFilter;
   onChange: (next: PhaseFilter) => void;
+  sort: ProjectSort;
+  onSortChange: (next: ProjectSort) => void;
   counts: Record<Phase, number> & { all: number };
   phaseLabels: Record<Phase, string>;
   t: TFunction;
 }
 
-function FilterPills({ active, onChange, counts, phaseLabels, t }: FilterPillsProps) {
+function FilterPills({ active, onChange, sort, onSortChange, counts, phaseLabels, t }: FilterPillsProps) {
   const pills: Array<{ key: PhaseFilter; label: string; n: number }> = [
     { key: "all", label: t("dashboard:lobby_filter_all"), n: counts.all },
     { key: "production", label: phaseLabels.production, n: counts.production },
@@ -783,9 +846,20 @@ function FilterPills({ active, onChange, counts, phaseLabels, t }: FilterPillsPr
           );
         })}
         <div className="flex-1" />
-        <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-text-3">
-          {t("dashboard:lobby_sort_recent")}
-        </span>
+        <label className="flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.06em] text-text-3">
+          {t("dashboard:lobby_sort_label")}
+          <select
+            value={sort}
+            onChange={(event) => onSortChange(event.target.value as ProjectSort)}
+            aria-label={t("dashboard:lobby_sort_label")}
+            className="rounded border border-hairline-soft bg-bg px-2 py-1 text-[11px] normal-case tracking-normal text-text-2 outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <option value="recent">{t("dashboard:lobby_sort_recent")}</option>
+            <option value="active">{t("dashboard:lobby_sort_active")}</option>
+            <option value="completion">{t("dashboard:lobby_sort_completion")}</option>
+            <option value="created">{t("dashboard:lobby_sort_created")}</option>
+          </select>
+        </label>
       </div>
     </div>
   );
@@ -796,6 +870,7 @@ function FilterPills({ active, onChange, counts, phaseLabels, t }: FilterPillsPr
 export function ProjectsPage() {
   const { t } = useTranslation(["common", "dashboard", "assets"]);
   const [, navigate] = useLocation();
+  const search = useSearch();
   const {
     projects,
     projectsLoading,
@@ -817,13 +892,35 @@ export function ProjectsPage() {
   const [showOpenClaw, setShowOpenClaw] = useState(false);
   const [deletingProject, setDeletingProject] = useState<ProjectSummary | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const [phaseFilter, setPhaseFilter] = useState<PhaseFilter>("all");
-  const [searchQuery, setSearchQuery] = useState("");
   const importInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const isConfigComplete = useConfigStatusStore((s) => s.isComplete);
 
   const phaseLabels = usePhaseLabels();
+  const query = useMemo(() => new URLSearchParams(search), [search]);
+  const phaseFilter = parsePhaseFilter(query.get("phase"));
+  const searchQuery = query.get("q") ?? "";
+  const projectSort = parseProjectSort(query.get("sort"));
+  const writeQuery = useCallback(
+    (patch: { phase?: PhaseFilter; q?: string; sort?: ProjectSort }) => {
+      const params = new URLSearchParams(window.location.search);
+      if (patch.phase !== undefined) {
+        if (patch.phase === "all") params.delete("phase");
+        else params.set("phase", patch.phase);
+      }
+      if (patch.q !== undefined) {
+        if (patch.q.trim()) params.set("q", patch.q);
+        else params.delete("q");
+      }
+      if (patch.sort !== undefined) {
+        if (patch.sort === "recent") params.delete("sort");
+        else params.set("sort", patch.sort);
+      }
+      const next = params.toString();
+      navigate(next ? `${window.location.pathname}?${next}` : window.location.pathname, { replace: true });
+    },
+    [navigate],
+  );
 
   const fetchProjects = useCallback(async () => {
     setProjectsLoading(true);
@@ -875,8 +972,30 @@ export function ProjectsPage() {
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    await doImport(file);
-    e.target.value = "";
+    setImportingProject(true);
+    try {
+      const preflight = await API.preflightProjectImport(file);
+      if (preflight.conflict_project_name) {
+        setConflictFile(file);
+        setConflictProject(preflight.conflict_project_name);
+        return;
+      }
+      const issueCount = preflight.diagnostics.auto_fixed.length + preflight.diagnostics.warnings.length;
+      useAppStore.getState().pushToast(
+        issueCount > 0
+          ? t("dashboard:import_preflight_issues", { count: issueCount })
+          : t("dashboard:import_preflight_ready", { title: getProjectDisplayName(preflight.project_title, preflight.project_name) }),
+        issueCount > 0 ? "warning" : "success",
+      );
+      await doImport(file);
+    } catch (err) {
+      const error = err as Error & { diagnostics?: ImportFailureDiagnostics };
+      if (error.diagnostics) setImportDiagnostics({ source: "failure", diagnostics: error.diagnostics });
+      else useAppStore.getState().pushToast(`${t("dashboard:import_failed")}: ${error.message}`, "warning");
+    } finally {
+      setImportingProject(false);
+      e.target.value = "";
+    }
   };
 
   const doImport = async (file: File, policy: ImportConflictPolicy = "prompt") => {
@@ -1031,8 +1150,8 @@ export function ProjectsPage() {
       if (!q) return true;
       const phaseLabel = s ? phaseLabels[s.current_phase] : "";
       return `${p.title || ""} ${p.name} ${phaseLabel}`.toLowerCase().includes(q);
-    });
-  }, [projects, phaseFilter, searchQuery, phaseLabels]);
+    }).sort((a, b) => compareProjects(a, b, projectSort));
+  }, [projects, phaseFilter, searchQuery, phaseLabels, projectSort]);
 
   const featuredCandidate = useMemo(() => pickFeaturedProject(projects), [projects]);
   const featured =
@@ -1058,7 +1177,7 @@ export function ProjectsPage() {
     >
       <TopBar
         searchValue={searchQuery}
-        onSearch={setSearchQuery}
+        onSearch={(q) => writeQuery({ q })}
         onImport={() => importInputRef.current?.click()}
         onCreate={() => setShowCreateModal(true)}
         onSettings={() => navigate("/app/settings")}
@@ -1085,7 +1204,9 @@ export function ProjectsPage() {
       {projects.length > 0 ? (
         <FilterPills
           active={phaseFilter}
-          onChange={setPhaseFilter}
+          onChange={(phase) => writeQuery({ phase })}
+          sort={projectSort}
+          onSortChange={(sort) => writeQuery({ sort })}
           counts={phaseCounts}
           phaseLabels={phaseLabels}
           t={t}
@@ -1133,8 +1254,7 @@ export function ProjectsPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setPhaseFilter("all");
-                    setSearchQuery("");
+                    writeQuery({ phase: "all", q: "" });
                   }}
                   className="mt-4 rounded-md border border-hairline px-3 py-1.5 text-[12px] text-text-2 hover:border-accent/40 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 >

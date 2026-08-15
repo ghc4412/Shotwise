@@ -52,6 +52,8 @@ Shotwise 提供面向生产工作的工作台界面：项目大厅、项目工�
 
 浏览器标签页、PWA 图标、登录页和项目大厅使用统一的 `shotwise-mark.svg` 品牌标识。
 
+项目大厅支持按制作阶段筛选、关键词搜索，并可按最近活动、进行中、完成度或创建时间排序；筛选、搜索和排序会写入 URL，刷新、返回或分享链接时可以恢复当前视图。问候语按本地时间更新，页面切换到后台时暂停刷新。
+
 ## 核心能力
 
 <table>
@@ -131,11 +133,13 @@ docker compose up -d
 
 ### 🤖 Agent 驱动的可恢复工作流
 
-基于 Claude Agent SDK 的编排 Skill 与聚焦 Subagent：主 Agent 识别项目所处阶段，把角色提取、分集规划、剧本规范化和资产生成分发给对应 Subagent，并只接收精炼结果。
+AI 助手支持 Claude Agent SDK 与 OpenAI Agents SDK，均复用编排 Skill + 聚焦 Subagent 架构；可在 Agent 配置中为凭据选择对应 SDK 通道。主 Agent 识别项目所处阶段，把角色提取、分集规划、剧本规范化和资产生成分发给对应 Subagent，并只接收精炼结果。
 
 ### 🎨 角色、场景与道具资产
 
 角色设计图、风格参考图以及场景和道具资产作为跨镜头参考源，减少人物外观、场景氛围和关键物品在不同镜头中的漂移。
+
+资产名称可以直接编辑，重命名会级联更新项目内引用。
 
 ### 🎬 三种视频制作方式
 
@@ -149,7 +153,7 @@ docker compose up -d
 
 ### 🕰️ 版本历史与项目归档
 
-重新生成会保留历史版本；项目可整体导入和导出，便于备份、迁移以及不同环境之间交接。
+重新生成会保留历史版本；项目可整体导入和导出，便于备份、迁移以及不同环境之间交接。导入 ZIP 前会先在临时目录执行预检，检查归档结构、可修复问题和警告，并在写入前提示项目名冲突；预检不会安装或修改目标项目。
 
 ### 💰 费用预估与实际用量
 
@@ -227,7 +231,7 @@ SHOTWISE 通过统一的 `ImageBackend` / `VideoBackend` / `TextBackend` 协议�
 
 ## AI 助手架构
 
-SHOTWISE 的 AI 助手基于 Claude Agent SDK 构建，采用**编排 Skill + 聚焦 Subagent** 的多智能体架构：
+SHOTWISE 的 AI 助手支持 Claude Agent SDK 与 OpenAI Agents SDK，采用**编排 Skill + 聚焦 Subagent** 的多智能体架构：
 
 ```mermaid
 flowchart TD
@@ -266,7 +270,7 @@ SHOTWISE 支持通过 [OpenClaw](https://openclaw.ai) 等外部 AI Agent 平台�
 ```mermaid
 flowchart TB
     UI["React 19 Web UI"] --> API["FastAPI API / SSE"]
-    API --> AGENT["Agent Runtime<br/>Skill + Subagent"]
+    API --> AGENT["Agent Runtime<br/>Claude / OpenAI Agents + Skill"]
     API --> CORE["Core Services"]
     AGENT --> CORE
     CORE --> PROVIDERS["Text / Image / Video / TTS Backends"]
@@ -275,7 +279,7 @@ flowchart TB
     CORE --> DB["SQLAlchemy 2.0<br/>SQLite / PostgreSQL"]
 ```
 
-技术栈包括 React 19、TypeScript、FastAPI、Python 3.12+、Claude Agent SDK、SQLAlchemy 2.0、FFmpeg、Docker 和 Docker Compose。架构边界与扩展方式见 [架构说明](docs/architecture.md)。
+技术栈包括 React 19、TypeScript、FastAPI、Python 3.12+、Claude Agent SDK、OpenAI Agents SDK、SQLAlchemy 2.0、FFmpeg、Docker 和 Docker Compose。架构边界与扩展方式见 [架构说明](docs/architecture.md)。
 
 ## 使用前需要了解的边界
 

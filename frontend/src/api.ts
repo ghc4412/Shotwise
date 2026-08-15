@@ -9,6 +9,7 @@ import type {
   ProjectData,
   ProjectSummary,
   ImportConflictPolicy,
+  ImportPreflightResponse,
   ImportProjectResponse,
   ExportDiagnostics,
   ImportFailureDiagnostics,
@@ -1911,6 +1912,27 @@ class API {
         sdk_type: sdkType || "claude",
       }),
     });
+  }
+
+  static async preflightProjectImport(file: File): Promise<ImportPreflightResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch(
+      `${API_BASE}/projects/import/preflight`,
+      withAuth("/projects/import/preflight", { method: "POST", body: formData }),
+    );
+    if (!response.ok) {
+      handleUnauthorized(response);
+      const payload = (await response.json().catch(() => ({ detail: response.statusText }))) as ImportErrorPayload;
+      const error = new Error(typeof payload.detail === "string" ? payload.detail : "导入预检失败") as Error & {
+        status?: number;
+        diagnostics?: ImportFailureDiagnostics;
+      };
+      error.status = response.status;
+      error.diagnostics = normalizeImportFailureDiagnostics(payload.diagnostics);
+      throw error;
+    }
+    return response.json() as Promise<ImportPreflightResponse>;
   }
 
   static async rewriteAssistantMessage(

@@ -195,6 +195,8 @@ export interface ProjectSummary {
   style_template_id?: string | null;
   style_image?: string | null;
   thumbnail: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
   status: ProjectStatus | Record<string, never>;
 }
 
@@ -229,6 +231,13 @@ export interface ImportProjectResponse {
   project: ProjectData;
   warnings: string[];
   conflict_resolution: "none" | "renamed" | "overwritten";
+  diagnostics: ImportSuccessDiagnostics;
+}
+
+export interface ImportPreflightResponse {
+  project_name: string;
+  project_title: string;
+  conflict_project_name: string | null;
   diagnostics: ImportSuccessDiagnostics;
 }
 

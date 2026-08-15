@@ -286,6 +286,44 @@ async def import_project_archive(
             _cleanup_temp_file(upload_path)
 
 
+@router.post("/projects/import/preflight")
+async def preflight_project_archive(
+    _t: Translator,
+    file: UploadFile = File(...),
+):
+    """Validate an uploaded ZIP before the user confirms project import."""
+    upload_path: str | None = None
+    try:
+        fd, upload_path = tempfile.mkstemp(prefix="shotwise-upload-preflight-", suffix=".zip")
+        os.close(fd)
+
+        def _write_upload():
+            with open(upload_path, "wb") as target:
+                shutil.copyfileobj(file.file, target, length=1024 * 1024)
+
+        await asyncio.to_thread(_write_upload)
+        return await asyncio.to_thread(
+            lambda: get_archive_service().preflight_project_archive(
+                Path(upload_path), uploaded_filename=file.filename, translate=_t
+            )
+        )
+    except ProjectArchiveValidationError as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "detail": exc.detail.render(_t),
+                "errors": exc.render_errors(_t),
+                "warnings": exc.render_warnings(_t),
+                "diagnostics": exc.diagnostics_payload(_t),
+                **exc.extra,
+            },
+        )
+    finally:
+        await file.close()
+        if upload_path:
+            _cleanup_temp_file(upload_path)
+
+
 @router.post("/projects/{name}/export/token")
 async def create_export_token(
     name: str,
@@ -483,6 +521,7 @@ async def list_projects():
                     status = calculator.calculate_project_status(name, project, preloaded_scripts=preloaded_scripts)
 
                     raw_title = project.get("title")
+                    metadata = project.get("metadata")
                     projects.append(
                         {
                             "name": name,
@@ -493,6 +532,8 @@ async def list_projects():
                             "style_template_id": project.get("style_template_id"),
                             "style_image": project.get("style_image"),
                             "thumbnail": thumbnail,
+                            "created_at": metadata.get("created_at") if isinstance(metadata, dict) else None,
+                            "updated_at": metadata.get("updated_at") if isinstance(metadata, dict) else None,
                             "status": status,
                         }
                     )

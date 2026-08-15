@@ -372,6 +372,59 @@ class ProjectArchiveService:
                 errors=[ValidationMessage.literal(str(exc))],
             ) from exc
 
+    def preflight_project_archive(
+        self,
+        archive_path: Path,
+        *,
+        uploaded_filename: str | None = None,
+        translate: Callable[..., str] | None = None,
+    ) -> dict[str, Any]:
+        """Validate an import archive in a temporary staging tree without installing it."""
+        try:
+            with zipfile.ZipFile(archive_path) as archive:
+                members = self._scan_archive_members(archive)
+                root_parts, manifest = self._locate_project_root(archive, members)
+                with tempfile.TemporaryDirectory(prefix="shotwise-import-preflight-") as temp_dir:
+                    staging_dir = Path(temp_dir) / "project"
+                    staging_dir.mkdir(parents=True, exist_ok=True)
+                    self._extract_archive_root(archive, members, root_parts, staging_dir)
+                    diagnostics = self._repair_project_tree(staging_dir)
+                    encoding_summary = migrate_project_source_encoding(staging_dir)
+                    for failed_name in encoding_summary.failed:
+                        diagnostics.add(
+                            "warnings",
+                            "source_encoding_unconverted",
+                            ValidationMessage("arch_source_encoding_unconverted", {"name": failed_name}),
+                        )
+                    migrate_project_dir(staging_dir)
+                    diagnostics.extend_validation(self.validator.validate_project_tree(staging_dir))
+                    if diagnostics.blocking:
+                        raise ProjectArchiveValidationError(
+                            ValidationMessage("arch_import_validation_failed"),
+                            errors=diagnostics.blocking_messages(),
+                            warnings=diagnostics.warning_messages(),
+                            diagnostics=diagnostics,
+                        )
+                    project = self._load_project_file(staging_dir / self.project_manager.PROJECT_FILE)
+                    project_name = self._resolve_target_project_name(
+                        project,
+                        manifest=manifest,
+                        root_parts=root_parts,
+                        uploaded_filename=uploaded_filename,
+                    )
+                    return {
+                        "project_name": project_name,
+                        "project_title": str(project.get("title") or ""),
+                        "conflict_project_name": project_name
+                        if (self.project_manager.projects_root / project_name).exists()
+                        else None,
+                        "diagnostics": diagnostics.to_import_success_payload(translate),
+                    }
+        except zipfile.BadZipFile as exc:
+            raise ProjectArchiveValidationError(
+                ValidationMessage("arch_not_a_zip"), errors=[ValidationMessage.literal(str(exc))]
+            ) from exc
+
     def _prepare_export_snapshot(
         self,
         project_name: str,
