@@ -83,11 +83,14 @@ function makeVersionResponse(overrides?: Partial<GetSystemVersionResponse>): Get
 
 function renderPage(path = "/app/settings") {
   const location = memoryLocation({ path, record: true });
-  return render(
-    <Router hook={location.hook}>
-      <SystemConfigPage />
-    </Router>,
-  );
+  return {
+    ...render(
+      <Router hook={location.hook}>
+        <SystemConfigPage />
+      </Router>,
+    ),
+    history: location.history,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +102,7 @@ describe("SystemConfigPage", () => {
     useConfigStatusStore.setState(useConfigStatusStore.getInitialState(), true);
     useAppStore.setState(useAppStore.getInitialState(), true);
     vi.restoreAllMocks();
+    sessionStorage.clear();
 
     // Default: silence child section network calls so tests don't hang
     vi.spyOn(API, "getSystemConfig").mockResolvedValue(makeConfigResponse());
@@ -253,11 +257,18 @@ describe("SystemConfigPage", () => {
     ).toBeNull();
   });
 
-  it("renders the back link that navigates to projects", () => {
-    renderPage();
-    const link = screen.getByRole("link", { name: "返回" });
-    expect(link).toBeInTheDocument();
-    expect(link).toHaveAttribute("href", "/app/projects");
+  it("返回按钮默认跳转项目列表", () => {
+    const { history } = renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    expect(history.at(-1)).toBe("/app/projects");
+  });
+
+  it("从剪辑台进入后返回按钮回到来源页面（一次性消费记录）", () => {
+    sessionStorage.setItem("settings:returnTo", "/app/projects/my-project/overview");
+    const { history } = renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    expect(history.at(-1)).toBe("/app/projects/my-project/overview");
+    expect(sessionStorage.getItem("settings:returnTo")).toBeNull();
   });
 
   it("renders provider console link when the provider is configured (ready)", async () => {

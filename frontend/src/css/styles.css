@@ -328,3 +328,53 @@
     max-width: 100%;
     border-radius: 0.375rem;
 }
+
+/* ==================== Markdown 日间主题适配 ====================
+   .markdown-body 默认样式为暗色主题硬编码（代码块 #1f2937、引用浅灰文字、
+   表格深色底等），html.theme-light 下会变成深底深字/浅底浅字不可读，
+   这里按日间主题变量覆盖。 */
+
+html.theme-light .markdown-body code {
+    background-color: var(--color-shell-copilot-btn);
+    color: var(--color-text-2);
+}
+
+html.theme-light .markdown-body pre {
+    background-color: var(--color-shell-copilot-btn);
+    border-left: 3px solid var(--color-accent);
+}
+
+html.theme-light .markdown-body pre code {
+    background-color: transparent;
+}
+
+html.theme-light .markdown-body blockquote {
+    border-left: 3px solid var(--color-hairline-strong);
+    color: var(--color-text-3);
+}
+
+html.theme-light .markdown-body a {
+    color: var(--color-accent);
+}
+
+html.theme-light .markdown-body h1 {
+    border-bottom: 1px solid var(--color-hairline);
+}
+
+html.theme-light .markdown-body th,
+html.theme-light .markdown-body td {
+    border: 1px solid var(--color-hairline);
+}
+
+html.theme-light .markdown-body th {
+    background-color: var(--color-shell-copilot-btn);
+    font-weight: 600;
+}
+
+html.theme-light .markdown-body tr:nth-child(even) {
+    background-color: var(--color-bg-grad-a);
+}
+
+html.theme-light .markdown-body hr {
+    border-top: 1px solid var(--color-hairline);
+}

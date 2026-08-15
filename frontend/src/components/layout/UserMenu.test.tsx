@@ -5,6 +5,8 @@ import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
 import { UserMenu } from "./UserMenu";
 import { useAuthStore } from "@/stores/auth-store";
+import { useProjectsStore } from "@/stores/projects-store";
+import { DEMO_PROJECT_NAME } from "@/onboarding/demo-project";
 import i18n from "@/i18n";
 
 function renderMenu() {
@@ -19,8 +21,10 @@ function renderMenu() {
 describe("UserMenu", () => {
   beforeEach(() => {
     useAuthStore.setState(useAuthStore.getInitialState(), true);
+    useProjectsStore.setState(useProjectsStore.getInitialState(), true);
     vi.restoreAllMocks();
     localStorage.clear();
+    sessionStorage.clear();
   });
 
   afterEach(() => {
@@ -52,6 +56,90 @@ describe("UserMenu", () => {
     renderMenu();
     await user.click(screen.getByRole("button", { name: /账号菜单/ }));
     expect(screen.getByText(i18n.t("common:role_user"))).toBeInTheDocument();
+  });
+
+  it("无项目时设置入口跳转全局设置页", async () => {
+    useAuthStore.setState({ username: "admin", role: "admin", isAuthenticated: true });
+    const user = userEvent.setup();
+    const { hook, history } = memoryLocation({ path: "/app/projects", record: true });
+    render(
+      <Router hook={hook}>
+        <UserMenu />
+      </Router>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /账号菜单/ }));
+    await user.click(screen.getByText(i18n.t("common:settings")));
+
+    await act(async () => {});
+    expect(history.at(-1)).toBe("/app/settings");
+  });
+
+  it("有真实项目时设置入口仍跳转全局设置页（用户菜单设置项总是进 CONTROL BOOTH）", async () => {
+    useAuthStore.setState({ username: "admin", role: "admin", isAuthenticated: true });
+    useProjectsStore.setState({ currentProjectName: "my-project" });
+    window.history.pushState({}, "", "/app/projects/my-project/overview");
+    const user = userEvent.setup();
+    const { hook, history } = memoryLocation({ path: "/app/projects", record: true });
+    render(
+      <Router hook={hook}>
+        <UserMenu />
+      </Router>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /账号菜单/ }));
+    await user.click(screen.getByText(i18n.t("common:settings")));
+
+    await act(async () => {});
+    expect(history.at(-1)).toBe("/app/settings");
+    // 进入前记录来源路径，CONTROL BOOTH 返回按钮据此回到剪辑台
+    expect(sessionStorage.getItem("settings:returnTo")).toBe("/app/projects/my-project/overview");
+  });
+
+  it("演示项目时设置入口跳转全局设置页（演示项目没有项目级设置页）", async () => {
+    useAuthStore.setState({ username: "admin", role: "admin", isAuthenticated: true });
+    useProjectsStore.setState({ currentProjectName: DEMO_PROJECT_NAME });
+    const user = userEvent.setup();
+    const { hook, history } = memoryLocation({ path: "/app/projects", record: true });
+    render(
+      <Router hook={hook}>
+        <UserMenu />
+      </Router>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /账号菜单/ }));
+    await user.click(screen.getByText(i18n.t("common:settings")));
+
+    await act(async () => {});
+    expect(history.at(-1)).toBe("/app/settings");
+  });
+
+  it("普通用户无项目时菜单不渲染设置入口（全局设置 admin-only）", async () => {
+    useAuthStore.setState({ username: "alice", role: "user", isAuthenticated: true });
+    const user = userEvent.setup();
+    renderMenu();
+
+    await user.click(screen.getByRole("button", { name: /账号菜单/ }));
+    expect(screen.queryByText(i18n.t("common:settings"))).not.toBeInTheDocument();
+    expect(screen.getByText(i18n.t("common:logout"))).toBeInTheDocument();
+  });
+
+  it("普通用户有项目时可见设置入口，点击进项目设置（全局设置 admin-only 会闪回）", async () => {
+    useAuthStore.setState({ username: "alice", role: "user", isAuthenticated: true });
+    useProjectsStore.setState({ currentProjectName: "my-project" });
+    const user = userEvent.setup();
+    const { hook, history } = memoryLocation({ path: "/app/projects", record: true });
+    render(
+      <Router hook={hook}>
+        <UserMenu />
+      </Router>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /账号菜单/ }));
+    await user.click(screen.getByText(i18n.t("common:settings")));
+
+    await act(async () => {});
+    expect(history.at(-1)).toBe("/app/projects/my-project/settings");
   });
 
   it("点击登出：清除本地认证状态并回到登录页", async () => {
