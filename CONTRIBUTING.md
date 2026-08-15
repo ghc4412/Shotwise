@@ -19,9 +19,11 @@ uv run pre-commit install
 uv run alembic upgrade head
 
 # 启动后端 (终端 1)
-# 注意：必须用 --reload-dir 限定监视目录，否则 watchfiles 会扫描
-# node_modules / .venv / .git / .worktrees 等十几万个文件，单核 CPU 50%+
-uv run uvicorn server.app:app --reload --reload-dir server --reload-dir lib --port 1241
+# 用 run_dev.py 入口（已固定 --reload-dir server --reload-dir lib，避免 watchfiles
+# 扫描 node_modules 等导致 CPU 50%+；Windows 必须用它 —— uvicorn --reload 在
+# Windows 上退化为 SelectorEventLoop，Python 3.14 起不支持子进程，Claude Agent
+# 启动会失败，见 server/_win_loop_patch.py）
+uv run python server/run_dev.py
 
 # 启动前端 (终端 2)
 cd frontend && pnpm dev

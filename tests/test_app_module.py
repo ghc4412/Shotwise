@@ -1,3 +1,5 @@
+import asyncio
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -101,3 +103,37 @@ class TestAppModule:
         # 退出后 callback 已清
         assert queue._worker_cancel_callback is None
         assert worker.stopped
+
+
+class TestWindowsUvicornEventLoopPatch:
+    """server/app.py 模块级的 Windows loop patch：uvicorn --reload 在 Windows 上
+    会把事件循环退化为 SelectorEventLoop（Python 3.14 起不支持子进程），导致
+    Claude Agent SDK 启动 claude.exe 时 NotImplementedError。patch 必须保证
+    reload 模式也返回 ProactorEventLoop。
+
+    有效性依赖本文件顶部 ``import server.app`` 触发模块级 patch；若 CI 无
+    Windows job，这两个用例会被 skipif 跳过（Linux 下 patch 本就不生效）。
+    """
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only fix")
+    def test_reload_loop_factory_returns_proactor(self):
+        from uvicorn.loops import asyncio as uvicorn_asyncio_loops
+
+        # use_subprocess=True 对应 --reload / --workers>1 的 uvicorn 选择路径
+        factory = uvicorn_asyncio_loops.asyncio_loop_factory(use_subprocess=True)
+        loop = factory()
+        try:
+            assert isinstance(loop, asyncio.ProactorEventLoop)
+        finally:
+            loop.close()
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows-only fix")
+    def test_auto_loop_factory_respects_patch(self):
+        from uvicorn.loops import auto as uvicorn_auto_loops
+
+        factory = uvicorn_auto_loops.auto_loop_factory(use_subprocess=True)
+        loop = factory()
+        try:
+            assert isinstance(loop, asyncio.ProactorEventLoop)
+        finally:
+            loop.close()

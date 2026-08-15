@@ -13,9 +13,12 @@ frontend/ (React SPA)  →  server/ (FastAPI)  →  lib/ (核心库)
 
 ```bash
 # 后端
-# 启动开发服务器（必须用 --reload-dir 限定监视目录，否则 watchfiles 会扫描
-# node_modules / .venv / .git / .worktrees 等十几万个文件，单核 CPU 50%+）
-uv run uvicorn server.app:app --reload --reload-dir server --reload-dir lib --port 1241
+# 启动开发服务器（用 run_dev.py 入口：已固定 --reload-dir server --reload-dir lib，
+# 避免 watchfiles 扫描 node_modules / .venv / .git 等十几万个文件导致单核 CPU 50%+；
+# Windows 必须用它 —— uvicorn --reload 会先建事件循环再加载 app，且 Windows 上
+# 退化为 SelectorEventLoop（Python 3.14 起不支持子进程），不经入口 Claude Agent
+# 启动 claude.exe 会 NotImplementedError，见 server/_win_loop_patch.py）
+uv run python server/run_dev.py
 
 uv run python -m pytest                              # 测试（-v 单文件 / -k 关键字 / --cov 覆盖率）
 uv run ruff check . && uv run ruff format .          # lint + format
