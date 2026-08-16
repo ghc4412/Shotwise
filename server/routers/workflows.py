@@ -190,6 +190,84 @@ async def _transition(
         _translate_validation(exc)
 
 
+@router.get("/projects/{project_id}/workflows")
+async def list_workflows(
+    project_id: str,
+    user: CurrentUser,
+    session: AsyncSession = Depends(get_async_session),
+):
+    return await service.list_definitions(session, project_id, actor_id=user.id)
+
+
+@router.get("/workflows/{definition_id}/export")
+async def export_workflow(
+    definition_id: str,
+    user: CurrentUser,
+    session: AsyncSession = Depends(get_async_session),
+):
+    return await service.export_definition(session, definition_id, actor_id=user.id)
+
+
+class WorkflowImport(BaseModel):
+    workspace_id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=200)
+    nodes: list[WorkflowNodeInput] = Field(min_length=1, max_length=1000)
+    edges: list[WorkflowEdgeInput] = Field(default_factory=list, max_length=5000)
+    template_lock: dict[str, Any] | None = None
+
+
+@router.post("/projects/{project_id}/workflows/import")
+async def import_workflow(
+    project_id: str,
+    body: WorkflowImport,
+    user: CurrentUser,
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        return await service.import_definition(
+            session,
+            workspace_id=body.workspace_id,
+            project_id=project_id,
+            name=body.name,
+            nodes=[node.model_dump() for node in body.nodes],
+            edges=[edge.model_dump() for edge in body.edges],
+            template_lock=body.template_lock,
+            actor_id=user.id,
+        )
+    except WorkflowValidationError as exc:
+        _translate_validation(exc)
+
+
+class WorkspaceScope(BaseModel):
+    workspace_id: str = Field(min_length=1, max_length=128)
+
+
+@router.post("/projects/{project_id}/workflows/migrate")
+async def migrate_project(
+    project_id: str,
+    body: WorkspaceScope,
+    user: CurrentUser,
+    session: AsyncSession = Depends(get_async_session),
+):
+    return await service.migrate_project(
+        session,
+        workspace_id=body.workspace_id,
+        project_id=project_id,
+        actor_id=user.id,
+    )
+
+
+@router.get("/workflow-runs/{run_id}/nodes/{node_key}/log")
+async def get_node_logs(
+    run_id: str,
+    node_key: str,
+    user: CurrentUser,
+    limit: int = Query(default=500, ge=1, le=2000),
+    session: AsyncSession = Depends(get_async_session),
+):
+    return await service.list_node_logs(session, run_id, node_key, actor_id=user.id, limit=limit)
+
+
 @router.post("/workflow-runs/{run_id}/start")
 async def start_run(
     run_id: str, body: RunTransition, user: CurrentUser, session: AsyncSession = Depends(get_async_session)

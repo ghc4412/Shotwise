@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { API } from "@/api";
+import { useAppStore } from "@/stores/app-store";
 import type { WorkflowEvent, WorkflowNodeRun, WorkflowRunDetail, WorkflowRunSummary } from "@/types";
 import { errMsg } from "@/utils/async";
 
@@ -52,7 +53,14 @@ const DEFAULT_REVISION = {
   template_lock: { template_schema_version: 1 },
 };
 
-const STATUS_TONE: Record<string, { color: string; background: string; border: string }> = {
+interface NodeTone {
+  color: string;
+  background: string;
+  border: string;
+}
+
+/** 夜间（默认）主题：深色霓虹风状态底色。 */
+const STATUS_TONE_DARK: Record<string, NodeTone> = {
   succeeded: { color: "var(--color-good)", background: "oklch(0.22 0.045 155 / 0.42)", border: "oklch(0.55 0.12 155 / 0.38)" },
   running: { color: "var(--color-accent-2)", background: "var(--color-accent-dim)", border: "oklch(0.62 0.12 230 / 0.42)" },
   paused: { color: "var(--color-warn)", background: "oklch(0.25 0.04 75 / 0.4)", border: "oklch(0.62 0.12 75 / 0.42)" },
@@ -61,12 +69,31 @@ const STATUS_TONE: Record<string, { color: string; background: string; border: s
   cancelled: { color: "var(--color-text-4)", background: "var(--color-shell-btn)", border: "var(--color-hairline)" },
 };
 
-function tone(status: string) {
-  return STATUS_TONE[status] ?? {
-    color: "var(--color-text-3)",
-    background: "oklch(0.205 0.01 265 / 0.58)",
-    border: "var(--color-hairline-soft)",
-  };
+const DEFAULT_TONE_DARK: NodeTone = {
+  color: "var(--color-text-3)",
+  background: "oklch(0.205 0.01 265 / 0.58)",
+  border: "var(--color-hairline-soft)",
+};
+
+/** 日间主题：浅色半透明底，叠在浅色工作台上是干净的淡彩卡片。 */
+const STATUS_TONE_LIGHT: Record<string, NodeTone> = {
+  succeeded: { color: "var(--color-good)", background: "oklch(0.93 0.045 155 / 0.55)", border: "oklch(0.62 0.11 155 / 0.42)" },
+  running: { color: "var(--color-accent-2)", background: "var(--color-accent-dim)", border: "oklch(0.62 0.12 230 / 0.45)" },
+  paused: { color: "var(--color-warn)", background: "oklch(0.95 0.05 85 / 0.55)", border: "oklch(0.66 0.10 85 / 0.45)" },
+  waiting_review: { color: "var(--color-warn)", background: "oklch(0.95 0.05 85 / 0.55)", border: "oklch(0.66 0.10 85 / 0.45)" },
+  failed: { color: "var(--color-danger)", background: "oklch(0.95 0.035 25 / 0.55)", border: "oklch(0.62 0.13 25 / 0.45)" },
+  cancelled: { color: "var(--color-text-4)", background: "var(--color-shell-btn)", border: "var(--color-hairline)" },
+};
+
+const DEFAULT_TONE_LIGHT: NodeTone = {
+  color: "var(--color-text-3)",
+  background: "oklch(0.92 0.015 250 / 0.55)",
+  border: "var(--color-hairline-soft)",
+};
+
+function tone(status: string, isLight: boolean): NodeTone {
+  const table = isLight ? STATUS_TONE_LIGHT : STATUS_TONE_DARK;
+  return table[status] ?? (isLight ? DEFAULT_TONE_LIGHT : DEFAULT_TONE_DARK);
 }
 
 function StatusIcon({ status }: { status: string }) {
@@ -79,8 +106,8 @@ function StatusIcon({ status }: { status: string }) {
   return <Circle aria-hidden className={cls} />;
 }
 
-function NodeCell({ node }: { node: WorkflowNodeRun }) {
-  const statusTone = tone(node.status);
+function NodeCell({ node, isLight }: { node: WorkflowNodeRun; isLight: boolean }) {
+  const statusTone = tone(node.status, isLight);
   const progress = node.progress == null ? null : Math.round(node.progress * 100);
   return (
     <article
@@ -114,6 +141,7 @@ interface FlowMonitorProps {
 
 export function FlowMonitor({ projectName }: FlowMonitorProps) {
   const { t } = useTranslation("dashboard");
+  const isLight = useAppStore((s) => s.theme) === "light";
   const [runs, setRuns] = useState<WorkflowRunSummary[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [run, setRun] = useState<WorkflowRunDetail | null>(null);
@@ -202,7 +230,7 @@ export function FlowMonitor({ projectName }: FlowMonitorProps) {
   }, [run, t]);
 
   const ActionIcon = action?.icon;
-  const runTone = tone(run?.status ?? "planned");
+  const runTone = tone(run?.status ?? "planned", isLight);
 
   return (
     <section className="flex h-full min-w-0 flex-col overflow-hidden bg-bg">
@@ -312,7 +340,7 @@ export function FlowMonitor({ projectName }: FlowMonitorProps) {
               <span className="font-mono text-[9px] text-text-4">{run.nodes.length} NODES</span>
             </div>
             <div className="flex min-w-0 gap-2 overflow-x-auto pb-2">
-              {run.nodes.map((node) => <NodeCell key={node.id} node={node} />)}
+              {run.nodes.map((node) => <NodeCell key={node.id} node={node} isLight={isLight} />)}
             </div>
           </div>
 

@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from lib.workflow import WorkflowValidationError, graph_hash, input_fingerprint, transition_run, validate_graph
+from lib.workflow import (
+    WorkflowValidationError,
+    graph_hash,
+    input_fingerprint,
+    topological_order,
+    transition_run,
+    upstream_of,
+    validate_graph,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -63,3 +71,46 @@ def test_validate_graph_rejects_invalid_graph(nodes: list[dict], edges: list[dic
 def test_terminal_run_cannot_transition() -> None:
     with pytest.raises(WorkflowValidationError, match="workflow_invalid_transition"):
         transition_run("cancelled", "running")
+
+
+def test_topological_order_roots_first_across_parallel_branches() -> None:
+    nodes = [{"node_key": key} for key in ("source", "image", "voice", "compose")]
+    edges = [
+        {"source_node_key": "source", "target_node_key": "image"},
+        {"source_node_key": "source", "target_node_key": "voice"},
+        {"source_node_key": "image", "target_node_key": "compose"},
+        {"source_node_key": "voice", "target_node_key": "compose"},
+    ]
+
+    order = topological_order(nodes, edges)
+
+    assert order[0] == "source"
+    assert order[-1] == "compose"
+    assert set(order[1:3]) == {"image", "voice"}
+
+
+def test_topological_order_rejects_cycle() -> None:
+    nodes = [{"node_key": "a"}, {"node_key": "b"}]
+    edges = [
+        {"source_node_key": "a", "target_node_key": "b"},
+        {"source_node_key": "b", "target_node_key": "a"},
+    ]
+
+    with pytest.raises(WorkflowValidationError, match="workflow_cycle_detected"):
+        topological_order(nodes, edges)
+
+
+def test_upstream_of_includes_transitive_dependencies() -> None:
+    nodes = [{"node_key": key} for key in ("source", "image", "voice", "compose")]
+    edges = [
+        {"source_node_key": "source", "target_node_key": "image"},
+        {"source_node_key": "source", "target_node_key": "voice"},
+        {"source_node_key": "image", "target_node_key": "compose"},
+    ]
+
+    result = upstream_of(nodes, edges)
+
+    assert result["source"] == set()
+    assert result["image"] == {"source"}
+    assert result["voice"] == {"source"}
+    assert result["compose"] == {"source", "image"}

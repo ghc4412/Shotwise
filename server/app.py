@@ -78,6 +78,7 @@ from server.routers import (
 )
 from server.routers import auth as auth_router
 from server.services.project_events import ProjectEventService
+from server.services.workflow_execution import workflow_executor_loop
 
 # Windows 事件循环修正的兜底：reload 模式的完整修复见 server/run_dev.py（uvicorn
 # 先创建事件循环再加载本模块，模块级 patch 覆盖不到 reload worker 的时序）。
@@ -444,9 +445,23 @@ async def lifespan(app: FastAPI):
     await project_event_service.start()
     logger.info("ProjectEventService 已启动")
 
+    logger.info("启动 WorkflowExecutor...")
+    workflow_executor_task = asyncio.create_task(workflow_executor_loop())
+    app.state.workflow_executor_task = workflow_executor_task
+    logger.info("WorkflowExecutor 已启动")
+
     yield
 
     # Shutdown
+    workflow_executor_task = getattr(app.state, "workflow_executor_task", None)
+    if workflow_executor_task:
+        logger.info("正在停止 WorkflowExecutor...")
+        workflow_executor_task.cancel()
+        try:
+            await workflow_executor_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("WorkflowExecutor 已停止")
     project_event_service = getattr(app.state, "project_event_service", None)
     if project_event_service:
         logger.info("正在停止 ProjectEventService...")

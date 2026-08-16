@@ -60,7 +60,13 @@ import type {
   NarrationStep1Draft,
   ReferenceStep1Draft,
   VideoCapabilities,
+  WorkflowEdgeInput,
   WorkflowEvent,
+  WorkflowExport,
+  WorkflowDefinitionDetail,
+  WorkflowDefinitionSummary,
+  WorkflowNodeInput,
+  WorkflowNodeLogEntry,
   WorkflowRunDetail,
   WorkflowRunSummary,
 } from "@/types";
@@ -2786,6 +2792,66 @@ class API {
       method: "POST",
       body: JSON.stringify({ expected_version: expectedVersion }),
     });
+  }
+
+  // ---- canvas workflow management ----
+
+  static async listWorkflowDefinitions(
+    projectName: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<{ items: WorkflowDefinitionSummary[] }> {
+    return this.request(`/projects/${encodeURIComponent(projectName)}/workflows`, {
+      signal: options?.signal,
+    });
+  }
+
+  static async getWorkflowDefinition(
+    definitionId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<WorkflowDefinitionDetail> {
+    return this.request(`/workflows/${encodeURIComponent(definitionId)}`, {
+      signal: options?.signal,
+    });
+  }
+
+  static async exportWorkflowDefinition(definitionId: string): Promise<WorkflowExport> {
+    return this.request(`/workflows/${encodeURIComponent(definitionId)}/export`);
+  }
+
+  static async importWorkflow(
+    projectName: string,
+    body: {
+      workspace_id: string;
+      name: string;
+      nodes: WorkflowNodeInput[];
+      edges: WorkflowEdgeInput[];
+      template_lock?: Record<string, unknown> | null;
+    },
+  ): Promise<{ definition_id: string; revision_id: string }> {
+    return this.request(`/projects/${encodeURIComponent(projectName)}/workflows/import`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  static async migrateProjectWorkflow(projectName: string): Promise<{
+    migrated: boolean;
+    definition_id: string;
+    revision_id?: string;
+  }> {
+    return this.request(`/projects/${encodeURIComponent(projectName)}/workflows/migrate`, {
+      method: "POST",
+      body: JSON.stringify({ workspace_id: "default" }),
+    });
+  }
+
+  static async getWorkflowNodeLogs(
+    runId: string,
+    nodeKey: string,
+  ): Promise<{ items: WorkflowNodeLogEntry[] }> {
+    return this.request(
+      `/workflow-runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeKey)}/log`,
+    );
   }
 }
 
