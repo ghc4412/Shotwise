@@ -166,3 +166,66 @@ def transition_run(status: str, target: str) -> None:
 def transition_node(status: str, target: str) -> None:
     if status not in NODE_STATUSES or target not in NODE_STATUSES or target not in _NODE_TRANSITIONS[status]:
         raise WorkflowValidationError("workflow_invalid_transition", entity="node", status=status, target=target)
+
+
+def node_graph_edges(edges: list[dict[str, Any]]) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """Build outgoing/incoming adjacency maps from edge dicts.
+
+    The maps are keyed by node_key; node keys are stringified exactly like
+    ``validate_graph`` does so the execution engine and validators agree.
+    """
+
+    outgoing: dict[str, set[str]] = defaultdict(set)
+    incoming: dict[str, set[str]] = defaultdict(set)
+    for edge in edges:
+        source = str(edge.get("source_node_key", ""))
+        target = str(edge.get("target_node_key", ""))
+        if not source or not target:
+            continue
+        outgoing[source].add(target)
+        incoming[target].add(source)
+    return outgoing, incoming
+
+
+def topological_order(nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> list[str]:
+    """Return node keys in dependency order (roots first) via Kahn's algorithm.
+
+    Raises :class:`WorkflowValidationError` with ``workflow_cycle_detected`` on
+    cycles, matching ``validate_graph``. Keys are deduplicated against the
+    ``node_key`` field of ``nodes``.
+    """
+
+    validate_graph(nodes, edges)
+    outgoing, _incoming = node_graph_edges(edges)
+    indegree = {str(node["node_key"]): 0 for node in nodes}
+    for source, targets in outgoing.items():
+        for target in targets:
+            if target in indegree:
+                indegree[target] += 1
+    queue = deque(key for key, degree in indegree.items() if degree == 0)
+    ordered: list[str] = []
+    while queue:
+        key = queue.popleft()
+        ordered.append(key)
+        for target in outgoing[key]:
+            indegree[target] -= 1
+            if indegree[target] == 0:
+                queue.append(target)
+    if len(ordered) != len(indegree):
+        raise WorkflowValidationError("workflow_cycle_detected")
+    return ordered
+
+
+def upstream_of(nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> dict[str, set[str]]:
+    """Return for each node_key the set of keys that can reach it (transitively)."""
+
+    _outgoing, incoming = node_graph_edges(edges)
+    result: dict[str, set[str]] = {str(node["node_key"]): set() for node in nodes}
+    order = topological_order(nodes, edges)
+    for key in order:
+        seen: set[str] = set()
+        for source in incoming[key]:
+            seen.add(source)
+            seen.update(result[source])
+        result[key] = seen
+    return result

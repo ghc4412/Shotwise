@@ -27,6 +27,7 @@
     "@headlessui/react": "^2.2.10",
     "@lobehub/icons": "^5.10.0",
     "@tanstack/react-virtual": "^3.14.3",
+    "@xyflow/react": "^12.11.3",
     "driver.js": "^1.8.0",
     "framer-motion": "^12.40.0",
     "i18next": "^26.2.0",

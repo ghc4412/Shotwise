@@ -567,3 +567,221 @@ async def list_events(
         ],
         "cursor": rows[-1].seq if rows else after,
     }
+
+
+# ---------------------------------------------------------------------------
+# Canvas workflow management: list / export / import / node logs / migration
+# ---------------------------------------------------------------------------
+
+LEGACY_FLOW_NODE_TYPES = [
+    "source_import",
+    "script_generate",
+    "script_review",
+    "character_reference",
+    "storyboard_generate",
+    "storyboard_review",
+    "shot_image_generate",
+    "shot_video_generate",
+    "voice_generate",
+    "subtitle_generate",
+    "compose",
+    "quality_check",
+    "export",
+]
+
+
+def legacy_linear_graph() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """The pre-canvas linear chain, expressed as a DAG for migration.
+
+    Mirrors the default revision the legacy FlowMonitor used to create, so old
+    projects keep a recognizable one-click production flow after migration.
+    """
+
+    nodes = [
+        {
+            "node_key": node_type,
+            "node_type": node_type,
+            "node_type_version": "1",
+            "config_schema_version": "1",
+            "config": {},
+            "ui_position": {"x": index * 240, "y": 0},
+            "weight": 2.0 if "generate" in node_type else 1.0,
+        }
+        for index, node_type in enumerate(LEGACY_FLOW_NODE_TYPES)
+    ]
+    edges = [
+        {
+            "edge_key": f"{source}-{target}",
+            "source_node_key": source,
+            "target_node_key": target,
+            "on_failure": "stop",
+            "priority": 0,
+        }
+        for source, target in zip(LEGACY_FLOW_NODE_TYPES, LEGACY_FLOW_NODE_TYPES[1:])
+    ]
+    return nodes, edges
+
+
+async def list_definitions(session: AsyncSession, project_id: str, *, actor_id: str) -> dict[str, Any]:
+    rows = (
+        (
+            await session.execute(
+                select(WorkflowDefinition)
+                .where(WorkflowDefinition.user_id == actor_id, WorkflowDefinition.project_id == project_id)
+                .order_by(WorkflowDefinition.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": row.id,
+                "name": row.name,
+                "scope": row.scope,
+                "active_revision_id": row.active_revision_id,
+                "created_at": row.created_at.isoformat(),
+                "updated_at": row.updated_at.isoformat(),
+            }
+            for row in rows
+        ]
+    }
+
+
+async def export_definition(session: AsyncSession, definition_id: str, *, actor_id: str) -> dict[str, Any]:
+    """Serialize a workflow definition (with its active revision) as JSON."""
+
+    definition = await session.get(WorkflowDefinition, definition_id)
+    if definition is None or definition.user_id != actor_id:
+        raise NotFoundError("workflow_not_found", id=definition_id)
+    if not definition.active_revision_id:
+        return {"schema_version": 1, "name": definition.name, "nodes": [], "edges": [], "template_lock": None}
+    revision, nodes, edges = await _revision_graph(session, definition.active_revision_id, actor_id=actor_id)
+    return {
+        "schema_version": 1,
+        "name": definition.name,
+        "nodes": nodes,
+        "edges": edges,
+        "template_lock": _loads(revision.template_lock_json, None),
+    }
+
+
+async def import_definition(
+    session: AsyncSession,
+    *,
+    workspace_id: str,
+    project_id: str,
+    name: str,
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+    template_lock: dict[str, Any] | None,
+    actor_id: str,
+) -> dict[str, Any]:
+    """Create a published definition from exported workflow JSON (import)."""
+
+    validate_graph(nodes, edges)
+    definition = await create_definition(
+        session, workspace_id=workspace_id, project_id=project_id, name=name, actor_id=actor_id
+    )
+    revision = await create_revision(
+        session,
+        definition_id=definition["id"],
+        nodes=nodes,
+        edges=edges,
+        template_lock=template_lock,
+        actor_id=actor_id,
+    )
+    await publish_revision(session, revision["id"], actor_id=actor_id)
+    return {"definition_id": definition["id"], "revision_id": revision["id"]}
+
+
+async def migrate_project(
+    session: AsyncSession, *, workspace_id: str, project_id: str, actor_id: str
+) -> dict[str, Any]:
+    """Idempotently create a canvas workflow for a legacy project.
+
+    Projects that already have a definition (or an in-flight run without a
+    definition, which is not possible today) keep their existing graph.
+    """
+
+    existing = (
+        (
+            await session.execute(
+                select(WorkflowDefinition)
+                .where(
+                    WorkflowDefinition.user_id == actor_id,
+                    WorkflowDefinition.project_id == project_id,
+                    WorkflowDefinition.workspace_id == workspace_id,
+                )
+                .limit(1)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if existing is not None:
+        return {"migrated": False, "definition_id": existing.id}
+    definition = await create_definition(
+        session,
+        workspace_id=workspace_id,
+        project_id=project_id,
+        name=f"{project_id} production",
+        actor_id=actor_id,
+    )
+    nodes, edges = legacy_linear_graph()
+    revision = await create_revision(
+        session,
+        definition_id=definition["id"],
+        nodes=nodes,
+        edges=edges,
+        template_lock={"template_schema_version": 1},
+        actor_id=actor_id,
+    )
+    await publish_revision(session, revision["id"], actor_id=actor_id)
+    return {"migrated": True, "definition_id": definition["id"], "revision_id": revision["id"]}
+
+
+async def list_node_logs(
+    session: AsyncSession,
+    run_id: str,
+    node_key: str,
+    *,
+    actor_id: str,
+    limit: int = 500,
+) -> dict[str, Any]:
+    """Node-scoped log lines emitted by the execution engine."""
+
+    run = await session.get(WorkflowRun, run_id)
+    if run is None or run.user_id != actor_id:
+        raise NotFoundError("workflow_run_not_found", id=run_id)
+    rows = (
+        (
+            await session.execute(
+                select(ProjectEventLog)
+                .where(
+                    ProjectEventLog.actor_id == actor_id,
+                    ProjectEventLog.project_id == run.project_id,
+                    ProjectEventLog.event_type == "workflow.node_log",
+                )
+                .order_by(ProjectEventLog.seq.desc())
+                .limit(limit)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    items = []
+    for row in reversed(rows):
+        payload = _loads(row.payload_json, {})
+        if payload.get("node_key") != node_key:
+            continue
+        items.append(
+            {
+                "seq": row.seq,
+                "level": payload.get("level", "info"),
+                "line": payload.get("line", ""),
+                "created_at": row.created_at.isoformat(),
+            }
+        )
+    return {"items": items}

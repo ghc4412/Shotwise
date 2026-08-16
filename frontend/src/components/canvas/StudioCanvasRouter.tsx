@@ -33,7 +33,7 @@ import { ReferenceVideoCanvas } from "./reference/ReferenceVideoCanvas";
 import { AdReferenceVideoCanvas } from "./reference/AdReferenceVideoCanvas";
 import { GridImageToVideoCanvas } from "./grid/GridImageToVideoCanvas";
 import { EpisodeSourceReview } from "./EpisodeSourceReview";
-import { FlowMonitor } from "./flow/FlowMonitor";
+import { FlowCanvasPage } from "./flow/FlowCanvasPage";
 import { API } from "@/api";
 import {
   enqueueCharacter,
@@ -596,7 +596,7 @@ export function StudioCanvasRouter() {
       </Route>
 
       <Route path={`/${WORKSPACE_ROUTE_FLOW}`}>
-        {demoMode ? <Redirect to="/" /> : <FlowMonitor projectName={currentProjectName} />}
+        {demoMode ? <Redirect to="/" /> : <FlowCanvasPage projectName={currentProjectName} />}
       </Route>
 
       <Route path={`/${WORKSPACE_ROUTE_CHARACTERS}`}>
