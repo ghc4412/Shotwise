@@ -226,7 +226,7 @@ function MessageEditor({
         }}
         className="focus-ring w-full resize-none rounded-md px-2 py-1.5 text-[12.5px] leading-[1.55] disabled:opacity-60"
         style={{
-          background: "oklch(0.17 0.01 260 / 0.6)",
+          background: "var(--color-shell-copilot-field)",
           border: "1px solid var(--color-hairline-soft)",
           color: "var(--color-text)",
         }}

@@ -1,7 +1,8 @@
 import { useId, useState } from "react";
 import { Check, ChevronRight, Copy, RotateCcw, Settings, TriangleAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Link } from "wouter";
+import { useLocation } from "wouter";
+import { ROUTE_APP_SETTINGS } from "@/app-routes";
 import { GHOST_BTN_CLS } from "@/components/ui/darkroom-tokens";
 import type { FailureObservation } from "@/types";
 import { copyText } from "@/utils/clipboard";
@@ -21,6 +22,7 @@ function display(value: unknown, fallback: string): string {
 
 export function AgentFailureCard({ failure, onRetry }: Readonly<AgentFailureCardProps>) {
   const { t } = useTranslation("dashboard");
+  const [, setLocation] = useLocation();
   const [copied, setCopied] = useState(false);
   const titleId = useId();
   const raw = JSON.stringify(failure, null, 2);
@@ -89,10 +91,14 @@ export function AgentFailureCard({ failure, onRetry }: Readonly<AgentFailureCard
           {copied ? <Check aria-hidden className="h-3.5 w-3.5" /> : <Copy aria-hidden className="h-3.5 w-3.5" />}
           {t(copied ? "agent_failure_copied" : "agent_failure_copy")}
         </button>
-        <Link href="/app/settings?section=agent" className={GHOST_BTN_CLS}>
+        <button
+          type="button"
+          onClick={() => setLocation(`~${ROUTE_APP_SETTINGS}?section=agent`)}
+          className={GHOST_BTN_CLS}
+        >
           <Settings aria-hidden className="h-3.5 w-3.5" />
           {t("agent_failure_open_settings")}
-        </Link>
+        </button>
         {startup && onRetry && (
           <button type="button" onClick={onRetry} className={GHOST_BTN_CLS}>
             <RotateCcw aria-hidden className="h-3.5 w-3.5" />

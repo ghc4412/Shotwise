@@ -2084,6 +2084,14 @@ class ProjectManager:
             entry = rekey_equivalent_entries(mutated[spec.bucket_key], old_key, new_clean)
             if isinstance(entry, dict):
                 rewrite_entry_paths(entry, spec, old_key, new_clean)
+            if asset_type == "character":
+                # 角色关系图的节点身份使用角色名；与剧本引用一起在同一事务内改写，
+                # 这样关系画布不会在改名成功后留下指向旧角色的悬空边。
+                from lib.character_relations import rename_character_relation_references
+
+                relations = rename_character_relation_references(mutated.get("character_relations"), old_key, new_clean)
+                if relations is not None:
+                    mutated["character_relations"] = relations
             after_errors = _rename_agnostic_errors(validator.validate_project_payload(mutated), old_key, new_clean)
             new_errors = {after_errors[fingerprint] for fingerprint in after_errors.keys() - before_errors.keys()}
             if new_errors:

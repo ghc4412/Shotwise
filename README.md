@@ -50,8 +50,6 @@
 
 Shotwise 提供面向生产工作的工作台界面：项目大厅、项目工作台和登录页使用统一的顶部导航、信息层级和品牌图标。右上角的太阳/月亮按钮可以在日间和夜间模式之间切换，选择会保存在当前浏览器中，刷新后仍然生效。
 
-浏览器标签页、PWA 图标、登录页和项目大厅使用统一的 `shotwise-mark.svg` 品牌标识。
-
 项目大厅支持按制作阶段筛选、关键词搜索，并可按最近活动、进行中、完成度或创建时间排序；筛选、搜索和排序会写入 URL，刷新、返回或分享链接时可以恢复当前视图。问候语按本地时间更新，页面切换到后台时暂停刷新。
 
 ## 核心能力
@@ -257,7 +255,7 @@ flowchart TD
 
 ## OpenClaw 集成
 
-SHOTWISE 支持通过 [OpenClaw](https://openclaw.ai) 等外部 AI Agent 平台调用，实现自然语言驱动的视频创作：
+SHOTWISE 支持通过 [OpenClaw](https://openclaw.ai) 和 Codex 等外部 AI Agent 平台调用，实现自然语言驱动的视频创作：
 
 1. 在 SHOTWISE 设置页生成 API Key（`shotwise-` 前缀）
 2. 在 OpenClaw 中加载 SHOTWISE 的 Skill 定义（访问 `http://your-domain/skill.md` 自动获取）

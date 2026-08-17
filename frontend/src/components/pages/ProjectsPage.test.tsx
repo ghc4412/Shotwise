@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Router } from "wouter";
 import { memoryLocation } from "wouter/memory-location";
@@ -26,6 +26,7 @@ function renderPage(path = "/app/projects") {
 
 describe("ProjectsPage", () => {
   beforeEach(() => {
+    localStorage.clear();
     useProjectsStore.setState(useProjectsStore.getInitialState(), true);
     useAppStore.setState(useAppStore.getInitialState(), true);
     vi.restoreAllMocks();
@@ -135,7 +136,57 @@ describe("ProjectsPage", () => {
     expect((await screen.findAllByText("Demo Project")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("商业动画 京都").length).toBeGreaterThan(0);
     expect(screen.getAllByText("制作中").length).toBeGreaterThan(0);
-    expect(screen.getByText("50%")).toBeInTheDocument();
+    expect(screen.getAllByText("50%").length).toBeGreaterThan(0);
+  });
+
+  it("uses the last opened project for Now Editing and keeps all projects in the library", async () => {
+    localStorage.setItem("shotwise:lastOpenedProject", "apocalypse");
+    vi.spyOn(API, "listProjects").mockResolvedValue({
+      projects: [
+        {
+          name: "young-horse",
+          title: "少年白马醉春风",
+          style: "",
+          thumbnail: null,
+          status: {
+            current_phase: "production",
+            phase_progress: 0.8,
+            characters: { total: 18, completed: 18 },
+            scenes: { total: 13, completed: 13 },
+            props: { total: 18, completed: 18 },
+            episodes_summary: { total: 1, scripted: 0, in_production: 1, completed: 0 },
+          },
+        },
+        {
+          name: "apocalypse",
+          title: "末世我囤积了百亿物资",
+          style: "",
+          thumbnail: null,
+          status: {
+            current_phase: "worldbuilding",
+            phase_progress: 0.2,
+            characters: { total: 1, completed: 0 },
+            scenes: { total: 0, completed: 0 },
+            props: { total: 0, completed: 0 },
+            episodes_summary: { total: 0, scripted: 0, in_production: 0, completed: 0 },
+          },
+        },
+      ],
+    });
+
+    renderPage();
+
+    const nowEditingHeading = await screen.findByRole("heading", { name: /接着上一次/ });
+    const nowEditingSection = nowEditingHeading.closest("section");
+    expect(nowEditingSection).not.toBeNull();
+    expect(within(nowEditingSection!).getAllByText("末世我囤积了百亿物资").length).toBeGreaterThan(0);
+
+    const libraryHeading = screen.getByRole("heading", { name: /全部项目/ });
+    const librarySection = libraryHeading.closest("section");
+    expect(librarySection).not.toBeNull();
+    expect(within(librarySection!).getAllByText("少年白马醉春风").length).toBeGreaterThan(0);
+    expect(within(librarySection!).getAllByText("末世我囤积了百亿物资").length).toBeGreaterThan(0);
+    expect(within(librarySection!).getByText("2 个项目")).toBeInTheDocument();
   });
 
   it("shows 自定义风格 label when project has style_image but no template_id", async () => {

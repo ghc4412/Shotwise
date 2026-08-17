@@ -16,7 +16,19 @@ export interface WorkflowNodeRun {
   progress_source: string | null;
   phase_code: string | null;
   error_code: string | null;
+  /** Machine-readable error details, e.g. validation field + value. */
+  error_params?: Record<string, unknown>;
+  /** Node outputs as asset references: port id -> asset refs. */
+  output_refs?: Record<string, WorkflowAssetRef[]>;
   fencing_token: number;
+}
+
+/** A node output: a typed reference into the project asset tree. */
+export interface WorkflowAssetRef {
+  kind: string;
+  path?: string | null;
+  count?: number | null;
+  label?: string;
 }
 
 export interface WorkflowRunSummary {
@@ -103,6 +115,27 @@ export interface WorkflowDefinitionDetail {
   };
 }
 
+export interface WorkflowRevisionSummary {
+  id: string;
+  revision_no: number;
+  status: string;
+  graph_hash: string;
+  execution_hash: string;
+  is_active: boolean;
+  created_by: string;
+  created_at: string;
+}
+
+export interface WorkflowTemplateCatalogItem {
+  id: string;
+  scope: "official" | "custom";
+  name_key: string;
+  description_key: string;
+  template_lock: Record<string, unknown> | null;
+  nodes: WorkflowNodeInput[];
+  edges: WorkflowEdgeInput[];
+}
+
 export interface WorkflowExport {
   schema_version: number;
   name: string;
@@ -129,7 +162,7 @@ export interface WorkflowPortDef {
 export interface WorkflowNodeTypeDef {
   node_type: string;
   color: string;
-  category: "production" | "business" | "generic" | "input";
+  category: "script" | "assets" | "video" | "post" | "logic" | "input";
   inputs: WorkflowPortDef[];
   outputs: WorkflowPortDef[];
   defaultConfig: WorkflowNodeConfig;
@@ -140,6 +173,8 @@ export interface WorkflowTemplate {
   id: string;
   nameKey: string;
   descriptionKey: string;
+  /** User-facing name for locally saved custom templates. */
+  customName?: string;
   nodes: WorkflowNodeInput[];
   edges: WorkflowEdgeInput[];
 }

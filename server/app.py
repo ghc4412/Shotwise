@@ -52,6 +52,7 @@ from server.routers import (
     api_keys,
     assets,
     assistant,
+    character_relations,
     characters,
     cost_estimation,
     custom_providers,
@@ -592,6 +593,9 @@ async def request_logging_middleware(request: Request, call_next):
 # 不挂依赖的两组另有说明，见下方分组注释。
 app.include_router(projects.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["项目管理"])
 app.include_router(characters.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["角色管理"])
+app.include_router(
+    character_relations.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["角色关系"]
+)
 app.include_router(scenes.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["场景管理"])
 app.include_router(props.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["道具管理"])
 app.include_router(products.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["产品管理"])

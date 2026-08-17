@@ -49,6 +49,7 @@ function resetStores(): void {
 
 describe("AppRoutes", () => {
   beforeEach(() => {
+    localStorage.clear();
     resetStores();
     useAuthStore.setState({ isAuthenticated: true, isLoading: false });
     // ConfigStatusLoader 在 AppRoutes 中始终挂载；预置 initialized 让其 fetch() 短路，
@@ -132,6 +133,7 @@ describe("AppRoutes", () => {
       expect(projectState.currentProjectData?.title).toBe("Demo Project");
       expect(projectState.projectDetailLoading).toBe(false);
     });
+    expect(localStorage.getItem("shotwise:lastOpenedProject")).toBe("demo");
 
     view.unmount();
     expect(useProjectsStore.getState().currentProjectName).toBeNull();

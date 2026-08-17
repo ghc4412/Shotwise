@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { AlertTriangle, Check, Circle, Clock3, Loader2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -122,12 +122,23 @@ function WorkflowNodeCardInner({ id, data, selected }: NodeProps<Node<WorkflowNo
 
 export const WorkflowNodeCard = memo(WorkflowNodeCardInner);
 
-interface GroupNodeData extends Record<string, unknown> {
+export interface GroupNodeData extends Record<string, unknown> {
   label: string;
   color: string;
 }
 
-function GroupNodeInner({ data, selected }: NodeProps<Node<GroupNodeData>>) {
+interface GroupNodeProps extends NodeProps<Node<GroupNodeData>> {
+  onRename?: (label: string) => void;
+}
+
+function GroupNodeInner({ data, selected, onRename }: GroupNodeProps) {
+  const { t } = useTranslation("dashboard");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(data.label);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
   return (
     <div
       className="h-full w-full rounded-lg border-2 border-dashed p-1"
@@ -135,10 +146,38 @@ function GroupNodeInner({ data, selected }: NodeProps<Node<GroupNodeData>>) {
         borderColor: selected ? data.color : "var(--color-hairline)",
         background: "color-mix(in oklab, transparent 60%, var(--color-bg-raised))",
       }}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        setDraft(data.label);
+        setEditing(true);
+      }}
     >
       <div className="flex items-center gap-1.5 px-1 py-0.5">
         <span className="h-1.5 w-1.5 rounded-full" style={{ background: data.color }} aria-hidden />
-        <span className="text-[10px] font-semibold text-text-2">{data.label}</span>
+        {editing ? (
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={() => {
+              setEditing(false);
+              if (draft.trim() && draft !== data.label) onRename?.(draft.trim());
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                setEditing(false);
+                if (draft.trim() && draft !== data.label) onRename?.(draft.trim());
+              }
+              if (event.key === "Escape") setEditing(false);
+            }}
+            className="w-full min-w-0 rounded border border-accent bg-bg px-1 text-[11px] font-semibold text-text outline-none"
+            aria-label={t("flow_group_rename")}
+          />
+        ) : (
+          <span className="min-w-0 truncate text-[10px] font-semibold text-text-2" title={t("flow_group_rename_hint")}>
+            {data.label}
+          </span>
+        )}
       </div>
     </div>
   );

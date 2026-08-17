@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Route, Router } from "wouter";
+import { memoryLocation } from "wouter/memory-location";
 import type { FailureObservation } from "@/types";
 import { copyText } from "@/utils/clipboard";
 import { AgentFailureCard } from "./AgentFailureCard";
@@ -55,10 +57,27 @@ describe("AgentFailureCard", () => {
       expect(copyText).toHaveBeenCalledWith(JSON.stringify(turnFailure, null, 2));
     });
 
-    expect(screen.getByRole("link", { name: "打开 Agent 设置" }))
-      .toHaveAttribute("href", "/app/settings?section=agent");
+    expect(screen.getByRole("button", { name: "打开 Agent 设置" })).toBeInTheDocument();
     expect(screen.queryByText(/下载.*日志/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "重试" })).not.toBeInTheDocument();
+  });
+
+  it("navigates from a nested workspace route to the Agent settings section", () => {
+    const { hook } = memoryLocation({ path: "/app/projects/demo" });
+    render(
+      <Router hook={hook}>
+        <Route path="/app/projects/:projectName" nest>
+          <AgentFailureCard failure={turnFailure} />
+        </Route>
+        <Route path="/app/settings">
+          <div>Agent Settings</div>
+        </Route>
+      </Router>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "打开 Agent 设置" }));
+
+    expect(screen.getByText("Agent Settings")).toBeInTheDocument();
   });
 
   it("offers retry only when the caller supplies a startup retry", () => {

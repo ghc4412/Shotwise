@@ -31,6 +31,49 @@ export interface Character {
   voice_notice_dismissed_at?: string;
 }
 
+export type CharacterRelationType =
+  | "family"
+  | "romance"
+  | "marriage"
+  | "friend"
+  | "ally"
+  | "enemy"
+  | "mentor"
+  | "subordinate"
+  | "rival"
+  | "interest"
+  | "custom";
+
+export interface CharacterRelationEvidence {
+  episode?: number | null;
+  script_file?: string | null;
+  scene_id?: string | null;
+  excerpt: string;
+}
+
+export interface CharacterRelationEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: CharacterRelationType;
+  label: string;
+  directed: boolean;
+  description: string;
+  origin: "ai" | "manual";
+  manual_override: boolean;
+  confidence: number | null;
+  evidence: CharacterRelationEvidence[];
+}
+
+export interface CharacterRelationsData {
+  revision: number;
+  analysis_status: "idle" | "analyzing" | "ready" | "failed";
+  analyzed_at: string | null;
+  source_fingerprint: string | null;
+  error: string | null;
+  edges: CharacterRelationEdge[];
+}
+
 export interface Scene {
   description: string;
   scene_sheet?: string;
@@ -142,6 +185,7 @@ export interface ProjectData {
   schema_version?: number;
   episodes: EpisodeMeta[];
   characters: Record<string, Character>;
+  character_relations?: CharacterRelationsData;
   scenes?: Record<string, Scene>;
   props?: Record<string, Prop>;
   /** 产品资产（广告/短片项目使用，v1 单产品设定，字段形态为映射）。 */

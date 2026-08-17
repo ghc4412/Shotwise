@@ -502,6 +502,23 @@ class DataValidator:
                         )
                     )
 
+            character_relations = project.get("character_relations")
+            if character_relations is not None:
+                # 角色关系是项目级故事数据，但每条边都必须指向当前角色桶中的资产；
+                # 否则角色删除/外部导入后会把悬空节点带入关系画布。
+                from lib.character_relations import normalize_character_relations
+
+                try:
+                    normalize_character_relations(character_relations, characters)
+                except (TypeError, ValueError) as exc:
+                    errors.append(
+                        _m(
+                            "val_field_invalid",
+                            field="character_relations",
+                            detail=str(exc),
+                        )
+                    )
+
         if project.get("clues") is not None:
             errors.append(_m("val_deprecated_clues"))
 

@@ -234,7 +234,7 @@ export function PendingQuestionWizard({
                       ? "var(--color-accent)"
                       : isVisitedStep
                         ? "var(--color-accent-soft)"
-                        : "oklch(0.30 0.012 265 / 0.4)",
+                        : "var(--color-hairline-soft)",
                     boxShadow: isActiveStep
                       ? "0 0 8px var(--color-accent-glow)"
                       : "none",
@@ -295,7 +295,7 @@ export function PendingQuestionWizard({
               className="mt-3 overflow-hidden rounded-lg"
               style={{
                 border: "1px solid var(--color-hairline-soft)",
-                background: "oklch(0.16 0.010 265 / 0.45)",
+                background: "var(--color-shell-field)",
               }}
             >
               {currentQuestionOptions.map((option, optionIndex) => {
@@ -316,7 +316,7 @@ export function PendingQuestionWizard({
                     }}
                     onMouseEnter={(e) => {
                       if (!checked && !answeringQuestion)
-                        e.currentTarget.style.background = "oklch(1 0 0 / 0.03)";
+                        e.currentTarget.style.background = "var(--color-shell-hover)";
                     }}
                     onMouseLeave={(e) => {
                       if (!checked && !answeringQuestion)

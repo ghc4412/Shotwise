@@ -173,7 +173,7 @@ export function GridPreviewView({
               className="overflow-hidden rounded-md border"
               style={{
                 borderColor: "var(--color-hairline-soft)",
-                background: "oklch(0.20 0.011 265 / 0.35)",
+                background: "var(--panel-card-bg)",
               }}
             >
               <div

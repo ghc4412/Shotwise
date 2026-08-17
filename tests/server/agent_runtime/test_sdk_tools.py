@@ -39,6 +39,7 @@ from server.agent_runtime.sdk_tools.enqueue_videos import (
     generate_video_scene_tool,
     generate_video_selected_tool,
 )
+from server.agent_runtime.sdk_tools.file_read import read_project_text_tool
 from server.agent_runtime.sdk_tools.text_generation import (
     _parse_normalized_content,
     generate_episode_script_tool,
@@ -141,6 +142,29 @@ def _stub_audio_switch_guard(monkeypatch):
 
 async def _call(tool_obj, args: dict[str, Any]) -> dict[str, Any]:
     return await tool_obj.handler(args)
+
+
+@pytest.mark.unit
+async def test_read_project_text_is_paged_and_project_scoped(fake_ctx: ToolContext) -> None:
+    source = fake_ctx.project_path / "source"
+    source.mkdir()
+    (source / "chapter.txt").write_text("一\n二\n三\n", encoding="utf-8")
+
+    out = await _call(read_project_text_tool(fake_ctx), {"path": "source/chapter.txt", "start_line": 2, "max_lines": 1})
+
+    assert out.get("is_error") is not True
+    text = out["content"][0]["text"]
+    assert "行范围: 2-2 / 3" in text
+    assert "二" in text
+    assert "一" not in text
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("path", ["../secret.txt", ".env", "storyboards/image.png", "project.json/child"])
+async def test_read_project_text_rejects_unapproved_paths(fake_ctx: ToolContext, path: str) -> None:
+    out = await _call(read_project_text_tool(fake_ctx), {"path": path})
+
+    assert out.get("is_error") is True
 
 
 # ---------------------------------------------------------------------------

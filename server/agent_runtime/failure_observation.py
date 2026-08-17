@@ -79,7 +79,7 @@ def build_startup_failure_observation(
     )
 
 
-def _message_text(message: Mapping[str, Any] | None) -> str | None:
+def _message_text(message: Mapping[str, Any] | None, *, include_error: bool = True) -> str | None:
     if message is None:
         return None
     content = message.get("content")
@@ -101,6 +101,10 @@ def _message_text(message: Mapping[str, Any] | None) -> str | None:
         rendered = [str(item) for item in errors if item is not None]
         if rendered:
             return "\n".join(rendered)
+    if include_error:
+        error = message.get("error")
+        if isinstance(error, str) and error:
+            return error
     return None
 
 
@@ -140,7 +144,7 @@ def build_turn_failure_observation(
                 "source": source,
                 "type": observed_type,
                 "status": status,
-                "message": _message_text(assistant_message) or _message_text(result_message),
+                "message": _message_text(assistant_message, include_error=False) or _message_text(result_message),
             },
             "raw": raw,
         }

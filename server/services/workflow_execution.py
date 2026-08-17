@@ -379,14 +379,14 @@ async def run_workflow_run(session: AsyncSession, run_id: str) -> dict[str, Any]
     # with nothing left to schedule -> failed; otherwise the run stays running
     # for the next tick (paused/cancelled handled above).
     await session.refresh(run)
-    statuses = {node_runs[key].status for key in node_runs}
+    statuses = [node_runs[key].status for key in node_runs]
     progress = sum(1 for status in statuses if status in TERMINAL_NODE_STATUSES) / max(1, len(statuses))
     run.progress = progress
     target: str | None = None
     if run.status == "running":
         if all(status in TERMINAL_NODE_STATUSES for status in statuses):
             target = "succeeded" if "failed" not in statuses else "failed"
-        elif statuses & {"failed", "stale", "orphaned"}:
+        elif any(status in {"failed", "stale", "orphaned"} for status in statuses):
             target = "failed"
     if target is not None:
         previous = run.status

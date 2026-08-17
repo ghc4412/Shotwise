@@ -612,7 +612,6 @@ macOS 沿用系统 `sandbox-exec` 无需改动；Windows 原生自动降级到 B
 
 * **agent:** Agent 支持配置多供应商 + 预设默认供应商 ([#507](https://github.com/ghc4412/Shotwise/issues/507)) ([5e94cc2](https://github.com/ghc4412/Shotwise/commit/5e94cc2c121e9846765de1a10a1abd11a7f0ac73))
 * **agent:** 启用 Agent Bash 沙箱隔离，安全加固并提高 bash 自由度 + provider secrets 下线 os.environ ([#521](https://github.com/ghc4412/Shotwise/issues/521)) ([3a9ed4f](https://github.com/ghc4412/Shotwise/commit/3a9ed4f47ff9983c52cfea204e8a1adc0ae9553a))
-* **branding:** centralize product name via BRAND config + i18n placeholder ([#494](https://github.com/ghc4412/Shotwise/issues/494)) ([c93b0c9](https://github.com/ghc4412/Shotwise/commit/c93b0c9d33533096273c20c21bc8947949950a75))
 * env-driven runtime configuration and graceful fallbacks ([#515](https://github.com/ghc4412/Shotwise/issues/515)) ([c042541](https://github.com/ghc4412/Shotwise/commit/c0425418c0df1a4d88c703994fea099c55d1f97b))
 * **profile:** 按 content_mode 动态注入 agent 配置（narration/drama 变体） ([#546](https://github.com/ghc4412/Shotwise/issues/546)) ([1030a29](https://github.com/ghc4412/Shotwise/commit/1030a29b5ad0c6e1bffe0cf45d65552d5d2b28db))
 * **thumbnail:** add extract_video_last_frame helper ([#539](https://github.com/ghc4412/Shotwise/issues/539)) ([06be4da](https://github.com/ghc4412/Shotwise/commit/06be4daba640c78d5d030efbbacc0c9ba5fde5de))

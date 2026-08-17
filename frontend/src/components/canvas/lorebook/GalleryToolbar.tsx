@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Plus, Package } from "lucide-react";
+import { Network, Plus, Package } from "lucide-react";
 
 interface Props {
   title: string;
@@ -8,12 +8,13 @@ interface Props {
   onAdd?: () => void;
   /** 未提供时隐藏「从资产库选择」入口（如不入全局库的资产类型）。 */
   onPickFromLibrary?: () => void;
+  onViewRelations?: () => void;
 }
 
 /**
  * GalleryToolbar — v3 视觉：玻璃栏 + display-serif 标题 + accent CTA。
  */
-export function GalleryToolbar({ title, count, onAdd, onPickFromLibrary }: Props) {
+export function GalleryToolbar({ title, count, onAdd, onPickFromLibrary, onViewRelations }: Props) {
   const { t } = useTranslation(["dashboard", "assets"]);
   return (
     <div
@@ -54,6 +55,18 @@ export function GalleryToolbar({ title, count, onAdd, onPickFromLibrary }: Props
         {String(count).padStart(2, "0")}
       </span>
       <div className="flex-1" />
+      {onViewRelations && (
+        <button
+          type="button"
+          onClick={onViewRelations}
+          className="focus-ring inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] transition-colors"
+          style={{ color: "var(--color-text-2)", border: "1px solid var(--color-hairline)", background: "var(--color-shell-btn)" }}
+          title={t("dashboard:view_character_relations")}
+        >
+          <Network className="h-3.5 w-3.5" />
+          {t("dashboard:view_character_relations")}
+        </button>
+      )}
       {onPickFromLibrary && (
       <button
         type="button"

@@ -89,7 +89,7 @@ export function TodoListPanel({ turns, draftTurn }: TodoListPanelProps) {
         className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors"
         style={{ color: "var(--color-text-2)" }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.background = "oklch(0.24 0.012 265 / 0.5)";
+          e.currentTarget.style.background = "var(--color-shell-hover)";
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.background = "transparent";
@@ -134,7 +134,7 @@ export function TodoListPanel({ turns, draftTurn }: TodoListPanelProps) {
         <div className="flex shrink-0 items-center gap-2">
           <ProgressBar
             value={progressPercent}
-            className="h-1 w-16 rounded-full bg-[oklch(0.30_0.012_265_/_0.5)]"
+            className="h-1 w-16 rounded-full bg-[var(--color-hairline-soft)]"
             barClassName="bg-(--color-good) transition-all duration-500 ease-out"
           />
           <span

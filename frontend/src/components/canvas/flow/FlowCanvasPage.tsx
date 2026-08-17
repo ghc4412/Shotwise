@@ -4,17 +4,30 @@ import {
   ChevronDown,
   ChevronUp,
   Clock3,
+  Eye,
+  History,
   LayoutGrid,
   Loader2,
   Pause,
   Play,
   RefreshCw,
+  RotateCcw,
   Workflow,
   X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { API } from "@/api";
-import type { WorkflowDefinitionDetail, WorkflowEvent, WorkflowNodeInput, WorkflowNodeLogEntry, WorkflowRunDetail, WorkflowEdgeInput } from "@/types";
+import type {
+  WorkflowDefinitionDetail,
+  WorkflowEvent,
+  WorkflowNodeInput,
+  WorkflowNodeLogEntry,
+  WorkflowNodeRun,
+  WorkflowRevisionSummary,
+  WorkflowRunDetail,
+  WorkflowEdgeInput,
+  WorkflowAssetRef,
+} from "@/types";
 import { errMsg } from "@/utils/async";
 import { FlowCanvas } from "./FlowCanvas";
 import { FlowMonitor } from "./FlowMonitor";
@@ -23,6 +36,17 @@ import type { GroupMeta } from "./workflow-utils";
 type CanvasMode = "simple" | "canvas";
 
 const POLL_INTERVAL_MS = 2000;
+
+/** Remember the last used view per user; first-time users land on the simple wizard. */
+const FLOW_DEFAULT_VIEW_KEY = "shotwise-flow-default-view";
+
+function readDefaultMode(): CanvasMode {
+  try {
+    return window.localStorage.getItem(FLOW_DEFAULT_VIEW_KEY) === "canvas" ? "canvas" : "simple";
+  } catch {
+    return "simple";
+  }
+}
 
 function RunStatusBadge({ status }: { status: string }) {
   const tone: Record<string, string> = {
@@ -49,7 +73,16 @@ interface FlowCanvasPageProps {
 
 export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
   const { t } = useTranslation("dashboard");
-  const [mode, setMode] = useState<CanvasMode>("simple");
+  const [mode, setModeState] = useState<CanvasMode>(readDefaultMode);
+  const switchMode = useCallback((next: CanvasMode) => {
+    setModeState(next);
+    try {
+      window.localStorage.setItem(FLOW_DEFAULT_VIEW_KEY, next);
+    } catch {
+      // persistence is best-effort
+    }
+  }, []);
+  const setMode = switchMode;
   const [definition, setDefinition] = useState<WorkflowDefinitionDetail | null>(null);
   const [graphNodes, setGraphNodes] = useState<WorkflowNodeInput[]>([]);
   const [graphEdges, setGraphEdges] = useState<WorkflowEdgeInput[]>([]);
@@ -58,6 +91,9 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
   const [events, setEvents] = useState<WorkflowEvent[]>([]);
   const [eventsCollapsed, setEventsCollapsed] = useState(true);
   const [nodeLogs, setNodeLogs] = useState<{ nodeKey: string; items: WorkflowNodeLogEntry[] } | null>(null);
+  const [revisions, setRevisions] = useState<WorkflowRevisionSummary[]>([]);
+  const [revisionsOpen, setRevisionsOpen] = useState(false);
+  const [preview, setPreview] = useState<{ nodeKey: string; run: WorkflowNodeRun } | null>(null);
   const [loading, setLoading] = useState(true);
   const [mutating, setMutating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -203,16 +239,23 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
     [projectName, saveGraph],
   );
 
-  const runWorkflow = useCallback(async () => {
+  const runWorkflow = useCallback(async (
+    nodes: WorkflowNodeInput[] = graphNodes,
+    edges: WorkflowEdgeInput[] = graphEdges,
+    groups: GroupMeta[] = graphGroups,
+  ) => {
     if (!definition) return;
     setMutating(true);
     try {
       const revision = await API.createWorkflowRevision(definition.id, {
-        nodes: graphNodes,
-        edges: graphEdges,
-        template_lock: { template_schema_version: 1, canvas_groups: graphGroups },
+        nodes,
+        edges,
+        template_lock: { template_schema_version: 1, canvas_groups: groups },
       });
       await API.publishWorkflowRevision(revision.id);
+      setGraphNodes(nodes);
+      setGraphEdges(edges);
+      setGraphGroups(groups);
       const planned = await API.planWorkflowRun(revision.id, projectName);
       const started = await API.transitionWorkflowRun(planned.id, "start", planned.version);
       await loadRunDetail(started.id);
@@ -253,6 +296,65 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
       }
     },
     [run],
+  );
+
+  const openNodePreview = useCallback(
+    (nodeKey: string) => {
+      const nodeRun = run?.nodes.find((node) => node.node_key === nodeKey);
+      if (!nodeRun) return;
+      setNodeLogs(null);
+      setPreview({ nodeKey, run: nodeRun });
+    },
+    [run],
+  );
+
+  /** Resume a failed run from a node, keeping successful upstream outputs. */
+  const retryRunFromNode = useCallback(
+    async (nodeKey: string) => {
+      if (!run) return;
+      setMutating(true);
+      try {
+        const next = await API.retryWorkflowRun(run.id, nodeKey, true);
+        await loadRunDetail(next.id);
+        startPolling(next.id);
+        setError(null);
+      } catch (requestError) {
+        setError(errMsg(requestError));
+      } finally {
+        setMutating(false);
+      }
+    },
+    [loadRunDetail, run, startPolling],
+  );
+
+  const loadRevisions = useCallback(async () => {
+    if (!definition) return;
+    try {
+      const result = await API.listWorkflowRevisions(definition.id);
+      setRevisions(result.items);
+    } catch (requestError) {
+      setError(errMsg(requestError));
+    }
+  }, [definition]);
+
+  /** Publish a new revision restoring an historical graph, then reload. */
+  const revertToRevision = useCallback(
+    async (revisionId: string) => {
+      if (!definition) return;
+      setMutating(true);
+      try {
+        const result = await API.revertWorkflowRevision(definition.id, revisionId);
+        await loadDefinition();
+        setRevisions((current) => current.map((item) => ({ ...item, is_active: item.id === result.revision_id })));
+        await loadAll(run?.id ?? null);
+        setError(null);
+      } catch (requestError) {
+        setError(errMsg(requestError));
+      } finally {
+        setMutating(false);
+      }
+    },
+    [definition, loadAll, loadDefinition, run],
   );
 
   const runStatusMap = useMemo(() => {
@@ -344,6 +446,19 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
           ) : null}
           <button
             type="button"
+            onClick={() => {
+              setRevisionsOpen((open) => !open);
+              if (!revisionsOpen) void loadRevisions();
+            }}
+            disabled={!definition || mutating}
+            className="grid h-8 w-8 place-items-center rounded-md border border-hairline text-text-3 transition-colors hover:bg-bg-raised hover:text-text focus-ring disabled:opacity-40"
+            title={t("flow_versions")}
+            aria-label={t("flow_versions")}
+          >
+            <History aria-hidden className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
             onClick={() => void loadAll(run?.id ?? null)}
             disabled={loading || mutating}
             className="grid h-8 w-8 place-items-center rounded-md border border-hairline text-text-3 transition-colors hover:bg-bg-raised hover:text-text focus-ring disabled:opacity-40"
@@ -365,13 +480,78 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
         </div>
       ) : null}
 
+      {revisionsOpen && definition ? (
+        <div className="absolute right-4 top-14 z-40 flex max-h-[60vh] w-[380px] flex-col rounded-md border border-hairline bg-bg-raised shadow-lg">
+          <header className="flex items-center justify-between border-b border-hairline px-3 py-2">
+            <span className="flex items-center gap-2 text-[11px] font-semibold text-text">
+              <History aria-hidden className="h-3.5 w-3.5 text-accent-2" />
+              {t("flow_versions")}
+            </span>
+            <button
+              type="button"
+              onClick={() => setRevisionsOpen(false)}
+              className="grid h-5 w-5 place-items-center rounded text-text-3 hover:bg-bg focus-ring"
+              aria-label={t("flow_close_error")}
+            >
+              <X aria-hidden className="h-3 w-3" />
+            </button>
+          </header>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {revisions.length === 0 ? (
+              <div className="px-4 py-8 text-center text-[11px] text-text-4">{t("flow_no_events")}</div>
+            ) : (
+              revisions.map((item) => (
+                <div key={item.id} className="flex items-center gap-3 border-b border-hairline-soft px-3 py-2.5 last:border-b-0">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[11px] font-semibold text-text">v{item.revision_no}</span>
+                      <span className="truncate font-mono text-[9px] text-text-4">{item.graph_hash.slice(0, 10)}</span>
+                      {item.is_active ? (
+                        <span className="rounded border border-good/40 px-1 py-px text-[9px] font-semibold text-good">{t("flow_version_active")}</span>
+                      ) : null}
+                    </div>
+                    <time className="mt-0.5 block text-[9px] text-text-4">{new Date(item.created_at).toLocaleString()}</time>
+                  </div>
+                  {!item.is_active ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (window.confirm(t("flow_revert_confirm", { no: item.revision_no }))) {
+                          void revertToRevision(item.id);
+                          setRevisionsOpen(false);
+                        }
+                      }}
+                      disabled={mutating}
+                      className="inline-flex h-7 items-center gap-1 rounded border border-hairline px-2 text-[10px] font-semibold text-text-2 hover:bg-bg focus-ring disabled:opacity-40"
+                    >
+                      <RotateCcw aria-hidden className="h-3 w-3" />
+                      {t("flow_revert")}
+                    </button>
+                  ) : null}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
+
       {loading ? (
         <div className="grid flex-1 place-items-center text-text-4">
           <Loader2 aria-hidden className="h-5 w-5 motion-safe:animate-spin" />
         </div>
       ) : mode === "simple" ? (
         <div className="min-h-0 flex-1">
-          <FlowMonitor projectName={projectName} />
+          <FlowMonitor
+            projectName={projectName}
+            nodes={graphNodes}
+            onOpenCanvas={() => setMode("canvas")}
+            onQuickConfigChange={(nodeKey, config) => {
+              setGraphNodes((current) => current.map((node) => (node.node_key === nodeKey ? { ...node, config } : node)));
+            }}
+            onQuickRun={runWorkflow}
+            onRetryFromNode={(nodeKey) => void retryRunFromNode(nodeKey)}
+            onPreviewOutputs={(nodeKey) => openNodePreview(nodeKey)}
+          />
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
@@ -379,7 +559,7 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
             initialNodes={graphNodes}
             initialEdges={graphEdges}
             initialGroups={graphGroups}
-            runStatus={runStatusMap as Record<string, never> | null}
+            runStatus={runStatusMap}
             running={running}
             defaultName={definition?.name ?? projectName}
             onSave={async (nodes, edges, groups) => {
@@ -388,8 +568,10 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
             onImportWorkflow={async (nodes, edges, groups) => {
               await importWorkflow(nodes, edges, groups);
             }}
-            onRun={() => void runWorkflow()}
+            onRun={runWorkflow}
             onViewNodeLogs={(nodeKey) => void viewNodeLogs(nodeKey)}
+            onRetryFromNode={(nodeKey) => void retryRunFromNode(nodeKey)}
+            onPreviewOutputs={(nodeKey) => openNodePreview(nodeKey)}
           />
 
           {/* node log drawer */}
@@ -421,6 +603,16 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
                 )}
               </div>
             </div>
+          ) : null}
+
+          {/* node output preview drawer */}
+          {preview ? (
+            <OutputPreviewPanel
+              projectName={projectName}
+              nodeKey={preview.nodeKey}
+              refs={Object.values(preview.run.output_refs ?? {}).flat()}
+              onClose={() => setPreview(null)}
+            />
           ) : null}
 
           {/* collapsible event log panel */}
@@ -463,5 +655,83 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
         </div>
       )}
     </section>
+  );
+}
+
+/** Drawer listing a node's produced assets (images / videos / files). */
+function OutputPreviewPanel({
+  projectName,
+  nodeKey,
+  refs,
+  onClose,
+}: {
+  projectName: string;
+  nodeKey: string;
+  refs: WorkflowAssetRef[];
+  onClose: () => void;
+}) {
+  const { t } = useTranslation("dashboard");
+  return (
+    <div className="absolute bottom-10 right-10 z-30 flex max-h-[70vh] w-[420px] flex-col rounded-md border border-hairline bg-bg-raised shadow-lg">
+      <header className="flex items-center justify-between border-b border-hairline px-3 py-2">
+        <span className="flex min-w-0 items-center gap-2">
+          <Eye aria-hidden className="h-3.5 w-3.5 shrink-0 text-accent-2" />
+          <span className="truncate font-mono text-[10px] font-semibold text-text-2">{nodeKey}</span>
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="grid h-5 w-5 shrink-0 place-items-center rounded text-text-3 hover:bg-bg focus-ring"
+          aria-label={t("flow_close_error")}
+        >
+          <X aria-hidden className="h-3 w-3" />
+        </button>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {refs.length === 0 ? (
+          <div className="px-2 py-8 text-center text-[11px] text-text-4">{t("flow_output_empty")}</div>
+        ) : (
+          <div className="space-y-3">
+            {refs.map((ref, index) => {
+              const url = ref.path ? API.getFileUrl(projectName, ref.path) : null;
+              return (
+                <article key={`${ref.path ?? ref.label}-${index}`} className="rounded-md border border-hairline bg-bg p-2.5">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="truncate text-[10px] font-semibold text-text-2">{ref.label || ref.path || nodeKey}</span>
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      <span className="rounded border border-hairline px-1 py-px font-mono text-[9px] text-text-4">{ref.kind}</span>
+                      {ref.count != null ? <span className="font-mono text-[9px] text-text-4">×{ref.count}</span> : null}
+                    </span>
+                  </div>
+                  {url && (ref.kind === "image" || ref.kind === "asset") ? (
+                    <img
+                      src={url}
+                      alt={ref.label || ref.path || ""}
+                      className="max-h-[220px] w-full rounded border border-hairline bg-bg-raised object-contain"
+                      loading="lazy"
+                    />
+                  ) : url && ref.kind === "video" ? (
+                    <video src={url} controls className="max-h-[220px] w-full rounded border border-hairline bg-bg-raised" preload="metadata">
+                      <track kind="captions" />
+                    </video>
+                  ) : url ? (
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 block truncate rounded border border-hairline px-2 py-1.5 font-mono text-[10px] text-accent-2 hover:bg-bg-raised focus-ring"
+                    >
+                      {ref.path}
+                    </a>
+                  ) : (
+                    <div className="truncate font-mono text-[10px] text-text-4">{ref.label || ref.path || "—"}</div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

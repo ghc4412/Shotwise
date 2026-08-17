@@ -308,6 +308,14 @@ def build_asset_router(
                     key = resolve_asset_key(bucket, entry_name)
                     if key is None:
                         raise KeyError(entry_name)
+                    if asset_type == "character":
+                        # 关系边与角色资产共享名称标识；删除资产时一起移除所有入边、出边和
+                        # AI 删除抑制记录，避免关系图保留无法渲染的孤儿节点。
+                        from lib.character_relations import remove_character_relation_references
+
+                        relations = remove_character_relation_references(project.get("character_relations"), key)
+                        if relations is not None:
+                            project["character_relations"] = relations
                     del bucket[key]
 
                 with project_change_source("webui"):

@@ -62,6 +62,11 @@ class RunTransition(BaseModel):
     expected_version: int = Field(ge=1)
 
 
+class RetryNodeRequest(BaseModel):
+    node_key: str = Field(min_length=1, max_length=128)
+    start: bool = True
+
+
 def _translate_validation(exc: WorkflowValidationError) -> None:
     raise BadRequestError(exc.code, **exc.params) from exc
 
@@ -134,6 +139,33 @@ async def publish_revision(
         _translate_validation(exc)
 
 
+@router.get("/workflows/{definition_id}/revisions")
+async def list_workflow_revisions(
+    definition_id: str,
+    user: CurrentUser,
+    session: AsyncSession = Depends(get_async_session),
+):
+    return await service.list_revisions(session, definition_id, actor_id=user.id)
+
+
+@router.post("/workflows/{definition_id}/revisions/{revision_id}/revert")
+async def revert_workflow_revision(
+    definition_id: str,
+    revision_id: str,
+    user: CurrentUser,
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        return await service.revert_revision(
+            session,
+            definition_id=definition_id,
+            revision_id=revision_id,
+            actor_id=user.id,
+        )
+    except WorkflowValidationError as exc:
+        _translate_validation(exc)
+
+
 @router.post("/workflow-revisions/{revision_id}/runs")
 async def plan_run(
     revision_id: str,
@@ -159,6 +191,31 @@ async def plan_run(
 @router.get("/workflow-runs/{run_id}")
 async def get_run(run_id: str, user: CurrentUser, session: AsyncSession = Depends(get_async_session)):
     return await service.get_run(session, run_id, actor_id=user.id)
+
+
+@router.post("/workflow-runs/{run_id}/retry")
+async def retry_workflow_run(
+    run_id: str,
+    body: RetryNodeRequest,
+    user: CurrentUser,
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        return await service.retry_run_from_node(
+            session,
+            run_id=run_id,
+            node_key=body.node_key,
+            actor_id=user.id,
+            start=body.start,
+        )
+    except WorkflowValidationError as exc:
+        _translate_validation(exc)
+
+
+@router.get("/workflow-templates")
+async def list_workflow_templates(user: CurrentUser):
+    del user
+    return service.list_templates()
 
 
 @router.get("/projects/{project_id}/workflow-runs")

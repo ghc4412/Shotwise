@@ -30,6 +30,11 @@ const HOVER_RING_STYLE: CSSProperties = {
   boxShadow: "inset 0 0 0 1px var(--color-hairline)",
 };
 
+// 叠在缩略图黑色渐变上的文字恒为浅色，不随主题变化：浅色主题下
+// --color-text 会变成深色，叠在黑底上不可读。
+const ON_MEDIA_TEXT_STYLE: CSSProperties = { color: "oklch(0.975 0.004 265)" };
+const ON_MEDIA_TEXT_FADED_STYLE: CSSProperties = { color: "oklch(0.82 0.008 265)" };
+
 interface TemplateCardProps {
   thumbnail: string;
   label: string;
@@ -87,9 +92,11 @@ function TemplateCard({
             "linear-gradient(180deg, transparent 0%, oklch(0 0 0 / 0.8) 100%)",
         }}
       >
-        <p className="truncate text-[11px] leading-tight text-text">{label}</p>
+        <p className="truncate text-[11px] leading-tight" style={ON_MEDIA_TEXT_STYLE}>
+          {label}
+        </p>
         {tagline && (
-          <p className="mt-0.5 truncate text-[9px] leading-tight text-text-3">
+          <p className="mt-0.5 truncate text-[9px] leading-tight" style={ON_MEDIA_TEXT_FADED_STYLE}>
             {tagline}
           </p>
         )}
@@ -116,8 +123,8 @@ function TemplateCard({
           className="absolute left-1.5 top-1.5 rounded-full px-1.5 py-0.5 font-mono text-[8.5px] font-bold uppercase tracking-[0.12em]"
           style={{
             background: "oklch(0 0 0 / 0.55)",
-            color: "var(--color-accent-2)",
-            border: "1px solid var(--color-accent-soft)",
+            color: "oklch(0.95 0.09 195)",
+            border: "1px solid oklch(0.95 0.09 195 / 0.3)",
             backdropFilter: "blur(6px)",
             WebkitBackdropFilter: "blur(6px)",
           }}
@@ -190,6 +197,8 @@ export function StylePicker({ value, onChange }: StylePickerProps) {
   const isCustomActive = value.mode === "custom";
   const isLiveActive = value.mode === "template" && value.activeCategory === "live";
   const isAnimActive = value.mode === "template" && value.activeCategory === "anim";
+  // 模板网格高度（max-h-480px）需容纳完整两行卡片（约 458px），
+  // 否则第二行卡片的底部标签会被容器底边裁掉、文字看不到。
   const templates = value.mode === "template" ? getTemplatesByCategory(value.activeCategory) : [];
 
   return (
@@ -236,9 +245,10 @@ export function StylePicker({ value, onChange }: StylePickerProps) {
                 type="button"
                 onClick={handleClearUpload}
                 aria-label={t("common:remove")}
-                className="absolute right-1.5 top-1.5 rounded-full p-1 text-text-2 transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                className="absolute right-1.5 top-1.5 rounded-full p-1 transition-colors hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 style={{
                   background: "oklch(0 0 0 / 0.55)",
+                  color: "oklch(0.975 0.004 265)",
                   backdropFilter: "blur(6px)",
                   WebkitBackdropFilter: "blur(6px)",
                 }}
@@ -269,7 +279,7 @@ export function StylePicker({ value, onChange }: StylePickerProps) {
           </p>
         </div>
       ) : (
-        <div className="grid max-h-[420px] grid-cols-4 gap-3 overflow-y-auto p-1 pr-2">
+        <div className="grid max-h-[480px] grid-cols-4 gap-3 overflow-y-auto p-1 pr-2">
           {templates.map((tpl) => (
             <TemplateCard
               key={tpl.id}

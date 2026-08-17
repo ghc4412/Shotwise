@@ -55,32 +55,49 @@ function StatusBadge({ status, t }: { status: GridStatus; t: (key: string) => st
 
   const configs: Record<
     GridStatus,
-    { icon: React.ReactNode; cls: string }
+    { icon: React.ReactNode; style: React.CSSProperties }
   > = {
     pending: {
       icon: <Clock className="h-3 w-3" />,
-      cls: "bg-gray-800/80 text-gray-400 border-gray-700/50",
+      style: {
+        background: "var(--color-shell-btn)",
+        color: "var(--color-text-3)",
+        borderColor: "var(--color-hairline)",
+      },
     },
     generating: {
       icon: <Loader2 className="h-3 w-3 animate-spin" />,
-      cls: "bg-blue-950/60 text-blue-300 border-blue-700/40",
+      style: {
+        background: "var(--color-accent-soft)",
+        color: "var(--color-accent-2)",
+        borderColor: "var(--color-accent-dim)",
+      },
     },
     completed: {
       icon: <CheckCircle2 className="h-3 w-3" />,
-      cls: "bg-emerald-950/60 text-emerald-400 border-emerald-700/40",
+      style: {
+        background: "var(--color-shell-hud-good)",
+        color: "var(--color-good)",
+        borderColor: "var(--color-hairline)",
+      },
     },
     failed: {
       icon: <AlertCircle className="h-3 w-3" />,
-      cls: "bg-red-950/60 text-red-400 border-red-700/40",
+      style: {
+        background: "var(--color-shell-hud-danger)",
+        color: "var(--color-danger)",
+        borderColor: "var(--color-hairline)",
+      },
     },
   };
 
-  const { icon, cls } = configs[status];
+  const { icon, style } = configs[status];
   const label = t(STATUS_KEY[status]);
 
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium tracking-wide ${cls}`}
+      className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium tracking-wide"
+      style={style}
     >
       {icon}
       {label}
@@ -116,11 +133,13 @@ function ReferenceImageStrip({
             className="group flex w-14 shrink-0 flex-col items-center gap-1"
           >
             <div
-              className={`w-full overflow-hidden rounded border bg-gray-900/50 transition-all duration-200 ${
-                isChar
-                  ? "border-amber-800/30 group-hover:border-amber-500/50"
-                  : "border-sky-800/30 group-hover:border-sky-500/50"
+              className={`w-full overflow-hidden rounded border transition-all duration-200 ${
+                isChar ? "group-hover:border-[var(--color-warm-ring)]" : "group-hover:border-[var(--color-accent-dim)]"
               }`}
+              style={{
+                borderColor: isChar ? "var(--color-warm-ring)" : "var(--color-accent-dim)",
+                background: "var(--color-shell-field)",
+              }}
             >
               <img
                 src={API.getFileUrl(projectName, ref.path, cacheBust)}
@@ -130,14 +149,15 @@ function ReferenceImageStrip({
             </div>
             <div className="flex max-w-full items-center gap-0.5">
               {isChar ? (
-                <User className="h-2 w-2 shrink-0 text-amber-500/50" />
+                <User className="h-2 w-2 shrink-0 text-[var(--color-warm)]" />
               ) : (
-                <Search className="h-2 w-2 shrink-0 text-sky-500/50" />
+                <Search className="h-2 w-2 shrink-0 text-[var(--color-accent-2)]" />
               )}
               <span
                 className={`truncate text-[8px] leading-tight ${
-                  isChar ? "text-amber-400/50" : "text-sky-400/50"
+                  isChar ? "text-[var(--color-warm)]" : "text-[var(--color-accent-2)]"
                 }`}
+                style={{ opacity: 0.75 }}
                 title={ref.name}
               >
                 {ref.name}
@@ -301,26 +321,31 @@ export function GridPreviewPanel({
         type="button"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
-        className="flex w-full items-center gap-2 border-t border-amber-800/20 px-4 py-1.5 text-left transition-colors hover:bg-amber-900/10 focus-ring"
+        className="flex w-full items-center gap-2 border-t px-4 py-1.5 text-left transition-colors hover:bg-[var(--color-warm-soft)] focus-ring"
+        style={{ borderColor: "var(--color-warm-ring)" }}
       >
         <motion.span
           animate={{ rotate: expanded ? 90 : 0 }}
           transition={{ duration: 0.18, ease: "easeInOut" }}
-          className="text-amber-600/70"
+          style={{ color: "var(--color-warm)" }}
         >
           <ChevronRight className="h-3.5 w-3.5" />
         </motion.span>
 
-        <Film className="h-3.5 w-3.5 text-amber-500/60" />
+        <Film className="h-3.5 w-3.5 text-[var(--color-warm)]" style={{ opacity: 0.7 }} />
 
-        <span className="text-xs font-medium text-amber-400/70">{t("grid_preview_title")}</span>
+        <span className="text-xs font-medium" style={{ color: "var(--color-warm)" }}>
+          {t("grid_preview_title")}
+        </span>
 
         {!hasGrids && (
-          <span className="ml-1 text-[10px] text-gray-600">{t("grid_not_generated")}</span>
+          <span className="ml-1 text-[10px]" style={{ color: "var(--color-text-3)" }}>
+            {t("grid_not_generated")}
+          </span>
         )}
 
         {multipleGrids && !expanded && (
-          <span className="ml-1 text-[10px] text-gray-600">
+          <span className="ml-1 text-[10px]" style={{ color: "var(--color-text-3)" }}>
             {t("grid_batch_unit", { count: gridIds.length })}
           </span>
         )}
@@ -341,23 +366,35 @@ export function GridPreviewPanel({
               {/* No grid yet */}
               {!hasGrids ? (
                 <div className="flex flex-col items-center gap-2 py-6 text-center">
-                  <Grid2x2 className="h-8 w-8 text-gray-700" />
-                  <p className="text-xs text-gray-600">{t("grid_no_grids_yet")}</p>
-                  <p className="text-[10px] text-gray-700">
+                  <Grid2x2 className="h-8 w-8 text-[var(--color-text-3)]" />
+                  <p className="text-xs" style={{ color: "var(--color-text-3)" }}>
+                    {t("grid_no_grids_yet")}
+                  </p>
+                  <p className="text-[10px]" style={{ color: "var(--color-text-4)" }}>
                     {t("grid_generate_instruction")}
                   </p>
                 </div>
               ) : loading && !grid ? (
                 /* Loading state (initial) */
                 <div className="flex items-center justify-center gap-2 py-8">
-                  <Loader2 className="h-4 w-4 animate-spin text-amber-500/50" />
-                  <span className="text-xs text-gray-600">{t("grid_loading_data")}</span>
+                  <Loader2 className="h-4 w-4 animate-spin text-[var(--color-warm)]" />
+                  <span className="text-xs" style={{ color: "var(--color-text-3)" }}>
+                    {t("grid_loading_data")}
+                  </span>
                 </div>
               ) : error ? (
                 /* Error state */
-                <div className="flex items-center gap-2 rounded-md border border-red-900/30 bg-red-950/20 px-3 py-2.5">
-                  <AlertCircle className="h-4 w-4 shrink-0 text-red-500/70" />
-                  <span className="text-xs text-red-400/80">{error}</span>
+                <div
+                  className="flex items-center gap-2 rounded-md border px-3 py-2.5"
+                  style={{
+                    borderColor: "var(--color-danger-ring)",
+                    background: "var(--color-shell-hud-danger)",
+                  }}
+                >
+                  <AlertCircle className="h-4 w-4 shrink-0 text-[var(--color-danger)]" />
+                  <span className="text-xs" style={{ color: "var(--color-danger)" }}>
+                    {error}
+                  </span>
                 </div>
               ) : grid ? (
                 /* Grid loaded */
@@ -365,17 +402,43 @@ export function GridPreviewPanel({
                   {/* Top bar: batch pills + status + regen */}
                   <div className="flex items-center gap-2">
                     {multipleGrids && (
-                      <div className="flex items-center gap-0.5 rounded-md bg-gray-900/50 p-0.5">
+                      <div
+                        className="flex items-center gap-0.5 rounded-md p-0.5"
+                        style={{ background: "var(--color-shell-btn)" }}
+                      >
                         {gridIds.map((_, idx) => (
                           <button
                             key={idx}
                             type="button"
                             onClick={() => setSelectedIdx(idx)}
-                            className={`inline-flex h-5 min-w-[1.375rem] items-center justify-center rounded px-1 text-[10px] font-medium tabular-nums transition-all duration-150 ${
+                            className="inline-flex h-5 min-w-[1.375rem] items-center justify-center rounded px-1 text-[10px] font-medium tabular-nums transition-all duration-150"
+                            style={
                               idx === safeIdx
-                                ? "bg-amber-700/50 text-amber-200 shadow-sm"
-                                : "text-gray-500 hover:text-gray-300 hover:bg-gray-800/60"
-                            }`}
+                                ? {
+                                    background: "var(--color-warm-soft)",
+                                    color: "var(--color-warm-bright)",
+                                    boxShadow: "0 1px 2px oklch(0 0 0 / 0.25)",
+                                  }
+                                : {
+                                    color: "var(--color-text-4)",
+                                  }
+                            }
+                            onMouseEnter={
+                              idx === safeIdx
+                                ? undefined
+                                : (e) => {
+                                    e.currentTarget.style.color = "var(--color-text-2)";
+                                    e.currentTarget.style.background = "var(--color-shell-hover)";
+                                  }
+                            }
+                            onMouseLeave={
+                              idx === safeIdx
+                                ? undefined
+                                : (e) => {
+                                    e.currentTarget.style.color = "var(--color-text-4)";
+                                    e.currentTarget.style.background = "transparent";
+                                  }
+                            }
                           >
                             {idx + 1}
                           </button>
@@ -386,19 +449,27 @@ export function GridPreviewPanel({
                     <StatusBadge status={grid.status} t={t} />
 
                     {grid.status === "completed" && grid.grid_image_path && !grid.split_at && (
-                      <span className="inline-flex items-center gap-1 rounded border border-violet-700/40 bg-violet-950/60 px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-violet-300">
+                      <span
+                        className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium tracking-wide"
+                        style={{
+                          borderColor: "var(--color-violet-dim)",
+                          background: "var(--color-violet-soft)",
+                          color: "var(--color-violet-2)",
+                        }}
+                      >
                         <Scissors className="h-3 w-3" />
                         {t("grid_unsplit_hint")}
                       </span>
                     )}
 
-                    <span className="text-[10px] text-gray-600">
+                    <span className="text-[10px]" style={{ color: "var(--color-text-3)" }}>
                       {grid.model}
                     </span>
 
                     {grid.error_message && (
                       <span
-                        className="truncate text-[10px] text-red-400/70"
+                        className="truncate text-[10px]"
+                        style={{ color: "var(--color-danger)" }}
                         title={grid.error_message}
                       >
                         {grid.error_message}
@@ -438,9 +509,30 @@ export function GridPreviewPanel({
                         type="button"
                         disabled={actionBusy}
                         onClick={() => fileInputRef.current?.click()}
-                        className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded border border-gray-700/50 bg-gray-900/40 px-2 py-1 text-[10px] font-medium text-gray-400 transition-colors ${
-                          actionBusy ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-800/60 hover:text-gray-200"
+                        className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-medium transition-colors ${
+                          actionBusy ? "opacity-50 cursor-not-allowed" : ""
                         }`}
+                        style={{
+                          borderColor: "var(--color-hairline)",
+                          background: "var(--color-shell-btn)",
+                          color: "var(--color-text-3)",
+                        }}
+                        onMouseEnter={
+                          actionBusy
+                            ? undefined
+                            : (e) => {
+                                e.currentTarget.style.background = "var(--color-shell-hover-strong)";
+                                e.currentTarget.style.color = "var(--color-text-2)";
+                              }
+                        }
+                        onMouseLeave={
+                          actionBusy
+                            ? undefined
+                            : (e) => {
+                                e.currentTarget.style.background = "var(--color-shell-btn)";
+                                e.currentTarget.style.color = "var(--color-text-3)";
+                              }
+                        }
                       >
                         {uploading ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
@@ -454,11 +546,30 @@ export function GridPreviewPanel({
                         type="button"
                         disabled={actionBusy || !grid.grid_image_path}
                         onClick={handleSplit}
-                        className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded border border-amber-800/30 bg-amber-950/30 px-2 py-1 text-[10px] font-medium text-amber-400/80 transition-colors ${
-                          actionBusy || !grid.grid_image_path
-                            ? "opacity-50 cursor-not-allowed"
-                            : "hover:bg-amber-900/40 hover:text-amber-300"
+                        className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-medium transition-colors ${
+                          actionBusy || !grid.grid_image_path ? "opacity-50 cursor-not-allowed" : ""
                         }`}
+                        style={{
+                          borderColor: "var(--color-warm-ring)",
+                          background: "var(--color-warm-soft)",
+                          color: "var(--color-warm)",
+                        }}
+                        onMouseEnter={
+                          actionBusy || !grid.grid_image_path
+                            ? undefined
+                            : (e) => {
+                                e.currentTarget.style.background = "var(--color-warm-tint)";
+                                e.currentTarget.style.color = "var(--color-warm-bright)";
+                              }
+                        }
+                        onMouseLeave={
+                          actionBusy || !grid.grid_image_path
+                            ? undefined
+                            : (e) => {
+                                e.currentTarget.style.background = "var(--color-warm-soft)";
+                                e.currentTarget.style.color = "var(--color-warm)";
+                              }
+                        }
                         whileTap={actionBusy || !grid.grid_image_path ? {} : { scale: 0.95 }}
                       >
                         {splitting ? (
@@ -494,9 +605,30 @@ export function GridPreviewPanel({
                             })
                             .finally(() => setRegenerating(false));
                         }}
-                        className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded border border-amber-800/30 bg-amber-950/30 px-2 py-1 text-[10px] font-medium text-amber-400/80 transition-colors ${
-                          actionBusy ? "opacity-50 cursor-not-allowed" : "hover:bg-amber-900/40 hover:text-amber-300"
+                        className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1 rounded border px-2 py-1 text-[10px] font-medium transition-colors ${
+                          actionBusy ? "opacity-50 cursor-not-allowed" : ""
                         }`}
+                        style={{
+                          borderColor: "var(--color-warm-ring)",
+                          background: "var(--color-warm-soft)",
+                          color: "var(--color-warm)",
+                        }}
+                        onMouseEnter={
+                          actionBusy
+                            ? undefined
+                            : (e) => {
+                                e.currentTarget.style.background = "var(--color-warm-tint)";
+                                e.currentTarget.style.color = "var(--color-warm-bright)";
+                              }
+                        }
+                        onMouseLeave={
+                          actionBusy
+                            ? undefined
+                            : (e) => {
+                                e.currentTarget.style.background = "var(--color-warm-soft)";
+                                e.currentTarget.style.color = "var(--color-warm)";
+                              }
+                        }
                         whileTap={actionBusy ? {} : { scale: 0.95 }}
                       >
                         <RefreshCw className={`h-3 w-3 ${regenerating || isInProgress ? "animate-spin" : ""}`} />
@@ -507,24 +639,40 @@ export function GridPreviewPanel({
 
                   {/* Composite image + metadata */}
                   {imageUrl ? (
-                    <div className="overflow-hidden rounded-md border border-gray-800/50 bg-gray-900/40">
+                    <div
+                      className="overflow-hidden rounded-md border"
+                      style={{
+                        borderColor: "var(--color-hairline-soft)",
+                        background: "var(--color-shell-field)",
+                      }}
+                    >
                       <img
                         src={imageUrl}
                         alt={t("grid_composite_image_alt")}
-                        className="block max-h-64 w-full object-contain bg-black/20"
+                        className="block max-h-64 w-full object-contain"
+                        style={{ background: "oklch(0 0 0 / 0.2)" }}
                       />
-                      <div className="flex items-center gap-2 border-t border-gray-800/50 px-2.5 py-1.5">
-                        <span className="font-mono text-[10px] text-gray-500">
+                      <div
+                        className="flex items-center gap-2 border-t px-2.5 py-1.5"
+                        style={{ borderColor: "var(--color-hairline-soft)" }}
+                      >
+                        <span className="font-mono text-[10px]" style={{ color: "var(--color-text-4)" }}>
                           {t("grid_cell_info", { count: grid.cell_count, size: grid.grid_size })}
                         </span>
-                        <span className="text-[10px] text-gray-700">
+                        <span className="text-[10px]" style={{ color: "var(--color-text-3)" }}>
                           {grid.rows}×{grid.cols}
                         </span>
                       </div>
                     </div>
                   ) : (
-                    <div className="flex h-24 items-center justify-center rounded-md border border-gray-800/40 bg-gray-900/30">
-                      <span className="text-[10px] text-gray-700">
+                    <div
+                      className="flex h-24 items-center justify-center rounded-md border"
+                      style={{
+                        borderColor: "var(--color-hairline-soft)",
+                        background: "var(--color-shell-field)",
+                      }}
+                    >
+                      <span className="text-[10px]" style={{ color: "var(--color-text-3)" }}>
                         {grid.status === "generating" || grid.status === "pending"
                           ? t("generating_grid")
                           : t("grid_no_image")}
@@ -535,7 +683,10 @@ export function GridPreviewPanel({
                   {/* Reference images strip */}
                   {refs.length > 0 && (
                     <div className="flex flex-col gap-1.5">
-                      <span className="text-[9px] font-medium uppercase tracking-widest text-gray-600">
+                      <span
+                        className="text-[9px] font-medium uppercase tracking-widest"
+                        style={{ color: "var(--color-text-3)" }}
+                      >
                         {t("grid_reference_images")}
                       </span>
                       <ReferenceImageStrip

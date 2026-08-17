@@ -4,6 +4,7 @@ import {
   Check,
   Circle,
   Clock3,
+  Eye,
   Loader2,
   Pause,
   Play,
@@ -14,8 +15,9 @@ import {
 import { useTranslation } from "react-i18next";
 import { API } from "@/api";
 import { useAppStore } from "@/stores/app-store";
-import type { WorkflowEvent, WorkflowNodeRun, WorkflowRunDetail, WorkflowRunSummary } from "@/types";
+import type { WorkflowEvent, WorkflowNodeInput, WorkflowNodeRun, WorkflowRunDetail, WorkflowRunSummary } from "@/types";
 import { errMsg } from "@/utils/async";
+import { nodeTypeLabelKey } from "./node-registry";
 
 const DEFAULT_NODES = [
   "source_import",
@@ -106,9 +108,23 @@ function StatusIcon({ status }: { status: string }) {
   return <Circle aria-hidden className={cls} />;
 }
 
-function NodeCell({ node, isLight }: { node: WorkflowNodeRun; isLight: boolean }) {
+function NodeCell({
+  node,
+  isLight,
+  onRetry,
+  onPreview,
+  disabled,
+}: {
+  node: WorkflowNodeRun;
+  isLight: boolean;
+  onRetry?: (nodeKey: string) => void;
+  onPreview?: (nodeKey: string) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation("dashboard");
   const statusTone = tone(node.status, isLight);
   const progress = node.progress == null ? null : Math.round(node.progress * 100);
+  const hasOutputs = Object.keys(node.output_refs ?? {}).length > 0;
   return (
     <article
       className="relative h-[126px] w-[184px] shrink-0 overflow-hidden rounded-md border p-3"
@@ -131,15 +147,49 @@ function NodeCell({ node, isLight }: { node: WorkflowNodeRun; isLight: boolean }
           style={{ width: `${progress ?? 0}%`, background: statusTone.color }}
         />
       </div>
+      {onRetry && node.status === "failed" ? (
+        <button
+          type="button"
+          onClick={() => onRetry(node.node_key)}
+          disabled={disabled}
+          className="absolute bottom-3 right-3 inline-flex h-6 items-center gap-1 rounded border border-danger/40 bg-bg px-1.5 text-[9px] font-semibold text-danger hover:bg-danger/10 focus-ring disabled:opacity-50"
+        >
+          <RefreshCw aria-hidden className="h-3 w-3" />
+          {t("flow_retry_from_node")}
+        </button>
+      ) : null}
+      {onPreview && hasOutputs && node.status === "succeeded" ? (
+        <button
+          type="button"
+          onClick={() => onPreview(node.node_key)}
+          className="absolute bottom-3 right-3 inline-flex h-6 items-center gap-1 rounded border border-hairline bg-bg px-1.5 text-[9px] font-semibold text-text-2 hover:bg-bg-raised focus-ring"
+        >
+          <Eye aria-hidden className="h-3 w-3" />
+          {t("flow_view_outputs")}
+        </button>
+      ) : null}
     </article>
   );
 }
 
 interface FlowMonitorProps {
   projectName: string;
+  nodes?: WorkflowNodeInput[];
+  onOpenCanvas?: () => void;
+  onQuickConfigChange?: (nodeKey: string, config: Record<string, unknown>) => void;
+  onQuickRun?: () => Promise<void>;
+  onRetryFromNode?: (nodeKey: string) => void;
+  onPreviewOutputs?: (nodeKey: string) => void;
 }
 
-export function FlowMonitor({ projectName }: FlowMonitorProps) {
+const WIZARD_STEPS = [
+  { id: "script", labelKey: "flow_step_script", nodes: ["source_import", "script_generate", "script_review", "storyboard_generate", "storyboard_review"] },
+  { id: "assets", labelKey: "flow_step_assets", nodes: ["character_reference", "shot_image_generate"] },
+  { id: "video", labelKey: "flow_step_video", nodes: ["shot_video_generate", "voice_generate", "subtitle_generate"] },
+  { id: "export", labelKey: "flow_step_export", nodes: ["compose", "quality_check", "export"] },
+] as const;
+
+export function FlowMonitor({ projectName, nodes = [], onOpenCanvas, onQuickConfigChange, onQuickRun, onRetryFromNode, onPreviewOutputs }: FlowMonitorProps) {
   const { t } = useTranslation("dashboard");
   const isLight = useAppStore((s) => s.theme) === "light";
   const [runs, setRuns] = useState<WorkflowRunSummary[]>([]);
@@ -149,6 +199,7 @@ export function FlowMonitor({ projectName }: FlowMonitorProps) {
   const [loading, setLoading] = useState(true);
   const [mutating, setMutating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [wizardStep, setWizardStep] = useState(0);
 
   const loadData = useCallback(async (preferredRunId: string | null, signal?: AbortSignal) => {
     try {
@@ -231,6 +282,11 @@ export function FlowMonitor({ projectName }: FlowMonitorProps) {
 
   const ActionIcon = action?.icon;
   const runTone = tone(run?.status ?? "planned", isLight);
+  const step = WIZARD_STEPS[wizardStep];
+  const stepNodes = nodes.filter((node) => step.nodes.includes(node.node_type as never));
+  const updateNodeConfig = (node: WorkflowNodeInput, key: string, value: unknown) => {
+    onQuickConfigChange?.(node.node_key, { ...node.config, [key]: value });
+  };
 
   return (
     <section className="flex h-full min-w-0 flex-col overflow-hidden bg-bg">
@@ -310,7 +366,7 @@ export function FlowMonitor({ projectName }: FlowMonitorProps) {
               {action && ActionIcon ? (
                 <button
                   type="button"
-                  onClick={() => void transition(action.name)}
+                  onClick={() => void (action.name === "start" && onQuickRun ? onQuickRun() : transition(action.name))}
                   disabled={mutating}
                   className="grid h-8 w-8 place-items-center rounded-md bg-accent text-black focus-ring disabled:opacity-50"
                   title={action.label}
@@ -335,12 +391,67 @@ export function FlowMonitor({ projectName }: FlowMonitorProps) {
           </div>
 
           <div className="border-b border-hairline px-5 py-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-[13px] font-semibold text-text">{t("flow_quick_title")}</h3>
+                <p className="mt-1 text-[11px] text-text-4">{t("flow_quick_desc")}</p>
+              </div>
+              {onOpenCanvas ? (
+                <button type="button" onClick={onOpenCanvas} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-accent-2/40 px-3 text-[11px] font-semibold text-accent-2 hover:bg-accent-dim focus-ring">
+                  <Workflow aria-hidden className="h-3.5 w-3.5" />
+                  {t("flow_open_canvas")}
+                </button>
+              ) : null}
+            </div>
+            <div className="mb-5 grid grid-cols-4 gap-2">
+              {WIZARD_STEPS.map((item, index) => {
+                const active = index === wizardStep;
+                const completed = index < wizardStep;
+                return (
+                  <button key={item.id} type="button" onClick={() => setWizardStep(index)} className={`relative rounded-md border px-2.5 py-2 text-left transition-colors focus-ring ${active ? "border-accent bg-accent-dim" : "border-hairline hover:bg-bg-raised"}`}>
+                    <span className={`font-mono text-[9px] ${completed ? "text-good" : active ? "text-accent-2" : "text-text-4"}`}>0{index + 1}</span>
+                    <span className="mt-1 block truncate text-[11px] font-semibold text-text-2">{t(item.labelKey)}</span>
+                    {index < WIZARD_STEPS.length - 1 ? <span className="absolute -right-2 top-1/2 hidden h-px w-2 bg-hairline md:block" /> : null}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {stepNodes.map((node) => {
+                const config = node.config;
+                const editableKey = node.node_type === "script_generate" ? "episode" : node.node_type === "source_import" ? "source_file" : node.node_type === "shot_image_generate" ? "only_missing" : node.node_type === "compose" ? "draft_path" : "instructions";
+                const value = config[editableKey] ?? (editableKey === "only_missing" ? false : "");
+                const inputValue = typeof value === "string" || typeof value === "number" ? `${value}` : JSON.stringify(value ?? "");
+                return (
+                  <article key={node.node_key} className="rounded-md border border-hairline bg-bg-raised p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold text-text-2">{t(nodeTypeLabelKey(node.node_type))}</span>
+                      <span className="font-mono text-[9px] text-text-4">{node.node_key}</span>
+                    </div>
+                    {editableKey === "only_missing" ? (
+                      <label className="mt-3 flex items-center gap-2 text-[10px] text-text-3"><input type="checkbox" checked={Boolean(value)} onChange={(event) => updateNodeConfig(node, editableKey, event.target.checked)} />{t("flow_field_only_missing")}</label>
+                    ) : (
+                      <input value={inputValue} onChange={(event) => updateNodeConfig(node, editableKey, editableKey === "episode" ? Number(event.target.value) : event.target.value)} placeholder={t(`flow_field_${editableKey}`)} className="mt-3 h-8 w-full rounded border border-hairline bg-bg px-2 text-[11px] text-text outline-none focus:border-accent" />
+                    )}
+                  </article>
+                );
+              })}
+              {stepNodes.length === 0 ? <div className="rounded-md border border-dashed border-hairline px-4 py-6 text-center text-[11px] text-text-4">{t("flow_quick_empty")}</div> : null}
+            </div>
+            <div className="mt-5 flex items-center justify-between gap-2">
+              <button type="button" onClick={() => setWizardStep((current) => Math.max(0, current - 1))} disabled={wizardStep === 0} className="h-8 rounded border border-hairline px-3 text-[11px] text-text-3 hover:bg-bg-raised focus-ring disabled:opacity-40">{t("flow_previous")}</button>
+              <span className="text-[10px] text-text-4">{t("flow_quick_sync")}</span>
+              {wizardStep < WIZARD_STEPS.length - 1 ? <button type="button" onClick={() => setWizardStep((current) => Math.min(WIZARD_STEPS.length - 1, current + 1))} className="h-8 rounded bg-accent px-3 text-[11px] font-semibold text-black focus-ring">{t("flow_next")}</button> : <button type="button" onClick={() => void (onQuickRun ? onQuickRun() : transition("start"))} disabled={mutating || run.status !== "planned"} className="h-8 rounded bg-accent px-3 text-[11px] font-semibold text-black focus-ring disabled:opacity-50">{t("flow_start")}</button>}
+            </div>
+          </div>
+
+          <div className="border-b border-hairline px-5 py-5">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h3 className="text-[11px] font-semibold text-text-2">{t("flow_nodes")}</h3>
               <span className="font-mono text-[9px] text-text-4">{run.nodes.length} NODES</span>
             </div>
             <div className="flex min-w-0 gap-2 overflow-x-auto pb-2">
-              {run.nodes.map((node) => <NodeCell key={node.id} node={node} isLight={isLight} />)}
+              {run.nodes.map((node) => <NodeCell key={node.id} node={node} isLight={isLight} onRetry={onRetryFromNode} onPreview={onPreviewOutputs} disabled={mutating} />)}
             </div>
           </div>
 

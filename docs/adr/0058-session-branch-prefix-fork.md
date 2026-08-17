@@ -6,13 +6,13 @@ status: accepted
 
 消息改写要求「回到某条历史用户消息发出前，用改写后的内容重新发出」，即从会话中间点分叉并丢弃其后内容。Claude Agent SDK 不提供这个能力：`fork_session` 只能从会话末尾复制**整史**分叉，`rewind_files` 只回退文件、明确不回退对话（官方文档原话 "It does not rewind the conversation itself"）；「从指定消息处 resume/fork」是上游已知但未实现的 feature request。Claude Code CLI 的 `/rewind` 能回退对话，但那是 CLI 在应用层截断重放自己 transcript 的内部功能，未经 SDK 下放。
 
-决定在 ArcReel 应用层自实现**前缀分叉**：把改写点之前的 transcript 前缀（含 subagent 子路径）从 DB 镜像（`agent_session_entries`）复制到新 session_id 下，以 `resume=新id` 启动新 SessionActor，改写后的消息作为新会话首个输入。这与 CLI 内部实现 `/rewind` 的思路同构——在自己持有的 transcript 存储上操作，区别只是 CLI 截 jsonl、我们复制 DB 行。
+决定在应用层自实现**前缀分叉**：把改写点之前的 transcript 前缀（含 subagent 子路径）从 DB 镜像（`agent_session_entries`）复制到新 session_id 下，以 `resume=新id` 启动新 SessionActor，改写后的消息作为新会话首个输入。这与 CLI 内部实现 `/rewind` 的思路同构——在自己持有的 transcript 存储上操作，区别只是 CLI 截 jsonl、我们复制 DB 行。
 
 关键约束与风险收敛：
 
 - **分叉点固定在用户消息边界**。前一轮次必然完整收尾，tool_use/tool_result 配对与 sidechain 完整性由此保证；会话存在未决问答卡片时禁止改写，恰好避开前一轮次存在悬空 tool_use 的时刻。
 - **封装为单一服务入口**。「以拼装出的前缀供 SDK resume」是非官方用法，风险与知识都收敛在这一处，调用方不感知前缀是怎么拼出来的。
-- **前置依赖**：SDK 侧用户消息 uuid 目前在回显去重时被丢弃，需持久化 ArcReel 用户消息 id ↔ SDK entry 的映射，改写锚点才能定位到 transcript 中的截断位置。
+- **前置依赖**：SDK 侧用户消息 uuid 目前在回显去重时被丢弃，需持久化应用层用户消息 id ↔ SDK entry 的映射，改写锚点才能定位到 transcript 中的截断位置。
 
 ## 明确不采用
 

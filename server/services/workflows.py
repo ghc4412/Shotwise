@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections import deque
 from typing import Any
 
 from sqlalchemy import func, select
@@ -25,11 +26,13 @@ from lib.workflow import (
     canonical_json,
     graph_hash,
     input_fingerprint,
+    node_graph_edges,
     transition_run,
     validate_graph,
 )
 
 ACTIVE_RUN_STATUSES = ("planned", "running", "paused", "waiting_review")
+PASSED_NODE_STATUSES = frozenset({"succeeded", "skipped"})
 
 
 def _loads(value: str | None, default: Any) -> Any:
@@ -275,6 +278,68 @@ async def publish_revision(session: AsyncSession, revision_id: str, *, actor_id:
     return {"id": revision.id, "status": revision.status, "version": 2, "event_cursor": event.seq}
 
 
+async def list_revisions(session: AsyncSession, definition_id: str, *, actor_id: str) -> dict[str, Any]:
+    """Return immutable revision history for the definition, newest first."""
+
+    definition = await session.get(WorkflowDefinition, definition_id)
+    if definition is None or definition.user_id != actor_id:
+        raise NotFoundError("workflow_not_found", id=definition_id)
+    rows = (
+        (
+            await session.execute(
+                select(WorkflowRevision)
+                .where(WorkflowRevision.definition_id == definition_id)
+                .order_by(WorkflowRevision.revision_no.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": row.id,
+                "revision_no": row.revision_no,
+                "status": row.status,
+                "graph_hash": row.graph_hash,
+                "execution_hash": row.execution_hash,
+                "is_active": row.id == definition.active_revision_id,
+                "created_by": row.created_by,
+                "created_at": row.created_at.isoformat(),
+            }
+            for row in rows
+        ]
+    }
+
+
+async def revert_revision(
+    session: AsyncSession,
+    *,
+    definition_id: str,
+    revision_id: str,
+    actor_id: str,
+) -> dict[str, Any]:
+    """Create and publish a new revision containing a historical graph."""
+
+    definition = await session.get(WorkflowDefinition, definition_id)
+    if definition is None or definition.user_id != actor_id:
+        raise NotFoundError("workflow_not_found", id=definition_id)
+    source = await session.get(WorkflowRevision, revision_id)
+    if source is None or source.definition_id != definition_id:
+        raise NotFoundError("workflow_revision_not_found", id=revision_id)
+    _, nodes, edges = await _revision_graph(session, revision_id, actor_id=actor_id)
+    result = await create_revision(
+        session,
+        definition_id=definition_id,
+        nodes=nodes,
+        edges=edges,
+        template_lock=_loads(source.template_lock_json, None),
+        actor_id=actor_id,
+    )
+    published = await publish_revision(session, result["id"], actor_id=actor_id)
+    return {"reverted_from": revision_id, "revision_id": result["id"], **published}
+
+
 async def get_workflow(session: AsyncSession, definition_id: str, *, actor_id: str) -> dict[str, Any]:
     definition = await session.get(WorkflowDefinition, definition_id)
     if definition is None or definition.user_id != actor_id:
@@ -486,6 +551,8 @@ async def get_run(session: AsyncSession, run_id: str, *, actor_id: str) -> dict[
                 "progress_source": node.progress_source,
                 "phase_code": node.phase_code,
                 "error_code": node.error_code,
+                "error_params": _loads(node.error_params_json, {}),
+                "output_refs": _loads(node.output_refs_json, {}),
                 "fencing_token": node.fencing_token,
             }
             for node in node_runs
@@ -742,6 +809,228 @@ async def migrate_project(
     return {"migrated": True, "definition_id": definition["id"], "revision_id": revision["id"]}
 
 
+def _template_graph(node_types: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    nodes = [
+        {
+            "node_key": node_type,
+            "node_type": node_type,
+            "node_type_version": "1",
+            "config_schema_version": "1",
+            "config": {},
+            "ui_position": {"x": index * 260, "y": (index % 3) * 80},
+            "weight": 2.0 if "generate" in node_type else 1.0,
+        }
+        for index, node_type in enumerate(node_types)
+    ]
+    edges = [
+        {
+            "edge_key": f"{source}-{target}",
+            "source_node_key": source,
+            "target_node_key": target,
+            "on_failure": "stop",
+            "priority": 0,
+        }
+        for source, target in zip(node_types, node_types[1:])
+    ]
+    return nodes, edges
+
+
+def list_templates() -> dict[str, Any]:
+    """Return the built-in templates shared by simple and canvas views."""
+
+    definitions = (
+        (
+            "novel-to-manga",
+            "flow_template_novel_to_manga",
+            "flow_template_novel_to_manga_desc",
+            LEGACY_FLOW_NODE_TYPES,
+        ),
+        (
+            "storyboard-to-video",
+            "flow_template_storyboard",
+            "flow_template_storyboard_desc",
+            [
+                "script_generate",
+                "script_review",
+                "character_reference",
+                "storyboard_generate",
+                "quality_check",
+                "shot_image_generate",
+                "shot_video_generate",
+                "compose",
+                "export",
+            ],
+        ),
+        (
+            "reference-to-video",
+            "flow_template_reference",
+            "flow_template_reference_desc",
+            ["image_input", "character_reference", "quality_check", "shot_video_generate", "param_adjust", "export"],
+        ),
+    )
+    items = []
+    for template_id, name_key, description_key, node_types in definitions:
+        nodes, edges = _template_graph(list(node_types))
+        items.append(
+            {
+                "id": template_id,
+                "scope": "official",
+                "name_key": name_key,
+                "description_key": description_key,
+                "template_lock": {"template_schema_version": 1, "template_id": template_id},
+                "nodes": nodes,
+                "edges": edges,
+            }
+        )
+    return {"items": items}
+
+
+async def retry_run_from_node(
+    session: AsyncSession,
+    *,
+    run_id: str,
+    node_key: str,
+    actor_id: str,
+    start: bool = False,
+) -> dict[str, Any]:
+    """Fork a failed run at a node while retaining successful upstream outputs.
+
+    The original run remains immutable for auditability.  A new planned run
+    reuses the same revision and input snapshot, copies passed nodes, and
+    schedules the selected node plus all downstream nodes again.
+    """
+
+    source_run = await session.get(WorkflowRun, run_id)
+    if source_run is None or source_run.user_id != actor_id:
+        raise NotFoundError("workflow_run_not_found", id=run_id)
+    if source_run.status not in {"failed", "paused"}:
+        raise ConflictError("workflow_retry_invalid_status", status=source_run.status)
+
+    revision, nodes, edges = await _revision_graph(session, source_run.workflow_revision_id, actor_id=actor_id)
+    by_key = {str(node["node_key"]): node for node in nodes}
+    if node_key not in by_key:
+        raise NotFoundError("workflow_node_not_found", node_key=node_key)
+
+    source_rows = (
+        (
+            await session.execute(
+                select(WorkflowNodeRun)
+                .where(WorkflowNodeRun.workflow_run_id == source_run.id)
+                .order_by(WorkflowNodeRun.node_key, WorkflowNodeRun.attempt_no.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    latest: dict[str, WorkflowNodeRun] = {}
+    for row in source_rows:
+        latest.setdefault(row.node_key, row)
+    target_row = latest.get(node_key)
+    if target_row is None or target_row.status not in {"failed", "stale", "orphaned"}:
+        raise ConflictError(
+            "workflow_retry_node_invalid_status", node_key=node_key, status=target_row.status if target_row else None
+        )
+
+    outgoing, incoming = node_graph_edges(edges)
+    descendants: set[str] = set()
+    queue = deque(outgoing.get(node_key, set()))
+    while queue:
+        current = queue.popleft()
+        if current in descendants:
+            continue
+        descendants.add(current)
+        queue.extend(outgoing.get(current, set()))
+
+    now = utc_now()
+    retry_run = WorkflowRun(
+        id=uuid.uuid4().hex,
+        user_id=actor_id,
+        workflow_revision_id=revision.id,
+        workspace_id=source_run.workspace_id,
+        project_id=source_run.project_id,
+        script_revision_id=source_run.script_revision_id,
+        status="planned",
+        mode=source_run.mode,
+        execution_hash=source_run.execution_hash,
+        input_fingerprint=source_run.input_fingerprint,
+        graph_snapshot_ref=source_run.graph_snapshot_ref,
+        input_snapshot_json=source_run.input_snapshot_json,
+        progress=0,
+        version=1,
+        control_generation=0,
+        trace_id=uuid.uuid4().hex,
+        created_by=actor_id,
+        created_at=now,
+    )
+    session.add(retry_run)
+    await session.flush()
+
+    for node in nodes:
+        key = str(node["node_key"])
+        previous = latest.get(key)
+        if key == node_key:
+            status = "ready"
+        elif key in descendants:
+            status = "blocked"
+        elif previous is not None and previous.status in PASSED_NODE_STATUSES:
+            status = previous.status
+        else:
+            status = "ready" if not incoming.get(key) else "blocked"
+        session.add(
+            WorkflowNodeRun(
+                id=uuid.uuid4().hex,
+                workflow_run_id=retry_run.id,
+                node_key=key,
+                attempt_no=(previous.attempt_no + 1) if previous is not None else 1,
+                status=status,
+                progress=previous.progress if previous is not None and status in PASSED_NODE_STATUSES else 0,
+                progress_source=previous.progress_source
+                if previous is not None and status in PASSED_NODE_STATUSES
+                else "checkpoint",
+                phase_code=previous.phase_code if previous is not None and status in PASSED_NODE_STATUSES else None,
+                output_refs_json=previous.output_refs_json
+                if previous is not None and status in PASSED_NODE_STATUSES
+                else None,
+                fencing_token=0,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+
+    event = await _append_event(
+        session,
+        workspace_id=retry_run.workspace_id,
+        project_id=retry_run.project_id,
+        aggregate_type="workflow_run",
+        aggregate_id=retry_run.id,
+        aggregate_version=1,
+        event_type="workflow.run.retry_planned",
+        payload={"source_run_id": source_run.id, "retry_from": node_key},
+        actor_id=actor_id,
+        trace_id=retry_run.trace_id,
+    )
+    await session.commit()
+    result = {
+        "id": retry_run.id,
+        "status": retry_run.status,
+        "version": 1,
+        "event_cursor": event.seq,
+        "source_run_id": source_run.id,
+        "retry_from": node_key,
+    }
+    if start:
+        result.update(
+            await transition_workflow_run(
+                session,
+                run_id=retry_run.id,
+                target="running",
+                expected_version=1,
+                actor_id=actor_id,
+            )
+        )
+    return result
+
+
 async def list_node_logs(
     session: AsyncSession,
     run_id: str,
@@ -762,6 +1051,7 @@ async def list_node_logs(
                 .where(
                     ProjectEventLog.actor_id == actor_id,
                     ProjectEventLog.project_id == run.project_id,
+                    ProjectEventLog.aggregate_id == run.id,
                     ProjectEventLog.event_type == "workflow.node_log",
                 )
                 .order_by(ProjectEventLog.seq.desc())

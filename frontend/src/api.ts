@@ -67,8 +67,12 @@ import type {
   WorkflowDefinitionSummary,
   WorkflowNodeInput,
   WorkflowNodeLogEntry,
+  WorkflowRevisionSummary,
+  WorkflowTemplateCatalogItem,
   WorkflowRunDetail,
   WorkflowRunSummary,
+  CharacterRelationEdge,
+  CharacterRelationsData,
 } from "@/types";
 import type { GenerationRoute } from "@/utils/generation-mode";
 import type { GridCapability, GridGeneration } from "@/types/grid";
@@ -731,6 +735,37 @@ class API {
       {
         method: "DELETE",
       }
+    );
+  }
+
+  static async getCharacterRelations(
+    projectName: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<CharacterRelationsData> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/character-relations`,
+      { signal: options.signal },
+    );
+  }
+
+  static async analyzeCharacterRelations(projectName: string): Promise<CharacterRelationsData> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/character-relations/analyze`,
+      { method: "POST" },
+    );
+  }
+
+  static async saveCharacterRelations(
+    projectName: string,
+    baseRevision: number,
+    edges: CharacterRelationEdge[],
+  ): Promise<CharacterRelationsData> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/character-relations`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ base_revision: baseRevision, edges }),
+      },
     );
   }
 
@@ -2732,6 +2767,17 @@ class API {
     });
   }
 
+  static async retryWorkflowRun(
+    runId: string,
+    nodeKey: string,
+    start = true,
+  ): Promise<{ id: string; status: string; version: number; source_run_id: string; retry_from: string }> {
+    return this.request(`/workflow-runs/${encodeURIComponent(runId)}/retry`, {
+      method: "POST",
+      body: JSON.stringify({ node_key: nodeKey, start }),
+    });
+  }
+
   static async listWorkflowEvents(
     projectName: string,
     options?: { signal?: AbortSignal },
@@ -2812,6 +2858,26 @@ class API {
     return this.request(`/workflows/${encodeURIComponent(definitionId)}`, {
       signal: options?.signal,
     });
+  }
+
+  static async listWorkflowRevisions(
+    definitionId: string,
+  ): Promise<{ items: WorkflowRevisionSummary[] }> {
+    return this.request(`/workflows/${encodeURIComponent(definitionId)}/revisions`);
+  }
+
+  static async revertWorkflowRevision(
+    definitionId: string,
+    revisionId: string,
+  ): Promise<{ revision_id: string; reverted_from: string }> {
+    return this.request(
+      `/workflows/${encodeURIComponent(definitionId)}/revisions/${encodeURIComponent(revisionId)}/revert`,
+      { method: "POST" },
+    );
+  }
+
+  static async listWorkflowTemplates(): Promise<{ items: WorkflowTemplateCatalogItem[] }> {
+    return this.request("/workflow-templates");
   }
 
   static async exportWorkflowDefinition(definitionId: string): Promise<WorkflowExport> {

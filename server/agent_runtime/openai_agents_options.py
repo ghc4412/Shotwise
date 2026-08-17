@@ -16,13 +16,25 @@ credential（``build_openai_agents_env_dict``）。
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from lib.i18n import DEFAULT_LOCALE
+
+_OPENAI_PERSONA_PROMPT = """你是 Shotwise 智能体，一个专业的 AI 视频内容创作助手。
+你负责把小说内容转化为可发布的短视频内容，并通过已注册的工具完成项目操作。
+
+## 工具约束
+- 只能调用系统实际提供的工具；工具名称必须来自工具列表。
+- 不得调用或臆造 Bash、Read、Write、Edit、Glob、Grep、TodoWrite、base64_writer 等未注册工具。
+- 文件检查只能使用 read_project_text，且必须按页读取；不要执行命令或直接修改文件。
+- 项目数据修改只能使用已注册的 Shotwise 工具。
+"""
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +61,7 @@ class OpenAIAgentsOptionsAssembler:
         provider_env_loader: Callable[[], Any] | None = None,
         max_turns_provider: Callable[[], int | None] | None = None,
         session_db_path: Path | None = None,
+        history_loader: Callable[[str], Any] | None = None,
     ) -> None:
         self.projects_root = Path(projects_root)
         self._resolve_project_cwd = resolve_project_cwd
@@ -56,6 +69,7 @@ class OpenAIAgentsOptionsAssembler:
         self._provider_env_loader = provider_env_loader
         self._max_turns_provider = max_turns_provider
         self._session_db_path = session_db_path or (self.projects_root / ".openai_agents_sessions.db")
+        self._history_loader = history_loader
 
     async def build(
         self,
@@ -86,8 +100,11 @@ class OpenAIAgentsOptionsAssembler:
         from server.agent_runtime.sdk_tools import build_shotwise_agents_tools
 
         tools = build_shotwise_agents_tools(project_name=project_name, projects_root=self.projects_root)
-        system_prompt = self._build_system_prompt(project_name, locale)
+        system_prompt = self._build_system_prompt(project_name, locale, [getattr(t, "name", "") for t in tools])
         session = SQLiteSession(session_id=session_id, db_path=str(self._session_db_path))
+        if self._history_loader is not None and session_id:
+            entries = await self._history_loader(session_id)
+            await _hydrate_openai_session(session, session_id, entries, self._session_db_path)
         max_turns = self._max_turns_provider() if self._max_turns_provider else None
 
         return OpenAIAgentsBuildResult(
@@ -116,7 +133,81 @@ class OpenAIAgentsOptionsAssembler:
             result.setdefault(key, "")
         return result
 
-    def _build_system_prompt(self, project_name: str, locale: str) -> str:
-        if self._prompt_builder is not None:
-            return self._prompt_builder(project_name, locale)
-        return ""
+    def _build_system_prompt(self, project_name: str, locale: str, tool_names: list[str]) -> str:
+        lang = {"zh": "中文", "en": "英语", "vi": "越南语"}.get(locale, "中文")
+        try:
+            project_cwd = self._resolve_project_cwd(project_name)
+            project_context = (
+                "\n## 当前项目上下文\n"
+                f"- 项目标识：{project_name}\n"
+                f"- 项目目录：{project_cwd.as_posix()}\n"
+                "- 项目元数据位于 project.json，需要时使用 read_project_text 分页读取。\n"
+            )
+        except (ValueError, FileNotFoundError):
+            project_context = ""
+        return (
+            f"{_OPENAI_PERSONA_PROMPT}\n"
+            f"## 语言规范\n所有回复使用{lang}。\n"
+            f"## 当前可用工具\n{', '.join(name for name in tool_names if name)}\n"
+            "只可使用上述工具。"
+            f"{project_context}"
+        )
+
+
+async def _hydrate_openai_session(session: Any, session_id: str, entries: list[dict[str, Any]], db_path: Path) -> None:
+    """Import canonical user/assistant text once, tracking the event-log seq."""
+    if not entries:
+        return
+    latest_seq = max(int(entry.get("seq", -1)) for entry in entries)
+    marker = await asyncio.to_thread(_read_import_marker, db_path, session_id)
+    if marker is not None and latest_seq <= marker:
+        return
+    items: list[dict[str, Any]] = []
+    for entry in entries:
+        seq = int(entry.get("seq", -1))
+        if marker is not None and seq <= marker:
+            continue
+        role = entry.get("type")
+        if role not in ("user", "assistant"):
+            continue
+        text = _entry_text(entry)
+        if text:
+            items.append({"role": role, "content": text})
+    if items:
+        await session.add_items(items)
+    await asyncio.to_thread(_write_import_marker, db_path, session_id, latest_seq)
+
+
+def _entry_text(entry: dict[str, Any]) -> str:
+    content = entry.get("content")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = [str(block.get("text")) for block in content if isinstance(block, dict) and block.get("text")]
+        return "\n".join(parts).strip()
+    return ""
+
+
+def _read_import_marker(db_path: Path, session_id: str) -> int | None:
+    with sqlite3.connect(str(db_path), timeout=30) as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS shotwise_context_imports "
+            "(session_id TEXT PRIMARY KEY, last_seq INTEGER NOT NULL)"
+        )
+        row = conn.execute(
+            "SELECT last_seq FROM shotwise_context_imports WHERE session_id = ?", (session_id,)
+        ).fetchone()
+    return int(row[0]) if row is not None else None
+
+
+def _write_import_marker(db_path: Path, session_id: str, last_seq: int) -> None:
+    with sqlite3.connect(str(db_path), timeout=30) as conn:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS shotwise_context_imports "
+            "(session_id TEXT PRIMARY KEY, last_seq INTEGER NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO shotwise_context_imports(session_id, last_seq) VALUES (?, ?) "
+            "ON CONFLICT(session_id) DO UPDATE SET last_seq = excluded.last_seq",
+            (session_id, last_seq),
+        )

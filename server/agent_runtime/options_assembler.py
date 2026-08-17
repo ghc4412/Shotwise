@@ -119,7 +119,12 @@ class OptionsAssembler:
         loader = self._provider_env_loader or load_provider_env_overrides
         return await loader()
 
-    def _build_append_prompt(self, project_name: str, locale: str = DEFAULT_LOCALE) -> str:
+    def _build_append_prompt(
+        self,
+        project_name: str,
+        locale: str = DEFAULT_LOCALE,
+        context_append: str | None = None,
+    ) -> str:
         """Build the append portion for SystemPromptPreset.
 
         Combines the Shotwise persona, the locale language regulation, and the
@@ -143,6 +148,8 @@ class OptionsAssembler:
         if project_context:
             parts.append(project_context)
 
+        if context_append:
+            parts.append(context_append)
         return "\n".join(parts)
 
     def _build_project_context(self, project_name: str) -> str:
@@ -199,6 +206,7 @@ class OptionsAssembler:
         locale: str = DEFAULT_LOCALE,
         stderr: Callable[[str], None] | None = None,
         session_id: str | None = None,
+        context_append: str | None = None,
     ) -> Any:
         """Build ClaudeAgentOptions for a session.
 
@@ -283,7 +291,7 @@ class OptionsAssembler:
             system_prompt=SystemPromptPreset(
                 type="preset",
                 preset="claude_code",
-                append=self._build_append_prompt(project_name, locale=locale),
+                append=self._build_append_prompt(project_name, locale=locale, context_append=context_append),
             ),
             include_partial_messages=True,
             # CLI 只在该开关下把 stdin 收到的用户消息带 uuid 回放到 stdout。

@@ -129,12 +129,12 @@
   border-radius: 5px;
   color: var(--color-text-2);
   border: 1px solid var(--color-hairline);
-  background: oklch(0.22 0.011 265 / 0.5);
+  background: var(--color-shell-btn);
   transition: background .12s, color .12s;
   cursor: pointer;
 }
 .sv-navbtn:not(:disabled):hover {
-  background: oklch(0.26 0.013 265 / 0.7);
+  background: var(--color-shell-hover-strong);
   color: var(--color-text);
 }
 .sv-navbtn:disabled {

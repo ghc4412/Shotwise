@@ -61,7 +61,7 @@ def test_messages_url_https_only() -> None:
 
 
 def test_curated_preset_set() -> None:
-    """目录与用户提供的表格保持一致；Claude 14 条 + OpenAI 5 条。"""
+    """目录覆盖 Claude 预设，以及可用的 OpenAI 兼容供应商。"""
     expected = {
         "anthropic-official",
         "alibaba-coding-plan",
@@ -78,9 +78,17 @@ def test_curated_preset_set() -> None:
         "openrouter",
         "siliconflow",
         "openai-official",
+        "alibaba-coding-plan-openai",
         "deepseek-openai",
         "kimi-openai",
+        "minimax-cn-openai",
+        "minimax-intl-openai",
         "zhipu-openai",
+        "ark-coding-plan-openai",
+        "ark-agent-plan-openai",
+        "tencent-tokenhub-coding-openai",
+        "openrouter-openai",
+        "siliconflow-openai",
         "agnes-openai",
     }
     actual = {p.id for p in list_presets()}
@@ -88,16 +96,32 @@ def test_curated_preset_set() -> None:
     # sdk_type 过滤：每个预设恰好归属一种 SDK
     assert {p.id for p in list_presets(sdk_type="claude")} == expected - {
         "openai-official",
+        "alibaba-coding-plan-openai",
         "deepseek-openai",
         "kimi-openai",
+        "minimax-cn-openai",
+        "minimax-intl-openai",
         "zhipu-openai",
+        "ark-coding-plan-openai",
+        "ark-agent-plan-openai",
+        "tencent-tokenhub-coding-openai",
+        "openrouter-openai",
+        "siliconflow-openai",
         "agnes-openai",
     }
     assert {p.id for p in list_presets(sdk_type="openai")} == {
         "openai-official",
+        "alibaba-coding-plan-openai",
         "deepseek-openai",
         "kimi-openai",
+        "minimax-cn-openai",
+        "minimax-intl-openai",
         "zhipu-openai",
+        "ark-coding-plan-openai",
+        "ark-agent-plan-openai",
+        "tencent-tokenhub-coding-openai",
+        "openrouter-openai",
+        "siliconflow-openai",
         "agnes-openai",
     }
 
@@ -120,9 +144,17 @@ def test_default_models_match_table() -> None:
         "openrouter": "anthropic/claude-sonnet-4",
         "siliconflow": "Pro/zai-org/GLM-4.7",
         "openai-official": "",
+        "alibaba-coding-plan-openai": "",
         "deepseek-openai": "deepseek-chat",
         "kimi-openai": "kimi-k2",
+        "minimax-cn-openai": "MiniMax-M3",
+        "minimax-intl-openai": "MiniMax-M3",
         "zhipu-openai": "glm-5.1",
+        "ark-coding-plan-openai": "",
+        "ark-agent-plan-openai": "",
+        "tencent-tokenhub-coding-openai": "",
+        "openrouter-openai": "anthropic/claude-sonnet-4",
+        "siliconflow-openai": "Pro/zai-org/GLM-4.7",
         "agnes-openai": "agnes-2.0-flash",
     }
     actual = {p.id: p.default_model for p in list_presets()}

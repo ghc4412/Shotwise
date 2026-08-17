@@ -12,6 +12,7 @@ import { errMsg } from "@/utils/async";
 import type { Character } from "@/types";
 import { GalleryEmptyState } from "./GalleryEmptyState";
 import { ONBOARDING_ANCHORS } from "@/onboarding/anchors";
+import { CharacterRelationsModal } from "./CharacterRelationsModal";
 
 interface Props {
   projectName: string;
@@ -30,6 +31,7 @@ export function CharactersPage({ projectName, characters, onSaveCharacter, onGen
   const { t } = useTranslation(["dashboard", "assets"]);
   const [adding, setAdding] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [relationsOpen, setRelationsOpen] = useState(false);
 
   useScrollTarget("character");
 
@@ -58,6 +60,7 @@ export function CharactersPage({ projectName, characters, onSaveCharacter, onGen
         count={entries.length}
         onAdd={readOnly ? undefined : () => setAdding(true)}
         onPickFromLibrary={readOnly ? undefined : () => setPicking(true)}
+        onViewRelations={() => setRelationsOpen(true)}
       />
       <div className="px-5 py-5" data-onboarding={ONBOARDING_ANCHORS.workbenchLorebook}>
         {entries.length === 0 ? (
@@ -103,6 +106,15 @@ export function CharactersPage({ projectName, characters, onSaveCharacter, onGen
           existingNames={new Set(Object.keys(characters))}
           onClose={() => setPicking(false)}
           onImport={(ids) => { void handleImport(ids); }}
+        />
+      )}
+
+      {relationsOpen && (
+        <CharacterRelationsModal
+          projectName={projectName}
+          characters={characters}
+          readOnly={readOnly}
+          onClose={() => setRelationsOpen(false)}
         />
       )}
     </div>

@@ -27,6 +27,7 @@ import { SecondaryButton } from "@/components/ui/SecondaryButton";
 import { Typewriter, type TypewriterSegment } from "@/components/ui/Typewriter";
 import { WARM_TONE } from "@/utils/severity-tone";
 import { getProjectDisplayName } from "@/utils/project-display";
+import { getLastOpenedProjectName } from "@/utils/last-opened-project";
 import { CreateProjectModal } from "./CreateProjectModal";
 import { OpenClawModal } from "./OpenClawModal";
 import { rememberAssetLibraryReturnTo } from "./AssetLibraryPage";
@@ -84,17 +85,17 @@ function projectActivityScore(p: ProjectSummary): number {
   return PHASE_ORDER.indexOf(status.current_phase) * 10 + status.phase_progress;
 }
 
-function pickFeaturedProject(projects: ProjectSummary[]): ProjectSummary | null {
-  let best: ProjectSummary | null = null;
-  let bestScore = -Infinity;
-  for (const p of projects) {
-    const score = projectActivityScore(p);
-    if (score > bestScore) {
-      best = p;
-      bestScore = score;
-    }
+function pickFeaturedProject(
+  projects: ProjectSummary[],
+  lastOpenedProjectName: string | null,
+): ProjectSummary | null {
+  if (lastOpenedProjectName) {
+    const lastOpened = projects.find((project) => project.name === lastOpenedProjectName);
+    if (lastOpened) return lastOpened;
   }
-  return bestScore > 0 ? best : null;
+  return projects.length > 0
+    ? [...projects].sort((a, b) => compareProjects(a, b, "recent"))[0]
+    : null;
 }
 
 function styleLabelOf(p: ProjectSummary, t: TFunction): string {
@@ -1153,17 +1154,13 @@ export function ProjectsPage() {
     }).sort((a, b) => compareProjects(a, b, projectSort));
   }, [projects, phaseFilter, searchQuery, phaseLabels, projectSort]);
 
-  const featuredCandidate = useMemo(() => pickFeaturedProject(projects), [projects]);
+  const lastOpenedProjectName = getLastOpenedProjectName();
+  const featuredCandidate = useMemo(
+    () => pickFeaturedProject(projects, lastOpenedProjectName),
+    [projects, lastOpenedProjectName],
+  );
   const featured =
     phaseFilter === "all" && !searchQuery.trim() ? featuredCandidate : null;
-
-  const restProjects = useMemo(
-    () =>
-      featured
-        ? filteredProjects.filter((p) => p.name !== featured.name)
-        : filteredProjects,
-    [featured, filteredProjects],
-  );
 
   return (
     <div
@@ -1271,11 +1268,11 @@ export function ProjectsPage() {
                     {t("dashboard:lobby_library_eyebrow")}
                   </h2>
                   <span className="font-mono text-[10.5px] tabular-nums text-text-3">
-                    {t("dashboard:lobby_library_count", { count: restProjects.length })}
+                    {t("dashboard:lobby_library_count", { count: filteredProjects.length })}
                   </span>
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {restProjects.map((project, index) => (
+                  {filteredProjects.map((project, index) => (
                     <Reveal key={project.name} delay={Math.min(index, 5) * 70} threshold={0.06}>
                       <ProjectCard
                         project={project}
@@ -1284,7 +1281,7 @@ export function ProjectsPage() {
                       />
                     </Reveal>
                   ))}
-                  <Reveal delay={Math.min(restProjects.length, 5) * 70} threshold={0.06}>
+                  <Reveal delay={Math.min(filteredProjects.length, 5) * 70} threshold={0.06}>
                     <NewProjectTile onClick={() => setShowCreateModal(true)} t={t} />
                   </Reveal>
                 </div>

@@ -11,25 +11,25 @@ const NONE: WorkflowPortDef[] = [];
  */
 export const NODE_TYPE_DEFS: Record<string, WorkflowNodeTypeDef> = {
   // ---- production chain ----
-  source_import: { node_type: "source_import", color: "#8b5cf6", category: "production", inputs: NONE, outputs: [{ id: "source", label: "source", kind: "source" }], defaultConfig: {} },
-  script_generate: { node_type: "script_generate", color: "#3b82f6", category: "production", inputs: IN, outputs: [{ id: "script", label: "script", kind: "script" }], defaultConfig: { episode: 1 } },
-  script_review: { node_type: "script_review", color: "#f59e0b", category: "production", inputs: IN, outputs: [{ id: "script", label: "script", kind: "script" }], defaultConfig: {} },
-  character_reference: { node_type: "character_reference", color: "#ec4899", category: "business", inputs: IN, outputs: [{ id: "characters", label: "characters", kind: "asset" }], defaultConfig: {} },
-  storyboard_generate: { node_type: "storyboard_generate", color: "#06b6d4", category: "production", inputs: IN, outputs: [{ id: "plan", label: "plan", kind: "plan" }], defaultConfig: {} },
-  storyboard_review: { node_type: "storyboard_review", color: "#f59e0b", category: "production", inputs: IN, outputs: [{ id: "image", label: "image", kind: "image" }], defaultConfig: {} },
-  shot_image_generate: { node_type: "shot_image_generate", color: "#10b981", category: "production", inputs: IN, outputs: [{ id: "image", label: "image", kind: "image" }], defaultConfig: { only_missing: false } },
-  shot_video_generate: { node_type: "shot_video_generate", color: "#ef4444", category: "production", inputs: IN, outputs: [{ id: "video", label: "video", kind: "video" }], defaultConfig: {} },
-  voice_generate: { node_type: "voice_generate", color: "#14b8a6", category: "production", inputs: IN, outputs: [{ id: "plan", label: "plan", kind: "plan" }], defaultConfig: {} },
-  subtitle_generate: { node_type: "subtitle_generate", color: "#a855f7", category: "production", inputs: IN, outputs: [{ id: "plan", label: "plan", kind: "plan" }], defaultConfig: {} },
-  compose: { node_type: "compose", color: "#6366f1", category: "business", inputs: IN, outputs: [{ id: "draft", label: "draft", kind: "file" }], defaultConfig: { episode: 1 } },
-  quality_check: { node_type: "quality_check", color: "#f59e0b", category: "business", inputs: IN, outputs: [], defaultConfig: {} },
-  export: { node_type: "export", color: "#22c55e", category: "business", inputs: IN, outputs: [{ id: "exported", label: "exported", kind: "file" }], defaultConfig: {} },
+  source_import: { node_type: "source_import", color: "#8b5cf6", category: "script", inputs: NONE, outputs: [{ id: "source", label: "source", kind: "source" }], defaultConfig: {} },
+  script_generate: { node_type: "script_generate", color: "#3b82f6", category: "script", inputs: IN, outputs: [{ id: "script", label: "script", kind: "script" }], defaultConfig: { episode: 1 } },
+  script_review: { node_type: "script_review", color: "#f59e0b", category: "script", inputs: IN, outputs: [{ id: "script", label: "script", kind: "script" }], defaultConfig: {} },
+  storyboard_generate: { node_type: "storyboard_generate", color: "#06b6d4", category: "script", inputs: IN, outputs: [{ id: "plan", label: "plan", kind: "plan" }], defaultConfig: {} },
+  storyboard_review: { node_type: "storyboard_review", color: "#f59e0b", category: "script", inputs: IN, outputs: [{ id: "image", label: "image", kind: "image" }], defaultConfig: {} },
+  character_reference: { node_type: "character_reference", color: "#ec4899", category: "assets", inputs: IN, outputs: [{ id: "characters", label: "characters", kind: "asset" }], defaultConfig: {} },
+  shot_image_generate: { node_type: "shot_image_generate", color: "#10b981", category: "assets", inputs: IN, outputs: [{ id: "image", label: "image", kind: "image" }], defaultConfig: { only_missing: false } },
+  shot_video_generate: { node_type: "shot_video_generate", color: "#ef4444", category: "video", inputs: IN, outputs: [{ id: "video", label: "video", kind: "video" }], defaultConfig: {} },
+  voice_generate: { node_type: "voice_generate", color: "#14b8a6", category: "video", inputs: IN, outputs: [{ id: "plan", label: "plan", kind: "plan" }], defaultConfig: {} },
+  subtitle_generate: { node_type: "subtitle_generate", color: "#a855f7", category: "video", inputs: IN, outputs: [{ id: "plan", label: "plan", kind: "plan" }], defaultConfig: {} },
+  compose: { node_type: "compose", color: "#6366f1", category: "post", inputs: IN, outputs: [{ id: "draft", label: "draft", kind: "file" }], defaultConfig: { episode: 1 } },
+  quality_check: { node_type: "quality_check", color: "#f59e0b", category: "post", inputs: IN, outputs: [], defaultConfig: {} },
+  export: { node_type: "export", color: "#22c55e", category: "post", inputs: IN, outputs: [{ id: "exported", label: "exported", kind: "file" }], defaultConfig: {} },
   // ---- generic wiring ----
   image_input: { node_type: "image_input", color: "#64748b", category: "input", inputs: NONE, outputs: [{ id: "image", label: "image", kind: "image" }], defaultConfig: {} },
   video_input: { node_type: "video_input", color: "#64748b", category: "input", inputs: NONE, outputs: [{ id: "video", label: "video", kind: "video" }], defaultConfig: {} },
-  loop: { node_type: "loop", color: "#0ea5e9", category: "generic", inputs: IN, outputs: [{ id: "items", label: "items", kind: "params" }], defaultConfig: { items: [] } },
-  branch: { node_type: "branch", color: "#f97316", category: "generic", inputs: IN, outputs: [{ id: "true", label: "true", kind: "params" }, { id: "false", label: "false", kind: "params" }], defaultConfig: { condition: { field: "", equals: "" } } },
-  param_adjust: { node_type: "param_adjust", color: "#eab308", category: "generic", inputs: IN, outputs: [{ id: "params", label: "params", kind: "params" }], defaultConfig: { overrides: {} } },
+  loop: { node_type: "loop", color: "#0ea5e9", category: "logic", inputs: IN, outputs: [{ id: "items", label: "items", kind: "params" }], defaultConfig: { items: [] } },
+  branch: { node_type: "branch", color: "#f97316", category: "logic", inputs: IN, outputs: [{ id: "true", label: "true", kind: "params" }, { id: "false", label: "false", kind: "params" }], defaultConfig: { condition: { field: "", equals: "" } } },
+  param_adjust: { node_type: "param_adjust", color: "#eab308", category: "logic", inputs: IN, outputs: [{ id: "params", label: "params", kind: "params" }], defaultConfig: { overrides: {} } },
 };
 
 /** Human-readable title of a node type (i18n key = flow_node_<node_type>). */
@@ -38,9 +38,11 @@ export function nodeTypeLabelKey(nodeType: string): string {
 }
 
 export const NODE_CATEGORY_LABEL_KEYS: Record<string, string> = {
-  production: "flow_category_production",
-  business: "flow_category_business",
-  generic: "flow_category_generic",
+  script: "flow_category_script",
+  assets: "flow_category_assets",
+  video: "flow_category_video",
+  post: "flow_category_post",
+  logic: "flow_category_logic",
   input: "flow_category_input",
 };
 
@@ -49,7 +51,7 @@ export function nodeTypeDef(nodeType: string): WorkflowNodeTypeDef {
     NODE_TYPE_DEFS[nodeType] ?? {
       node_type: nodeType,
       color: "#94a3b8",
-      category: "generic",
+      category: "logic",
       inputs: IN,
       outputs: OUT,
       defaultConfig: {},
@@ -119,4 +121,25 @@ export const TEMPLATE_REFERENCE: WorkflowTemplate = {
   ...chain(["image_input", "character_reference", "quality_check", "shot_video_generate", "param_adjust", "export"]),
 };
 
-export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [TEMPLATE_STORYBOARD, TEMPLATE_REFERENCE];
+/** Template C: complete novel-to-manga production flow. */
+export const TEMPLATE_NOVEL_TO_MANGA: WorkflowTemplate = {
+  id: "novel-to-manga",
+  nameKey: "flow_template_novel_to_manga",
+  descriptionKey: "flow_template_novel_to_manga_desc",
+  ...chain([
+    "source_import",
+    "script_generate",
+    "script_review",
+    "storyboard_generate",
+    "character_reference",
+    "shot_image_generate",
+    "shot_video_generate",
+    "voice_generate",
+    "subtitle_generate",
+    "compose",
+    "quality_check",
+    "export",
+  ]),
+};
+
+export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [TEMPLATE_NOVEL_TO_MANGA, TEMPLATE_STORYBOARD, TEMPLATE_REFERENCE];

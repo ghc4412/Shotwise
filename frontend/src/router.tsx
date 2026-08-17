@@ -27,6 +27,7 @@ import { useAssistantStore } from "@/stores/assistant-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useConfigStatusStore } from "@/stores/config-status-store";
 import { errMsg } from "@/utils/async";
+import { rememberLastOpenedProject } from "@/utils/last-opened-project";
 import {
   ROUTE_APP,
   ROUTE_APP_ASSETS,
@@ -175,6 +176,7 @@ function StudioWorkspace() {
         // "cancelled" 代表本轮未同步（项目已被切走、取消域已轮换），loading 状态交由
         // 接管的新一轮自行结算，此处不动共享状态。
         if (result === "cancelled") return;
+        if (result === "success") rememberLastOpenedProject(projectName);
         setProjectDetailLoading(false);
       });
 
