@@ -7,6 +7,7 @@ const baseValue = {
   title: "",
   contentMode: "narration" as const,
   sourceKind: "novel" as const,
+  creativeStart: "upload" as const,
   aspectRatio: "9:16" as const,
   generationRoute: "storyboard" as const,
   gridStoryboard: false,
@@ -98,6 +99,20 @@ describe("WizardStep1Basics", () => {
     expect(screen.queryByRole("radiogroup", { name: /源文件性质|Source type|Loại tệp nguồn/ })).toBeNull();
   });
 
+  it("shows narration-specific creative starts outside drama mode", () => {
+    render(
+      <WizardStep1Basics
+        value={baseValue}
+        onChange={() => {}}
+        onNext={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    const group = screen.getByRole("radiogroup", { name: /创作输入|Creative start|Bắt đầu sáng tác/ });
+    expect(within(group).getByText(/上传资料|Upload materials|Tải tư liệu/)).toBeInTheDocument();
+    expect(within(group).getByText(/一句话生成旁白稿|Generate narration from a prompt|Tạo lời dẫn từ ý tưởng/)).toBeInTheDocument();
+  });
+
   it("emits onChange with screenplay when source kind selected in drama mode", () => {
     const onChange = vi.fn();
     render(
@@ -113,6 +128,18 @@ describe("WizardStep1Basics", () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ sourceKind: "screenplay" }),
     );
+  });
+
+  it("uses screenplay-specific creative start labels after screenplay is selected", () => {
+    render(
+      <WizardStep1Basics
+        value={{ ...baseValue, contentMode: "drama", sourceKind: "screenplay" }}
+        onChange={() => {}}
+        onNext={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.getByText(/在线写剧本|Write screenplay|Viết kịch bản trực tuyến/)).toBeInTheDocument();
   });
 
   it("emits onChange when aspect ratio changes", () => {

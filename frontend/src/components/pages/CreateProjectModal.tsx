@@ -147,6 +147,7 @@ export function CreateProjectModal() {
     title: "",
     contentMode: "narration",
     sourceKind: "novel",
+    creativeStart: "upload",
     aspectRatio: "9:16",
     generationRoute: null,
     gridStoryboard: false,
@@ -333,7 +334,13 @@ export function CreateProjectModal() {
       }
 
       setShowCreateModal(false);
-      navigate(`/app/projects/${resp.name}`);
+      if (isAd) {
+        navigate(`/app/projects/${resp.name}/episodes/1`);
+        return;
+      }
+      const tab = basics.creativeStart === "upload" ? "source" : "draft";
+      const action = basics.creativeStart === "generate" ? "&action=generate" : "";
+      navigate(`/app/projects/${resp.name}/source?tab=${tab}${action}`);
     } catch (err) {
       useAppStore.getState().pushToast(
         `${t("dashboard:create_project_failed")}${errMsg(err)}`,

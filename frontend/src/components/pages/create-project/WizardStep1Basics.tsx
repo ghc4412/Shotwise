@@ -13,6 +13,8 @@ export interface WizardStep1Value {
   contentMode: "narration" | "drama" | "ad";
   /** 源文件性质：novel（默认）/ screenplay。仅 drama 暴露，创建即定、不可变。 */
   sourceKind: "novel" | "screenplay";
+  /** 创建完成后的首个工作区入口；不属于项目领域模型，也不写入 project.json。 */
+  creativeStart: "upload" | "write" | "generate";
   aspectRatio: "9:16" | "16:9";
   /** 生成路线，创建时锁定。null = 未选：必选，未选不放行。 */
   generationRoute: GenerationRoute | null;
@@ -26,6 +28,31 @@ export interface WizardStep1Value {
 
 /** 广告/短片目标总时长的 UI 档位（数据层不硬枚举，任意正整数秒合法）。 */
 export const AD_TARGET_DURATION_TIERS = [15, 30, 60, 90] as const;
+
+function creativeStartCopy(
+  contentMode: WizardStep1Value["contentMode"],
+  sourceKind: WizardStep1Value["sourceKind"],
+): Record<WizardStep1Value["creativeStart"], string> {
+  if (contentMode === "narration") {
+    return {
+      upload: "creative_start_narration_upload",
+      write: "creative_start_narration_write",
+      generate: "creative_start_narration_generate",
+    };
+  }
+  if (sourceKind === "screenplay") {
+    return {
+      upload: "creative_start_screenplay_upload",
+      write: "creative_start_screenplay_write",
+      generate: "creative_start_screenplay_generate",
+    };
+  }
+  return {
+    upload: "creative_start_novel_upload",
+    write: "creative_start_novel_write",
+    generate: "creative_start_novel_generate",
+  };
+}
 
 export interface WizardStep1BasicsProps {
   value: WizardStep1Value;
@@ -179,6 +206,35 @@ export function WizardStep1Basics({
             {value.sourceKind === "screenplay"
               ? t("dashboard:source_kind_screenplay_desc")
               : t("dashboard:source_kind_novel_desc")}
+          </p>
+        </div>
+      )}
+
+      {/* 起步方式只决定创建完成后的第一个工作区，不改变项目模式或来源语义。 */}
+      {value.contentMode !== "ad" && (
+        <div>
+          <FieldLabel>{t("dashboard:creative_start")}</FieldLabel>
+          <div className="grid grid-cols-3 gap-2.5" role="radiogroup" aria-label={t("dashboard:creative_start")}>
+            {(["upload", "write", "generate"] as const).map((start) => {
+              const active = value.creativeStart === start;
+              const copy = creativeStartCopy(value.contentMode, value.sourceKind)[start];
+              return (
+                <label key={start} className={radioCardClass(active)}>
+                  <input
+                    type="radio"
+                    name="creativeStart"
+                    value={start}
+                    checked={active}
+                    onChange={() => onChange({ ...value, creativeStart: start })}
+                    className="sr-only"
+                  />
+                  {t(`dashboard:${copy}`)}
+                </label>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[11.5px] leading-[1.55] text-text-3">
+            {t("dashboard:creative_start_desc")}
           </p>
         </div>
       )}

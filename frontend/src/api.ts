@@ -280,6 +280,15 @@ export interface CreateProjectPayload {
   model_settings?: Record<string, { resolution?: string | null }>;
 }
 
+export type CreativeDraftOperation = "generate" | "continue" | "rewrite" | "polish" | "outline" | "split";
+
+export interface CreativeDraftResult {
+  operation: CreativeDraftOperation;
+  content: string;
+  provider: string;
+  model: string;
+}
+
 function normalizeDiagnosticsBucket(value: unknown): { code: string; message: string; location?: string }[] {
   if (!Array.isArray(value)) {
     return [];
@@ -2766,6 +2775,16 @@ class API {
   ): Promise<WorkflowRunDetail> {
     return this.request(`/workflow-runs/${encodeURIComponent(runId)}`, {
       signal: options?.signal,
+    });
+  }
+
+  static async generateCreativeDraft(
+    projectName: string,
+    payload: { operation: CreativeDraftOperation; content?: string; instruction?: string },
+  ): Promise<CreativeDraftResult> {
+    return this.request(`/projects/${encodeURIComponent(projectName)}/creative-draft/generate`, {
+      method: "POST",
+      body: JSON.stringify(payload),
     });
   }
 

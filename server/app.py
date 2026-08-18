@@ -55,6 +55,7 @@ from server.routers import (
     character_relations,
     characters,
     cost_estimation,
+    creative,
     custom_providers,
     end_frames,
     files,
@@ -592,6 +593,7 @@ async def request_logging_middleware(request: Request, call_next):
 # 端点签名里的 CurrentUser 只表示「处理函数要用用户对象」，不承担授权职责。
 # 不挂依赖的两组另有说明，见下方分组注释。
 app.include_router(projects.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["项目管理"])
+app.include_router(creative.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["创作稿"])
 app.include_router(characters.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["角色管理"])
 app.include_router(
     character_relations.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["角色关系"]

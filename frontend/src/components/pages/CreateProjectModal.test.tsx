@@ -152,7 +152,7 @@ describe("CreateProjectModal", () => {
         default_duration: null,
       })
     );
-    expect(navigateMock).toHaveBeenCalledWith("/app/projects/demo-proj");
+    expect(navigateMock).toHaveBeenCalledWith("/app/projects/demo-proj/source?tab=source");
   });
 
   it("submits grid_storyboard when the assembly toggle is switched on at creation", async () => {
@@ -394,7 +394,7 @@ describe("CreateProjectModal ad mode", () => {
     );
     const payload = vi.mocked(API.createProject).mock.calls[0][0];
     expect("default_duration" in payload).toBe(false);
-    expect(navigateMock).toHaveBeenCalledWith("/app/projects/ad-proj");
+    expect(navigateMock).toHaveBeenCalledWith("/app/projects/ad-proj/episodes/1");
   });
 
   it("does not send target_duration for narration projects", async () => {
