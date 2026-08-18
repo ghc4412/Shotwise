@@ -75,6 +75,15 @@ class CharacterRelationEdge(BaseModel):
         return value
 
 
+class CharacterRelationPosition(BaseModel):
+    """Canvas position for one character node."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    x: float = 0
+    y: float = 0
+
+
 class SuppressedRelationshipPair(BaseModel):
     """An AI pair the user removed and should not resurrect on re-analysis."""
 
@@ -97,6 +106,7 @@ class CharacterRelationsData(BaseModel):
     error: str | None = Field(default=None, max_length=1000)
     edges: list[CharacterRelationEdge] = Field(default_factory=list)
     suppressed_pairs: list[SuppressedRelationshipPair] = Field(default_factory=list)
+    node_positions: dict[str, CharacterRelationPosition] = Field(default_factory=dict)
 
 
 def empty_character_relations() -> CharacterRelationsData:
@@ -158,7 +168,19 @@ def normalize_character_relations(value: object, characters: object) -> Characte
             seen_suppressed.add(key)
             suppressed.append(normalized)
 
-    return parsed.model_copy(update={"edges": normalized_edges, "suppressed_pairs": suppressed})
+    normalized_positions: dict[str, CharacterRelationPosition] = {}
+    for name, position in parsed.node_positions.items():
+        resolved = resolve_asset_key(characters, name)
+        if resolved is not None:
+            normalized_positions[resolved] = position
+
+    return parsed.model_copy(
+        update={
+            "edges": normalized_edges,
+            "suppressed_pairs": suppressed,
+            "node_positions": normalized_positions,
+        }
+    )
 
 
 def relations_payload(data: CharacterRelationsData) -> dict[str, Any]:
@@ -295,6 +317,7 @@ def rename_character_relation_references(value: object, old_name: str, new_name:
                     pair.model_copy(update={"source": renamed(pair.source), "target": renamed(pair.target)})
                     for pair in parsed.suppressed_pairs
                 ],
+                "node_positions": {renamed(name): position for name, position in parsed.node_positions.items()},
             }
         )
     )
@@ -321,6 +344,11 @@ def remove_character_relation_references(value: object, name: str) -> dict[str, 
                     for pair in parsed.suppressed_pairs
                     if normalize_asset_name(pair.source) != name_key and normalize_asset_name(pair.target) != name_key
                 ],
+                "node_positions": {
+                    node_name: position
+                    for node_name, position in parsed.node_positions.items()
+                    if normalize_asset_name(node_name) != name_key
+                },
             }
         )
     )

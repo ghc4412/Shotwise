@@ -65,6 +65,27 @@ def test_manual_delete_records_ai_pair_suppression_and_new_edges_are_manual() ->
 
 
 @pytest.mark.unit
+def test_node_positions_round_trip_and_follow_character_renames() -> None:
+    characters = {"Alice": {}, "Bob": {}}
+    existing = {
+        "revision": 1,
+        "edges": [_edge("Alice", "Bob")],
+        "node_positions": {"Alice": {"x": 120, "y": -40}, "Bob": {"x": 360, "y": 80}},
+    }
+
+    normalized = normalize_character_relations(existing, characters)
+    assert normalized.node_positions["Alice"].model_dump() == {"x": 120, "y": -40}
+
+    renamed = rename_character_relation_references(existing, "Alice", "Alicia")
+    assert renamed is not None
+    assert renamed["node_positions"]["Alicia"] == {"x": 120, "y": -40}
+
+    removed = remove_character_relation_references(existing, "Alice")
+    assert removed is not None
+    assert removed["node_positions"] == {"Bob": {"x": 360, "y": 80}}
+
+
+@pytest.mark.unit
 def test_character_reference_cascade_and_validation() -> None:
     characters = {"Alice": {}, "Bob": {}}
     data = {"edges": [_edge("Alice", "Bob")], "suppressed_pairs": []}

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from lib.character_relations import (
     CharacterRelationEdge,
+    CharacterRelationPosition,
     apply_manual_relationships,
     empty_character_relations,
     normalize_character_relations,
@@ -29,6 +30,7 @@ router = APIRouter()
 class SaveCharacterRelationsRequest(BaseModel):
     base_revision: int = Field(ge=0)
     edges: list[CharacterRelationEdge] = Field(default_factory=list, max_length=500)
+    node_positions: dict[str, CharacterRelationPosition] | None = Field(default=None, max_length=500)
 
 
 def _relations_from_project(project: dict[str, Any]) -> dict[str, Any]:
@@ -69,6 +71,11 @@ async def save_character_relations(project_name: str, req: SaveCharacterRelation
                 if current["revision"] != req.base_revision:
                     raise RuntimeError("revision_conflict")
                 relations = apply_manual_relationships(current, project.get("characters"), req.edges)
+                if req.node_positions is not None:
+                    positions = normalize_character_relations(
+                        {"node_positions": req.node_positions}, project.get("characters")
+                    ).node_positions
+                    relations = relations.model_copy(update={"node_positions": positions})
                 saved.update(relations_payload(relations))
                 project["character_relations"] = dict(saved)
 

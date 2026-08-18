@@ -65,6 +65,11 @@ export interface CharacterRelationEdge {
   evidence: CharacterRelationEvidence[];
 }
 
+export interface CharacterRelationPosition {
+  x: number;
+  y: number;
+}
+
 export interface CharacterRelationsData {
   revision: number;
   analysis_status: "idle" | "analyzing" | "ready" | "failed";
@@ -72,6 +77,7 @@ export interface CharacterRelationsData {
   source_fingerprint: string | null;
   error: string | null;
   edges: CharacterRelationEdge[];
+  node_positions: Record<string, CharacterRelationPosition>;
 }
 
 export interface Scene {

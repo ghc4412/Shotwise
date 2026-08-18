@@ -72,6 +72,7 @@ import type {
   WorkflowRunDetail,
   WorkflowRunSummary,
   CharacterRelationEdge,
+  CharacterRelationPosition,
   CharacterRelationsData,
 } from "@/types";
 import type { GenerationRoute } from "@/utils/generation-mode";
@@ -759,12 +760,13 @@ class API {
     projectName: string,
     baseRevision: number,
     edges: CharacterRelationEdge[],
+    nodePositions: Record<string, CharacterRelationPosition>,
   ): Promise<CharacterRelationsData> {
     return this.request(
       `/projects/${encodeURIComponent(projectName)}/character-relations`,
       {
         method: "PUT",
-        body: JSON.stringify({ base_revision: baseRevision, edges }),
+        body: JSON.stringify({ base_revision: baseRevision, edges, node_positions: nodePositions }),
       },
     );
   }

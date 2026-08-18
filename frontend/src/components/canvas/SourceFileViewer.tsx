@@ -106,7 +106,7 @@ export function SourceFileViewer({ projectName, filename }: SourceFileViewerProp
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <ViewerToolbar
         filename={filename}
         filenameHeadingId={filenameHeadingId}
@@ -150,7 +150,7 @@ export function SourceFileViewer({ projectName, filename }: SourceFileViewerProp
         )}
       </ViewerToolbar>
 
-      <div className="flex-1 overflow-auto p-5">
+      <div className="source-file-scroll min-h-0 flex-1 overflow-auto p-5">
         {editing ? (
           <textarea
             aria-labelledby={filenameHeadingId}
@@ -158,7 +158,7 @@ export function SourceFileViewer({ projectName, filename }: SourceFileViewerProp
             readOnly={saving}
             value={editContent}
             onChange={(e) => setEditContent(e.target.value)}
-            className="focus-ring h-full w-full resize-none rounded-lg p-4 font-mono text-[13px] leading-[1.7] outline-none"
+            className="source-file-scroll focus-ring h-full w-full resize-none rounded-lg p-4 font-mono text-[13px] leading-[1.7] outline-none"
             style={{
               background:
                 "var(--color-shell-field)",

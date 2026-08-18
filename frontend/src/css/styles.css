@@ -1,5 +1,34 @@
 /* 自定义样式 */
 
+/* Keep the relationship graph pointer visible against both canvas surfaces. */
+.character-relations-flow .react-flow__pane.draggable,
+.character-relations-flow .react-flow__pane.dragging,
+.character-relations-flow .react-flow__pane.selection,
+.character-relations-flow .react-flow__node.draggable,
+.character-relations-flow .react-flow__node.draggable.dragging,
+.character-relations-flow .react-flow__nodesselection-rect {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M4 2l16 10-7 2-3 7z' fill='%23000000' stroke='%23ffffff' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E") 4 2, grab;
+}
+
+html:not(.theme-light) .character-relations-flow .react-flow__pane.draggable,
+html:not(.theme-light) .character-relations-flow .react-flow__pane.dragging,
+html:not(.theme-light) .character-relations-flow .react-flow__pane.selection,
+html:not(.theme-light) .character-relations-flow .react-flow__node.draggable,
+html:not(.theme-light) .character-relations-flow .react-flow__node.draggable.dragging,
+html:not(.theme-light) .character-relations-flow .react-flow__nodesselection-rect {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M4 2l16 10-7 2-3 7z' fill='%23ffffff' stroke='%23000000' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E") 4 2, grab;
+}
+
+.character-relations-flow .character-relations-minimap,
+.character-relations-flow .character-relations-minimap .react-flow__minimap-svg {
+    cursor: grab;
+}
+
+.character-relations-flow .character-relations-minimap:active,
+.character-relations-flow .character-relations-minimap:active .react-flow__minimap-svg {
+    cursor: grabbing;
+}
+
 /* 滚动条样式 — 极窄 + 滚动时渐显、停止后渐隐 */
 
 /* 注册可动画的自定义属性（::-webkit-scrollbar-thumb 不支持 transition，
@@ -40,6 +69,40 @@
 /* 悬停在滑块上：提亮 */
 [data-scrolling]::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.25);
+}
+
+/* 源文件查看器：保留原生滚动行为，但让右侧滑块始终可见、可直接拖拽。 */
+.source-file-scroll {
+    scrollbar-gutter: stable;
+    scrollbar-width: auto;
+    scrollbar-color: oklch(0.58 0.08 295 / 0.72) transparent;
+}
+
+.source-file-scroll::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.source-file-scroll::-webkit-scrollbar-track {
+    background: color-mix(in oklab, var(--color-shell-field) 72%, transparent);
+    border-left: 1px solid var(--color-hairline-soft);
+}
+
+.source-file-scroll::-webkit-scrollbar-thumb {
+    min-height: 42px;
+    background: linear-gradient(180deg, var(--color-accent-2), var(--color-accent));
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+}
+
+.source-file-scroll::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(
+        180deg,
+        color-mix(in oklab, var(--color-accent-2) 88%, white),
+        color-mix(in oklab, var(--color-accent) 88%, white)
+    );
+    border-width: 1px;
 }
 
 /* 卡片悬停效果 — 仅颜色过渡，禁止位移 */
