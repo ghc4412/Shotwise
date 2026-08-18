@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useTranslation } from "react-i18next";
 import { BookOpen, FileText, Plus, Trash2, Upload, ArrowRight } from "lucide-react";
 import { API, ConflictError } from "@/api";
 import { useAppStore } from "@/stores/app-store";
+import { useProjectsStore } from "@/stores/projects-store";
 import { errMsg, voidPromise } from "@/utils/async";
 import {
   SOURCE_FILE_ACCEPT,
@@ -11,6 +12,7 @@ import {
   isSupportedSourceFile,
 } from "@/utils/source-files";
 import { ConflictModal, type ConflictResolution } from "./ConflictModal";
+import { CreativeDraftEditor } from "./CreativeDraftEditor";
 
 interface SourceFile {
   name: string;
@@ -29,11 +31,23 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
+type SourceWorkspaceTab = "source" | "draft";
+
+function getSourceWorkspaceTab(search: string): SourceWorkspaceTab {
+  return new URLSearchParams(search).get("tab") === "draft" ? "draft" : "source";
+}
+
 export function SourceFilesPage({ projectName }: SourceFilesPageProps) {
   const { t } = useTranslation(["dashboard", "common"]);
   const tRef = useRef(t);
   tRef.current = t;
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  const search = useSearch();
+  const currentProjectData = useProjectsStore((state) => state.currentProjectData);
+  const [activeTab, setActiveTab] = useState<SourceWorkspaceTab>(() => getSourceWorkspaceTab(search));
+  const creativeDraftAvailable = currentProjectData?.content_mode !== "ad";
+  const creativeDraftStartGenerate =
+    activeTab === "draft" && new URLSearchParams(search).get("action") === "generate";
 
   const [files, setFiles] = useState<SourceFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +63,22 @@ export function SourceFilesPage({ projectName }: SourceFilesPageProps) {
   const projectNameRef = useRef(projectName);
   projectNameRef.current = projectName;
   const sourceFilesVersion = useAppStore((s) => s.sourceFilesVersion);
+  const sourceFiles = files.filter(
+    (file) => file.name !== "creative_draft.md" && file.name !== "_creative_outline.json",
+  );
+
+  useEffect(() => {
+    const queryTab = getSourceWorkspaceTab(search);
+    setActiveTab(creativeDraftAvailable && queryTab === "draft" ? "draft" : "source");
+  }, [creativeDraftAvailable, location, search]);
+
+  const selectTab = useCallback(
+    (tab: SourceWorkspaceTab) => {
+      setActiveTab(tab);
+      setLocation(tab === "draft" ? "/source?tab=draft" : "/source?tab=source");
+    },
+    [setLocation],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -246,43 +276,85 @@ export function SourceFilesPage({ projectName }: SourceFilesPageProps) {
         >
           {t("dashboard:source_files")}
         </h2>
-        <span
-          className="num inline-flex items-center justify-center rounded-md px-1.5 py-[2px] text-[10.5px]"
-          style={{
-            color: "var(--color-text-3)",
-            background: "var(--color-accent-dim)",
-            border: "1px solid var(--color-accent-soft)",
-            minWidth: 22,
-          }}
-        >
-          {String(files.length).padStart(2, "0")}
-        </span>
+        <div className="ml-1 flex items-center rounded-md p-0.5" style={{ background: "var(--color-shell-field)" }}>
+          <button
+            type="button"
+            onClick={() => selectTab("source")}
+            aria-pressed={activeTab === "source"}
+            className="focus-ring rounded px-2 py-1 text-[11px]"
+            style={{
+              color: activeTab === "source" ? "var(--color-text)" : "var(--color-text-4)",
+              background: activeTab === "source" ? "var(--panel-card-bg)" : "transparent",
+            }}
+          >
+            {t("dashboard:source_files_tab")}
+          </button>
+          {creativeDraftAvailable ? (
+            <button
+              type="button"
+              onClick={() => selectTab("draft")}
+              aria-pressed={activeTab === "draft"}
+              className="focus-ring rounded px-2 py-1 text-[11px]"
+              style={{
+                color: activeTab === "draft" ? "var(--color-text)" : "var(--color-text-4)",
+                background: activeTab === "draft" ? "var(--panel-card-bg)" : "transparent",
+              }}
+            >
+              {t("dashboard:creative_draft_tab")}
+            </button>
+          ) : null}
+        </div>
+        {activeTab === "source" ? (
+          <span
+            className="num inline-flex items-center justify-center rounded-md px-1.5 py-[2px] text-[10.5px]"
+            style={{
+              color: "var(--color-text-3)",
+              background: "var(--color-accent-dim)",
+              border: "1px solid var(--color-accent-soft)",
+              minWidth: 22,
+            }}
+          >
+            {String(sourceFiles.length).padStart(2, "0")}
+          </span>
+        ) : null}
         <div className="flex-1" />
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={SOURCE_FILE_ACCEPT}
-          onChange={handleFileSelect}
-          className="hidden"
-        />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="focus-ring inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-[11.5px] font-medium transition-transform hover:-translate-y-px disabled:translate-y-0 disabled:opacity-50"
-          style={{
-            color: "oklch(0.14 0 0)",
-            background:
-              "linear-gradient(135deg, var(--color-accent-2), var(--color-accent))",
-            boxShadow:
-              "inset 0 1px 0 oklch(1 0 0 / 0.35), 0 6px 18px -4px var(--color-accent-glow), 0 0 0 1px var(--color-accent-soft)",
-          }}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          {t("dashboard:upload_source_files")}
-        </button>
+        {activeTab === "source" ? (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={SOURCE_FILE_ACCEPT}
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="focus-ring inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-[11.5px] font-medium transition-transform hover:-translate-y-px disabled:translate-y-0 disabled:opacity-50"
+              style={{
+                color: "oklch(0.14 0 0)",
+                background:
+                  "linear-gradient(135deg, var(--color-accent-2), var(--color-accent))",
+                boxShadow:
+                  "inset 0 1px 0 oklch(1 0 0 / 0.35), 0 6px 18px -4px var(--color-accent-glow), 0 0 0 1px var(--color-accent-soft)",
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {t("dashboard:upload_source_files")}
+            </button>
+          </>
+        ) : null}
       </div>
 
+      {activeTab === "draft" && creativeDraftAvailable ? (
+        <CreativeDraftEditor
+          projectName={projectName}
+          contentMode={currentProjectData?.content_mode === "drama" ? "drama" : "narration"}
+          sourceKind={currentProjectData?.source_kind}
+          initialGenerate={creativeDraftStartGenerate}
+        />
+      ) : (
       <div className="flex-1 px-6 py-5">
         {loading ? (
           <div
@@ -291,7 +363,7 @@ export function SourceFilesPage({ projectName }: SourceFilesPageProps) {
           >
             {t("common:loading")}
           </div>
-        ) : files.length === 0 ? (
+        ) : sourceFiles.length === 0 ? (
           <button
             type="button"
             disabled={uploading}
@@ -418,7 +490,7 @@ export function SourceFilesPage({ projectName }: SourceFilesPageProps) {
                 className="num text-[10px]"
                 style={{ color: "var(--color-text-4)" }}
               >
-                {files.length}
+                {sourceFiles.length}
               </span>
               <div className="flex-1" />
               <span
@@ -429,7 +501,7 @@ export function SourceFilesPage({ projectName }: SourceFilesPageProps) {
               </span>
             </div>
             <ul>
-              {files.map((file, idx) => (
+              {sourceFiles.map((file, idx) => (
                 <li
                   key={file.name}
                   className="group flex items-center gap-3 px-5 py-3 transition-colors"
@@ -534,6 +606,7 @@ export function SourceFilesPage({ projectName }: SourceFilesPageProps) {
           </div>
         )}
       </div>
+      )}
 
       {conflictPrompt && (
         <ConflictModal

@@ -21,6 +21,19 @@ def test_build_creative_draft_prompt_respects_screenplay_semantics() -> None:
     assert "甲：我们得走了。" in prompt
 
 
+def test_build_creative_draft_prompt_supports_expanding_existing_draft() -> None:
+    prompt = creative.build_creative_draft_prompt(
+        operation="expand",
+        content_mode="drama",
+        source_kind="novel",
+        content="林舟推开旧仓库的门。",
+        instruction="加强雨夜氛围",
+    )
+
+    assert "扩写草稿" in prompt
+    assert "林舟推开旧仓库的门。" in prompt
+
+
 @pytest.mark.asyncio
 async def test_generate_creative_draft_returns_text_without_persisting(monkeypatch) -> None:
     class ProjectManager:

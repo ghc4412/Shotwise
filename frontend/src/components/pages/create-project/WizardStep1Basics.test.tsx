@@ -99,7 +99,7 @@ describe("WizardStep1Basics", () => {
     expect(screen.queryByRole("radiogroup", { name: /源文件性质|Source type|Loại tệp nguồn/ })).toBeNull();
   });
 
-  it("shows narration-specific creative starts outside drama mode", () => {
+  it("shows only upload and writing starts outside drama mode", () => {
     render(
       <WizardStep1Basics
         value={baseValue}
@@ -110,7 +110,8 @@ describe("WizardStep1Basics", () => {
     );
     const group = screen.getByRole("radiogroup", { name: /创作输入|Creative start|Bắt đầu sáng tác/ });
     expect(within(group).getByText(/上传资料|Upload materials|Tải tư liệu/)).toBeInTheDocument();
-    expect(within(group).getByText(/一句话生成旁白稿|Generate narration from a prompt|Tạo lời dẫn từ ý tưởng/)).toBeInTheDocument();
+    expect(within(group).getByText(/在线写旁白稿|Write narration|Viết lời dẫn trực tuyến/)).toBeInTheDocument();
+    expect(within(group).queryByText(/一句话生成旁白稿|Generate narration from a prompt|Tạo lời dẫn từ ý tưởng/)).toBeNull();
   });
 
   it("emits onChange with screenplay when source kind selected in drama mode", () => {

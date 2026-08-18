@@ -280,7 +280,7 @@ export interface CreateProjectPayload {
   model_settings?: Record<string, { resolution?: string | null }>;
 }
 
-export type CreativeDraftOperation = "generate" | "continue" | "rewrite" | "polish" | "outline" | "split";
+export type CreativeDraftOperation = "generate" | "continue" | "expand" | "rewrite" | "polish" | "outline" | "split";
 
 export interface CreativeDraftResult {
   operation: CreativeDraftOperation;

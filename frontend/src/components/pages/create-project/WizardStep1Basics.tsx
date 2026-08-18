@@ -14,7 +14,7 @@ export interface WizardStep1Value {
   /** 源文件性质：novel（默认）/ screenplay。仅 drama 暴露，创建即定、不可变。 */
   sourceKind: "novel" | "screenplay";
   /** 创建完成后的首个工作区入口；不属于项目领域模型，也不写入 project.json。 */
-  creativeStart: "upload" | "write" | "generate";
+  creativeStart: "upload" | "write";
   aspectRatio: "9:16" | "16:9";
   /** 生成路线，创建时锁定。null = 未选：必选，未选不放行。 */
   generationRoute: GenerationRoute | null;
@@ -37,20 +37,17 @@ function creativeStartCopy(
     return {
       upload: "creative_start_narration_upload",
       write: "creative_start_narration_write",
-      generate: "creative_start_narration_generate",
     };
   }
   if (sourceKind === "screenplay") {
     return {
       upload: "creative_start_screenplay_upload",
       write: "creative_start_screenplay_write",
-      generate: "creative_start_screenplay_generate",
     };
   }
   return {
     upload: "creative_start_novel_upload",
     write: "creative_start_novel_write",
-    generate: "creative_start_novel_generate",
   };
 }
 
@@ -214,8 +211,8 @@ export function WizardStep1Basics({
       {value.contentMode !== "ad" && (
         <div>
           <FieldLabel>{t("dashboard:creative_start")}</FieldLabel>
-          <div className="grid grid-cols-3 gap-2.5" role="radiogroup" aria-label={t("dashboard:creative_start")}>
-            {(["upload", "write", "generate"] as const).map((start) => {
+          <div className="grid grid-cols-2 gap-2.5" role="radiogroup" aria-label={t("dashboard:creative_start")}>
+            {(["upload", "write"] as const).map((start) => {
               const active = value.creativeStart === start;
               const copy = creativeStartCopy(value.contentMode, value.sourceKind)[start];
               return (

@@ -339,8 +339,7 @@ export function CreateProjectModal() {
         return;
       }
       const tab = basics.creativeStart === "upload" ? "source" : "draft";
-      const action = basics.creativeStart === "generate" ? "&action=generate" : "";
-      navigate(`/app/projects/${resp.name}/source?tab=${tab}${action}`);
+      navigate(`/app/projects/${resp.name}/source?tab=${tab}`);
     } catch (err) {
       useAppStore.getState().pushToast(
         `${t("dashboard:create_project_failed")}${errMsg(err)}`,

@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-CreativeOperation = Literal["generate", "continue", "rewrite", "polish", "outline", "split"]
+CreativeOperation = Literal["generate", "continue", "expand", "rewrite", "polish", "outline", "split"]
 
 
 class CreativeDraftRequest(BaseModel):
@@ -41,6 +41,7 @@ def _operation_instruction(operation: CreativeOperation) -> str:
     return {
         "generate": "根据创作要求写出一个可继续编辑的完整初稿。",
         "continue": "在不重复已有内容的前提下续写下一段，延续人物、语气和叙事线索。",
+        "expand": "在不改变核心事实和既有结构的前提下扩写草稿，补足必要的动作、情绪和场景细节。",
         "rewrite": "按创作要求重写这份草稿，保留没有被要求改变的核心事实。",
         "polish": "润色这份草稿，使表达更清楚、有节奏，避免改变剧情事实。",
         "outline": "输出层级清晰的故事大纲，不要重写正文。",
