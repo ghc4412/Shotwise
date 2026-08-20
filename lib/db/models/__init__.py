@@ -19,11 +19,14 @@ from lib.db.models.workflow import (
     WorkflowApproval,
     WorkflowDefinition,
     WorkflowEdge,
+    WorkflowMarketplaceReview,
     WorkflowNode,
     WorkflowNodeRun,
     WorkflowNodeRunItem,
     WorkflowRevision,
     WorkflowRun,
+    WorkflowTemplate,
+    WorkflowUsageStats,
 )
 
 __all__ = [
@@ -44,6 +47,9 @@ __all__ = [
     "AgentAnthropicCredential",
     "WorkflowDefinition",
     "WorkflowRevision",
+    "WorkflowTemplate",
+    "WorkflowMarketplaceReview",
+    "WorkflowUsageStats",
     "WorkflowNode",
     "WorkflowEdge",
     "WorkflowRun",

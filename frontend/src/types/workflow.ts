@@ -42,12 +42,22 @@ export interface WorkflowRunSummary {
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+  episode_id?: string | null;
+  budget_limit?: number | null;
+  spent_amount?: number;
+  reserved_amount?: number;
+  remaining_amount?: number | null;
 }
 
 export interface WorkflowRunDetail extends WorkflowRunSummary {
   workspace_id: string;
   project_id: string;
   input_fingerprint: string;
+  episode_id?: string | null;
+  budget_limit?: number | null;
+  spent_amount?: number;
+  reserved_amount?: number;
+  remaining_amount?: number | null;
   nodes: WorkflowNodeRun[];
 }
 
@@ -77,6 +87,12 @@ export interface WorkflowNodeInput {
   ui_position?: { x: number; y: number; group?: string } | null;
   weight?: number;
   disabled?: boolean;
+  input_schema?: Record<string, unknown>;
+  output_schema?: Record<string, unknown>;
+  executor_id?: string;
+  required_capabilities?: string[];
+  estimated_cost?: number;
+  cache_policy?: "reuse" | "refresh" | "never" | string;
 }
 
 export interface WorkflowEdgeInput {
@@ -109,6 +125,9 @@ export interface WorkflowDefinitionDetail {
     status: string;
     graph_hash: string;
     execution_hash: string;
+    content_mode?: string;
+    generation_mode?: string;
+    input_schema?: Record<string, unknown>;
     template_lock: Record<string, unknown> | null;
     nodes: WorkflowNodeInput[];
     edges: WorkflowEdgeInput[];
@@ -124,16 +143,82 @@ export interface WorkflowRevisionSummary {
   is_active: boolean;
   created_by: string;
   created_at: string;
+  content_mode?: string;
+  generation_mode?: string;
 }
 
 export interface WorkflowTemplateCatalogItem {
   id: string;
-  scope: "official" | "custom";
+  scope: "official" | "custom" | "marketplace";
   name_key: string;
   description_key: string;
-  template_lock: Record<string, unknown> | null;
+  template_lock?: Record<string, unknown> | null;
   nodes: WorkflowNodeInput[];
   edges: WorkflowEdgeInput[];
+  name?: string;
+  description?: string;
+  template_type?: "manga" | "short_drama";
+  status?: string;
+  published_revision_id?: string | null;
+  contract?: Record<string, unknown>;
+  stats?: WorkflowTemplateStats;
+}
+
+export interface WorkflowTemplateStats {
+  views: number;
+  derivations: number;
+  run_count: number;
+  successful_run_count: number;
+  success_rate: number;
+  average_cost: number;
+  average_duration_seconds: number;
+  rating: number | null;
+}
+
+export interface WorkflowPatchOperation {
+  operation: "set_config" | "add_node" | "remove_node" | "add_edge" | "remove_edge";
+  target_node?: string | null;
+  path?: string | null;
+  before?: unknown;
+  after?: unknown;
+  estimated_cost_delta?: number;
+  requires_confirmation?: boolean;
+}
+
+export interface WorkflowPatch {
+  base_revision_id: string;
+  operations: WorkflowPatchOperation[];
+  scope?: "shot" | "scene" | "episode";
+  rerun?: boolean;
+  reason?: string;
+}
+
+export interface WorkflowPatchPreview {
+  valid: boolean;
+  affected_nodes: string[];
+  estimated_cost_delta: number;
+  requires_confirmation: boolean;
+}
+
+export interface WorkflowPatchApplyResult {
+  revision_id: string;
+  status: string;
+  parent_revision_id: string;
+  affected_nodes: string[];
+  estimated_cost_delta: number;
+  published?: { id: string; status: string };
+  run?: { id: string; status: string; version: number };
+}
+
+export interface WorkflowReviewItem extends WorkflowTemplateCatalogItem {
+  risk_tags: string[];
+  reviews: Array<{
+    id: string;
+    decision: string;
+    comment: string;
+    reviewer_id: string;
+    created_at: string;
+  }>;
 }
 
 export interface WorkflowExport {
@@ -142,6 +227,9 @@ export interface WorkflowExport {
   nodes: WorkflowNodeInput[];
   edges: WorkflowEdgeInput[];
   template_lock: Record<string, unknown> | null;
+  content_mode?: string;
+  generation_mode?: string;
+  input_schema?: Record<string, unknown>;
 }
 
 export interface WorkflowNodeLogEntry {

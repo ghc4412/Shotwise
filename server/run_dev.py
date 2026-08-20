@@ -10,11 +10,16 @@ claude.exe 时 NotImplementedError。本入口在 uvicorn.run() 之前应用
 用法（所有平台通用，等价于原 uvicorn 命令）：
     uv run python server/run_dev.py
 
+可通过 ``LISTEN_HOST`` / ``LISTEN_PORT`` 覆盖默认监听地址和端口，例如：
+    $env:LISTEN_PORT = "18080"; uv run python server/run_dev.py
+
 等价命令：
     uv run uvicorn server.app:app --reload --reload-dir server --reload-dir lib --port 1241
 """
 
 from __future__ import annotations
+
+import os
 
 from server._win_loop_patch import patch_windows_uvicorn_event_loop
 
@@ -27,8 +32,8 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "server.app:app",
-        host="0.0.0.0",
-        port=1241,
+        host=os.environ.get("LISTEN_HOST") or "0.0.0.0",
+        port=int(os.environ.get("LISTEN_PORT") or "1241"),
         reload=True,
         reload_dirs=["server", "lib"],
     )

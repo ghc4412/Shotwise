@@ -31,6 +31,9 @@ class WorkflowRevision(Base):
     )
     revision_no: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="draft")
+    content_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="drama")
+    generation_mode: Mapped[str] = mapped_column(String(32), nullable=False, default="storyboard")
+    input_schema_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     graph_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     execution_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     template_lock_json: Mapped[str | None] = mapped_column(Text)
@@ -55,6 +58,12 @@ class WorkflowNode(Base):
     weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     retry_policy_json: Mapped[str | None] = mapped_column(Text)
     approval_policy_json: Mapped[str | None] = mapped_column(Text)
+    input_schema_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    output_schema_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    executor_id: Mapped[str] = mapped_column(String(128), nullable=False, default="builtin")
+    required_capabilities_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    estimated_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    cache_policy: Mapped[str] = mapped_column(String(32), nullable=False, default="reuse")
 
 
 class WorkflowEdge(Base):
@@ -84,6 +93,10 @@ class WorkflowRun(UserOwnedMixin, Base):
     workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     project_id: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     script_revision_id: Mapped[str | None] = mapped_column(String(128))
+    episode_id: Mapped[str | None] = mapped_column(String(128), index=True)
+    budget_limit: Mapped[float | None] = mapped_column(Float)
+    spent_amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    reserved_amount: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="planned")
     mode: Mapped[str] = mapped_column(String(24), nullable=False, default="hybrid")
     execution_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -191,6 +204,56 @@ class WorkflowApproval(Base):
     decided_by: Mapped[str | None] = mapped_column(String(128))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WorkflowTemplate(UserOwnedMixin, TimestampMixin, Base):
+    """Marketplace metadata for a creator-owned, reviewable workflow template."""
+
+    __tablename__ = "workflow_templates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    cover_ref: Mapped[str | None] = mapped_column(String(500))
+    template_type: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="draft", index=True)
+    draft_revision_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("workflow_revisions.id"))
+    published_revision_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("workflow_revisions.id"))
+    contract_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WorkflowMarketplaceReview(Base):
+    __tablename__ = "workflow_marketplace_reviews"
+    __table_args__ = (Index("ix_workflow_marketplace_reviews_template_created", "template_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    template_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workflow_templates.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    revision_id: Mapped[str] = mapped_column(String(36), ForeignKey("workflow_revisions.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    comment: Mapped[str] = mapped_column(Text, nullable=False)
+    reviewer_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WorkflowUsageStats(Base):
+    __tablename__ = "workflow_usage_stats"
+
+    template_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workflow_templates.id", ondelete="CASCADE"), primary_key=True
+    )
+    views: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    derivations: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    run_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    successful_run_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    total_duration_seconds: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    rating_total: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    rating_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class BudgetReservation(Base):

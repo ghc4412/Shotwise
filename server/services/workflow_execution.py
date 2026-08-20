@@ -42,6 +42,7 @@ from lib.db.models.workflow import (
     WorkflowNodeRun,
     WorkflowRevision,
     WorkflowRun,
+    WorkflowUsageStats,
 )
 from lib.project_manager import get_project_manager
 from lib.workflow import (
@@ -278,9 +279,14 @@ async def _execute_node(
         logs.append(("error", f"validation failed: {exc.code} {exc.params}"))
     except Exception as exc:  # noqa: BLE001 -- adapters surface user-facing failures
         logger.exception("workflow node %s failed: %s", node_run.node_key, exc)
-        node_run.error_code = type(exc).__name__
+        message = str(exc)
+        node_run.error_code = (
+            "quality_gate_failed" if message.startswith("quality_gate_failed:") else type(exc).__name__
+        )
+        if node_run.error_code == "quality_gate_failed":
+            node_run.error_params_json = canonical_json({"message": message})
         await _transition_node_run(session, run, node_run, "failed")
-        logs.append(("error", f"node failed: {exc}"))
+        logs.append(("error", f"node failed: {message}"))
     else:
         node_run.output_refs_json = canonical_json(
             {port: [_ref_to_dict(ref) for ref in refs] for port, refs in result.outputs.items()}
@@ -384,8 +390,11 @@ async def run_workflow_run(session: AsyncSession, run_id: str) -> dict[str, Any]
     run.progress = progress
     target: str | None = None
     if run.status == "running":
+        quality_gate_failed = any(node_runs[key].error_code == "quality_gate_failed" for key in node_runs)
         if all(status in TERMINAL_NODE_STATUSES for status in statuses):
-            target = "succeeded" if "failed" not in statuses else "failed"
+            target = (
+                "waiting_review" if quality_gate_failed else ("succeeded" if "failed" not in statuses else "failed")
+            )
         elif any(status in {"failed", "stale", "orphaned"} for status in statuses):
             target = "failed"
     if target is not None:
@@ -395,6 +404,17 @@ async def run_workflow_run(session: AsyncSession, run_id: str) -> dict[str, Any]
         run.version += 1
         run.progress = 1.0 if target == "succeeded" else run.progress
         run.finished_at = utc_now()
+        template_lock = _loads(revision.template_lock_json, {})
+        template_id = template_lock.get("template_id") if isinstance(template_lock, dict) else None
+        if template_id:
+            stats = await session.get(WorkflowUsageStats, template_id)
+            if stats is not None:
+                stats.run_count += 1
+                if target == "succeeded":
+                    stats.successful_run_count += 1
+                stats.total_cost += float(run.spent_amount or 0)
+                if run.started_at is not None:
+                    stats.total_duration_seconds += max(0.0, (run.finished_at - run.started_at).total_seconds())
         await _append_event(
             session,
             run=run,

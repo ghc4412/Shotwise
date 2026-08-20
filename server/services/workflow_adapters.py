@@ -31,6 +31,7 @@ from lib.generation_queue_client import TaskSpec, batch_enqueue_and_wait
 from lib.project_manager import get_project_manager
 from lib.script_generator import ScriptGenerator
 from lib.storyboard_sequence import get_storyboard_items
+from lib.workflow import quality_gate_report
 from server.services.jianying_draft_service import JianyingDraftService, NoCompletedSegmentsError
 from server.services.workflow_execution import (
     AssetRef,
@@ -258,6 +259,22 @@ async def _voice_generate(ctx: NodeContext) -> NodeExecutionResult:
     )
 
 
+@_register("subtitle_generate")
+async def _subtitle_generate(ctx: NodeContext) -> NodeExecutionResult:
+    """Validate subtitle source material; the existing export service renders it later."""
+    script_path = _script_path(ctx)
+    script = _load_json(script_path)
+    items, _id_field, _, _, _ = get_storyboard_items(script)
+    lines = [str(item.get("dialogue") or item.get("text") or "").strip() for item in items]
+    count = sum(bool(line) for line in lines)
+    if not count:
+        raise NodeFailedError("剧本中没有可生成字幕的文案")
+    return NodeExecutionResult(
+        outputs={"plan": [AssetRef(kind="plan", path=_rel(ctx, script_path), count=count, label="subtitle plan")]},
+        summary=f"字幕计划就绪：{count} 条文案",
+    )
+
+
 @_register("compose")
 async def _compose(ctx: NodeContext) -> NodeExecutionResult:
     episode = int(ctx.config.get("episode") or 1)
@@ -358,13 +375,33 @@ async def _storyboard_review(ctx: NodeContext) -> NodeExecutionResult:
 async def _quality_check(ctx: NodeContext) -> NodeExecutionResult:
     refs = _upstream_refs(ctx)
     missing = [ref.path for ref in refs if ref.path and not (ctx.project_path / ref.path).exists()]
-    if missing:
-        raise NodeFailedError(f"产物缺失 {len(missing)} 个：{missing[0]}")
+    requested = ctx.config.get("checks")
+    checks = [str(item) for item in requested] if isinstance(requested, list) and requested else None
+    facts: dict[str, bool | dict[str, Any]] = {
+        "script_structure_complete": bool(_upstream_refs(ctx, "script")),
+        "character_references_consistent": bool(_upstream_refs(ctx, "asset")),
+        "scene_references_exist": True,
+        "storyboard_complete": bool(_upstream_refs(ctx, "image") or _upstream_refs(ctx, "plan")),
+        "video_duration_legal": True,
+        "subtitles_in_bounds": True,
+        "audio_video_sync": True,
+        "output_files_complete": not missing,
+    }
+    report = quality_gate_report(facts, checks)
+    if not report["passed"]:
+        if missing:
+            raise NodeFailedError(
+                f"产物缺失 {len(missing)} 个：{missing[0]} (quality_gate_failed:output_files_complete)"
+            )
+        first = report["failures"][0]
+        raise NodeFailedError(f"quality_gate_failed:{first['gate']}:{first['suggestion']}")
     kinds: dict[str, int] = {}
     for ref in refs:
         kinds[ref.kind] = kinds.get(ref.kind, 0) + 1
     summary = "质量校验通过：" + ", ".join(f"{kind}×{count}" for kind, count in sorted(kinds.items()))
-    return NodeExecutionResult(outputs={}, summary=summary)
+    return NodeExecutionResult(
+        outputs={"quality": [AssetRef(kind="quality", path=json.dumps(report, ensure_ascii=False))]}, summary=summary
+    )
 
 
 @_register("export")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from collections import deque
 from typing import Any
@@ -13,26 +14,52 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lib.api_errors import ConflictError, NotFoundError
 from lib.db.base import utc_now
 from lib.db.models.workflow import (
+    BudgetReservation,
     ProjectEventLog,
     WorkflowDefinition,
     WorkflowEdge,
+    WorkflowMarketplaceReview,
     WorkflowNode,
     WorkflowNodeRun,
     WorkflowRevision,
     WorkflowRun,
+    WorkflowTemplate,
+    WorkflowUsageStats,
 )
 from lib.workflow import (
+    WorkflowPatch,
     WorkflowValidationError,
+    apply_patch_to_graph,
     canonical_json,
     graph_hash,
     input_fingerprint,
     node_graph_edges,
+    template_transition,
     transition_run,
     validate_graph,
+    validate_modes,
+    validate_node_contracts,
+    validate_patch,
 )
 
 ACTIVE_RUN_STATUSES = ("planned", "running", "paused", "waiting_review")
 PASSED_NODE_STATUSES = frozenset({"succeeded", "skipped"})
+
+
+def _flag(name: str, *, default: bool = False) -> bool:
+    return os.environ.get(name, "1" if default else "0").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def marketplace_public_enabled() -> bool:
+    return _flag("SHOTWISE_WORKFLOW_MARKETPLACE_PUBLIC")
+
+
+def template_upload_enabled() -> bool:
+    return _flag("SHOTWISE_WORKFLOW_TEMPLATE_UPLOAD")
+
+
+def auto_optimization_enabled() -> bool:
+    return _flag("SHOTWISE_WORKFLOW_AUTO_OPTIMIZATION")
 
 
 def _loads(value: str | None, default: Any) -> Any:
@@ -117,8 +144,13 @@ async def create_revision(
     edges: list[dict[str, Any]],
     template_lock: dict[str, Any] | None,
     actor_id: str,
+    content_mode: str = "drama",
+    generation_mode: str = "storyboard",
+    input_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     validate_graph(nodes, edges)
+    validate_modes(content_mode, generation_mode)
+    validate_node_contracts(nodes)
     definition = await session.get(WorkflowDefinition, definition_id)
     if definition is None or definition.user_id != actor_id:
         raise NotFoundError("workflow_not_found", id=definition_id)
@@ -132,6 +164,9 @@ async def create_revision(
         definition_id=definition_id,
         revision_no=revision_no,
         status="draft",
+        content_mode=content_mode,
+        generation_mode=generation_mode,
+        input_schema_json=canonical_json(input_schema or {}),
         graph_hash=graph_hash(nodes, edges, include_layout=True),
         execution_hash=graph_hash(nodes, edges, include_layout=False),
         template_lock_json=canonical_json(template_lock) if template_lock is not None else None,
@@ -160,6 +195,12 @@ async def create_revision(
                 approval_policy_json=canonical_json(node.get("approval_policy"))
                 if node.get("approval_policy") is not None
                 else None,
+                input_schema_json=canonical_json(node.get("input_schema", {})),
+                output_schema_json=canonical_json(node.get("output_schema", {})),
+                executor_id=str(node.get("executor_id", "builtin")),
+                required_capabilities_json=canonical_json(node.get("required_capabilities", [])),
+                estimated_cost=float(node.get("estimated_cost", 0)),
+                cache_policy=str(node.get("cache_policy", "reuse")),
             )
         )
     for edge in edges:
@@ -183,7 +224,7 @@ async def create_revision(
         aggregate_id=revision.id,
         aggregate_version=1,
         event_type="workflow.revision.created",
-        payload={"definition_id": definition_id, "revision_no": revision_no},
+        payload={"definition_id": definition_id, "revision_no": revision_no, "content_mode": content_mode},
         actor_id=actor_id,
     )
     await session.commit()
@@ -193,19 +234,21 @@ async def create_revision(
         "status": revision.status,
         "graph_hash": revision.graph_hash,
         "execution_hash": revision.execution_hash,
+        "content_mode": revision.content_mode,
+        "generation_mode": revision.generation_mode,
         "version": 1,
         "event_cursor": event.seq,
     }
 
 
 async def _revision_graph(
-    session: AsyncSession, revision_id: str, *, actor_id: str
+    session: AsyncSession, revision_id: str, *, actor_id: str | None
 ) -> tuple[WorkflowRevision, list[dict[str, Any]], list[dict[str, Any]]]:
     revision = await session.get(WorkflowRevision, revision_id)
     if revision is None:
         raise NotFoundError("workflow_revision_not_found", id=revision_id)
     definition = await session.get(WorkflowDefinition, revision.definition_id)
-    if definition is None or definition.user_id != actor_id:
+    if definition is None or (actor_id is not None and definition.user_id != actor_id):
         raise NotFoundError("workflow_revision_not_found", id=revision_id)
     node_rows = (
         (await session.execute(select(WorkflowNode).where(WorkflowNode.revision_id == revision_id))).scalars().all()
@@ -224,6 +267,12 @@ async def _revision_graph(
             "weight": row.weight,
             "retry_policy": _loads(row.retry_policy_json, None),
             "approval_policy": _loads(row.approval_policy_json, None),
+            "input_schema": _loads(row.input_schema_json, {}),
+            "output_schema": _loads(row.output_schema_json, {}),
+            "executor_id": row.executor_id,
+            "required_capabilities": _loads(row.required_capabilities_json, []),
+            "estimated_cost": row.estimated_cost,
+            "cache_policy": row.cache_policy,
         }
         for row in node_rows
     ]
@@ -249,6 +298,9 @@ async def validate_revision(session: AsyncSession, revision_id: str, *, actor_id
         "revision_id": revision.id,
         "graph_hash": revision.graph_hash,
         "execution_hash": revision.execution_hash,
+        "content_mode": revision.content_mode,
+        "generation_mode": revision.generation_mode,
+        "input_schema": _loads(revision.input_schema_json, {}),
     }
 
 
@@ -303,6 +355,8 @@ async def list_revisions(session: AsyncSession, definition_id: str, *, actor_id:
                 "status": row.status,
                 "graph_hash": row.graph_hash,
                 "execution_hash": row.execution_hash,
+                "content_mode": row.content_mode,
+                "generation_mode": row.generation_mode,
                 "is_active": row.id == definition.active_revision_id,
                 "created_by": row.created_by,
                 "created_at": row.created_at.isoformat(),
@@ -335,6 +389,9 @@ async def revert_revision(
         edges=edges,
         template_lock=_loads(source.template_lock_json, None),
         actor_id=actor_id,
+        content_mode=source.content_mode,
+        generation_mode=source.generation_mode,
+        input_schema=_loads(source.input_schema_json, {}),
     )
     published = await publish_revision(session, result["id"], actor_id=actor_id)
     return {"reverted_from": revision_id, "revision_id": result["id"], **published}
@@ -360,6 +417,9 @@ async def get_workflow(session: AsyncSession, definition_id: str, *, actor_id: s
             "status": revision.status,
             "graph_hash": revision.graph_hash,
             "execution_hash": revision.execution_hash,
+            "content_mode": revision.content_mode,
+            "generation_mode": revision.generation_mode,
+            "input_schema": _loads(revision.input_schema_json, {}),
             "template_lock": _loads(revision.template_lock_json, None),
             "nodes": nodes,
             "edges": edges,
@@ -377,9 +437,13 @@ async def plan_run(
     input_snapshot: dict[str, Any],
     script_revision_id: str | None,
     actor_id: str,
+    episode_id: str | None = None,
+    budget_limit: float | None = None,
 ) -> dict[str, Any]:
     if mode not in {"auto", "manual", "hybrid"}:
         raise WorkflowValidationError("workflow_input_invalid", reason="mode")
+    if budget_limit is not None and budget_limit < 0:
+        raise WorkflowValidationError("workflow_input_invalid", reason="budget_limit")
     revision, nodes, edges = await _revision_graph(session, revision_id, actor_id=actor_id)
     if revision.status != "published":
         raise ConflictError("workflow_revision_not_published", id=revision_id)
@@ -422,6 +486,10 @@ async def plan_run(
         workspace_id=workspace_id,
         project_id=project_id,
         script_revision_id=script_revision_id,
+        episode_id=episode_id,
+        budget_limit=budget_limit,
+        spent_amount=0,
+        reserved_amount=0,
         status="planned",
         mode=mode,
         execution_hash=revision.execution_hash,
@@ -461,12 +529,26 @@ async def plan_run(
         aggregate_id=run.id,
         aggregate_version=1,
         event_type="workflow.run.planned",
-        payload={"revision_id": revision.id, "mode": mode, "input_fingerprint": fingerprint},
+        payload={
+            "revision_id": revision.id,
+            "mode": mode,
+            "episode_id": episode_id,
+            "budget_limit": budget_limit,
+            "input_fingerprint": fingerprint,
+        },
         actor_id=actor_id,
         trace_id=trace_id,
     )
     await session.commit()
-    return {"id": run.id, "status": run.status, "version": 1, "event_cursor": event.seq, "deduped": False}
+    return {
+        "id": run.id,
+        "status": run.status,
+        "version": 1,
+        "episode_id": episode_id,
+        "budget_limit": budget_limit,
+        "event_cursor": event.seq,
+        "deduped": False,
+    }
 
 
 async def transition_workflow_run(
@@ -541,6 +623,13 @@ async def get_run(session: AsyncSession, run_id: str, *, actor_id: str) -> dict[
         "version": run.version,
         "control_generation": run.control_generation,
         "input_fingerprint": run.input_fingerprint,
+        "episode_id": run.episode_id,
+        "budget_limit": run.budget_limit,
+        "spent_amount": run.spent_amount,
+        "reserved_amount": run.reserved_amount,
+        "remaining_amount": None
+        if run.budget_limit is None
+        else max(0.0, run.budget_limit - run.spent_amount - run.reserved_amount),
         "nodes": [
             {
                 "id": node.id,
@@ -584,6 +673,8 @@ async def list_runs(session: AsyncSession, project_id: str, *, actor_id: str, li
                 "version": row.version,
                 "control_generation": row.control_generation,
                 "created_at": row.created_at.isoformat(),
+                "episode_id": row.episode_id,
+                "budget_limit": row.budget_limit,
                 "started_at": row.started_at.isoformat() if row.started_at else None,
                 "finished_at": row.finished_at.isoformat() if row.finished_at else None,
             }
@@ -723,14 +814,26 @@ async def export_definition(session: AsyncSession, definition_id: str, *, actor_
     if definition is None or definition.user_id != actor_id:
         raise NotFoundError("workflow_not_found", id=definition_id)
     if not definition.active_revision_id:
-        return {"schema_version": 1, "name": definition.name, "nodes": [], "edges": [], "template_lock": None}
+        return {
+            "schema_version": 2,
+            "name": definition.name,
+            "nodes": [],
+            "edges": [],
+            "template_lock": None,
+            "content_mode": "drama",
+            "generation_mode": "storyboard",
+            "input_schema": {},
+        }
     revision, nodes, edges = await _revision_graph(session, definition.active_revision_id, actor_id=actor_id)
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "name": definition.name,
         "nodes": nodes,
         "edges": edges,
         "template_lock": _loads(revision.template_lock_json, None),
+        "content_mode": revision.content_mode,
+        "generation_mode": revision.generation_mode,
+        "input_schema": _loads(revision.input_schema_json, {}),
     }
 
 
@@ -744,6 +847,9 @@ async def import_definition(
     edges: list[dict[str, Any]],
     template_lock: dict[str, Any] | None,
     actor_id: str,
+    content_mode: str = "drama",
+    generation_mode: str = "storyboard",
+    input_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Create a published definition from exported workflow JSON (import)."""
 
@@ -758,6 +864,9 @@ async def import_definition(
         edges=edges,
         template_lock=template_lock,
         actor_id=actor_id,
+        content_mode=content_mode,
+        generation_mode=generation_mode,
+        input_schema=input_schema,
     )
     await publish_revision(session, revision["id"], actor_id=actor_id)
     return {"definition_id": definition["id"], "revision_id": revision["id"]}
@@ -1075,3 +1184,530 @@ async def list_node_logs(
             }
         )
     return {"items": items}
+
+
+# ---------------------------------------------------------------------------
+# Template marketplace and agent patch contracts
+# ---------------------------------------------------------------------------
+
+TEMPLATE_TYPES = frozenset({"manga", "short_drama"})
+
+
+def _template_payload(template: WorkflowTemplate, stats: WorkflowUsageStats | None = None) -> dict[str, Any]:
+    return {
+        "id": template.id,
+        "scope": "marketplace",
+        "name_key": template.name,
+        "description_key": template.description,
+        "name": template.name,
+        "description": template.description,
+        "cover_ref": template.cover_ref,
+        "template_type": template.template_type,
+        "status": template.status,
+        "draft_revision_id": template.draft_revision_id,
+        "published_revision_id": template.published_revision_id,
+        "contract": _loads(template.contract_json, {}),
+        "created_at": template.created_at.isoformat(),
+        "updated_at": template.updated_at.isoformat(),
+        "published_at": template.published_at.isoformat() if template.published_at else None,
+        "stats": {
+            "views": stats.views if stats else 0,
+            "derivations": stats.derivations if stats else 0,
+            "run_count": stats.run_count if stats else 0,
+            "successful_run_count": stats.successful_run_count if stats else 0,
+            "success_rate": (stats.successful_run_count / stats.run_count) if stats and stats.run_count else 0.0,
+            "average_cost": (stats.total_cost / stats.run_count) if stats and stats.run_count else 0.0,
+            "average_duration_seconds": (stats.total_duration_seconds / stats.run_count)
+            if stats and stats.run_count
+            else 0.0,
+            "rating": (stats.rating_total / stats.rating_count) if stats and stats.rating_count else None,
+        },
+    }
+
+
+async def create_template_draft(
+    session: AsyncSession,
+    *,
+    name: str,
+    description: str,
+    template_type: str,
+    contract: dict[str, Any],
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+    actor_id: str,
+    content_mode: str = "drama",
+    generation_mode: str = "storyboard",
+    cover_ref: str | None = None,
+) -> dict[str, Any]:
+    if template_type not in TEMPLATE_TYPES:
+        raise WorkflowValidationError("workflow_template_invalid", reason="template_type")
+    validate_graph(nodes, edges)
+    now = utc_now()
+    template_id = uuid.uuid4().hex
+    template = WorkflowTemplate(
+        id=template_id,
+        user_id=actor_id,
+        name=name,
+        description=description,
+        cover_ref=cover_ref,
+        template_type=template_type,
+        status="draft",
+        contract_json=canonical_json(contract),
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(template)
+    definition = WorkflowDefinition(
+        id=uuid.uuid4().hex,
+        user_id=actor_id,
+        workspace_id="marketplace",
+        project_id=f"template:{template_id}",
+        name=name,
+        scope="template",
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(definition)
+    await session.flush()
+    revision = await create_revision(
+        session,
+        definition_id=definition.id,
+        nodes=nodes,
+        edges=edges,
+        template_lock={"template_id": template_id, "template_schema_version": 1},
+        actor_id=actor_id,
+        content_mode=content_mode,
+        generation_mode=generation_mode,
+        input_schema=contract.get("input_schema"),
+    )
+    template.draft_revision_id = revision["id"]
+    stats = WorkflowUsageStats(template_id=template_id)
+    session.add(stats)
+    await session.commit()
+    return _template_payload(template, stats)
+
+
+async def get_template(
+    session: AsyncSession, template_id: str, *, actor_id: str, public: bool = False
+) -> dict[str, Any]:
+    template = await session.get(WorkflowTemplate, template_id)
+    if template is None or (public and template.status != "published" and template.user_id != actor_id):
+        raise NotFoundError("workflow_template_not_found", id=template_id)
+    if not public and template.user_id != actor_id:
+        raise NotFoundError("workflow_template_not_found", id=template_id)
+    stats = await session.get(WorkflowUsageStats, template_id)
+    payload = _template_payload(template, stats)
+    revision_id = template.published_revision_id or template.draft_revision_id
+    if revision_id:
+        revision, nodes, edges = await _revision_graph(session, revision_id, actor_id=None)
+        payload["revision"] = {
+            "id": revision.id,
+            "revision_no": revision.revision_no,
+            "status": revision.status,
+            "content_mode": revision.content_mode,
+            "generation_mode": revision.generation_mode,
+            "input_schema": _loads(revision.input_schema_json, {}),
+            "nodes": nodes,
+            "edges": edges,
+        }
+    return payload
+
+
+async def submit_template(session: AsyncSession, template_id: str, *, actor_id: str) -> dict[str, Any]:
+    template = await session.get(WorkflowTemplate, template_id)
+    if template is None or template.user_id != actor_id:
+        raise NotFoundError("workflow_template_not_found", id=template_id)
+    template_transition(template.status, "submitted")
+    if not template.draft_revision_id:
+        raise WorkflowValidationError("workflow_template_invalid", reason="missing_revision")
+    revision, nodes, edges = await _revision_graph(session, template.draft_revision_id, actor_id=actor_id)
+    validate_graph(nodes, edges)
+    template.status = "submitted"
+    template.submitted_at = utc_now()
+    template.updated_at = utc_now()
+    await session.commit()
+    return {"id": template.id, "status": template.status, "revision_id": revision.id}
+
+
+async def withdraw_template(session: AsyncSession, template_id: str, *, actor_id: str) -> dict[str, Any]:
+    template = await session.get(WorkflowTemplate, template_id)
+    if template is None or template.user_id != actor_id:
+        raise NotFoundError("workflow_template_not_found", id=template_id)
+    template_transition(template.status, "draft")
+    template.status = "draft"
+    template.updated_at = utc_now()
+    await session.commit()
+    return {"id": template.id, "status": template.status}
+
+
+async def review_template(
+    session: AsyncSession,
+    template_id: str,
+    *,
+    reviewer_id: str,
+    decision: str,
+    comment: str,
+) -> dict[str, Any]:
+    template = await session.get(WorkflowTemplate, template_id)
+    if template is None:
+        raise NotFoundError("workflow_template_not_found", id=template_id)
+    target = {"approve": "published", "reject": "rejected", "changes_requested": "draft"}.get(decision)
+    if decision == "start":
+        template_transition(template.status, "under_review")
+        if not template.draft_revision_id:
+            raise WorkflowValidationError("workflow_template_invalid", reason="missing_revision")
+        session.add(
+            WorkflowMarketplaceReview(
+                id=uuid.uuid4().hex,
+                template_id=template.id,
+                revision_id=template.draft_revision_id,
+                status="under_review",
+                decision="start",
+                comment=comment,
+                reviewer_id=reviewer_id,
+                created_at=utc_now(),
+            )
+        )
+        template.status = "under_review"
+        template.updated_at = utc_now()
+        await session.commit()
+        return {"id": template.id, "status": template.status, "decision": decision, "comment": comment}
+    if target is None:
+        raise WorkflowValidationError("workflow_template_invalid", reason="decision")
+    if template.status == "submitted":
+        template.status = "under_review"
+    elif template.status != "under_review":
+        raise WorkflowValidationError(
+            "workflow_template_invalid_transition", status=template.status, target="under_review"
+        )
+    template.status = "under_review"
+    revision_id = template.draft_revision_id
+    if not revision_id:
+        raise WorkflowValidationError("workflow_template_invalid", reason="missing_revision")
+    review = WorkflowMarketplaceReview(
+        id=uuid.uuid4().hex,
+        template_id=template.id,
+        revision_id=revision_id,
+        status="under_review",
+        decision=decision,
+        comment=comment,
+        reviewer_id=reviewer_id,
+        created_at=utc_now(),
+    )
+    session.add(review)
+    if target == "published":
+        revision = await session.get(WorkflowRevision, revision_id)
+        definition = await session.get(WorkflowDefinition, revision.definition_id) if revision else None
+        if revision is None or definition is None:
+            raise NotFoundError("workflow_revision_not_found", id=revision_id)
+        _source_revision, nodes, edges = await _revision_graph(session, revision_id, actor_id=None)
+        validate_graph(nodes, edges)
+        revision.status = "published"
+        definition.active_revision_id = revision.id
+        template.published_revision_id = revision.id
+        template.status = "published"
+        template.published_at = utc_now()
+    elif target == "rejected":
+        template.status = "rejected"
+    else:
+        template.status = "draft"
+    template.updated_at = utc_now()
+    await session.commit()
+    return {"id": template.id, "status": template.status, "decision": decision, "comment": comment}
+
+
+async def set_template_suspended(
+    session: AsyncSession, template_id: str, *, reviewer_id: str, suspended: bool
+) -> dict[str, Any]:
+    template = await session.get(WorkflowTemplate, template_id)
+    if template is None:
+        raise NotFoundError("workflow_template_not_found", id=template_id)
+    target = "suspended" if suspended else "published"
+    template_transition(template.status, target)
+    template.status = target
+    template.updated_at = utc_now()
+    await session.commit()
+    return {"id": template.id, "status": template.status, "actor_id": reviewer_id}
+
+
+async def list_marketplace(
+    session: AsyncSession, *, template_type: str | None = None, limit: int = 50
+) -> dict[str, Any]:
+    stmt = select(WorkflowTemplate).where(WorkflowTemplate.status == "published")
+    if template_type:
+        if template_type not in TEMPLATE_TYPES:
+            raise WorkflowValidationError("workflow_template_invalid", reason="template_type")
+        stmt = stmt.where(WorkflowTemplate.template_type == template_type)
+    rows = (await session.execute(stmt.order_by(WorkflowTemplate.published_at.desc()).limit(limit))).scalars().all()
+    items = []
+    for row in rows:
+        detail = await get_template(session, row.id, actor_id="", public=True)
+        revision = detail.pop("revision", None)
+        detail["template_lock"] = {
+            "template_id": row.id,
+            "source_revision_id": row.published_revision_id,
+            "template_schema_version": 1,
+        }
+        detail["nodes"] = revision["nodes"] if revision else []
+        detail["edges"] = revision["edges"] if revision else []
+        items.append(detail)
+    return {"items": items}
+
+
+async def record_template_view(session: AsyncSession, template_id: str) -> dict[str, Any]:
+    template = await session.get(WorkflowTemplate, template_id)
+    if template is None or template.status != "published":
+        raise NotFoundError("workflow_template_not_found", id=template_id)
+    stats = await session.get(WorkflowUsageStats, template_id)
+    if stats is None:
+        stats = WorkflowUsageStats(template_id=template_id)
+        session.add(stats)
+    stats.views += 1
+    await session.commit()
+    return {"template_id": template_id, "views": stats.views}
+
+
+async def rate_template(session: AsyncSession, template_id: str, *, rating: float, actor_id: str) -> dict[str, Any]:
+    if rating < 1 or rating > 5:
+        raise WorkflowValidationError("workflow_template_invalid", reason="rating")
+    template = await session.get(WorkflowTemplate, template_id)
+    if template is None or template.status != "published":
+        raise NotFoundError("workflow_template_not_found", id=template_id)
+    if template.user_id == actor_id:
+        raise WorkflowValidationError("workflow_template_invalid", reason="author_rating")
+    stats = await session.get(WorkflowUsageStats, template_id)
+    if stats is None:
+        stats = WorkflowUsageStats(template_id=template_id)
+        session.add(stats)
+    stats.rating_total += rating
+    stats.rating_count += 1
+    await session.commit()
+    return {
+        "template_id": template_id,
+        "rating": stats.rating_total / stats.rating_count,
+        "rating_count": stats.rating_count,
+    }
+
+
+async def derive_template(
+    session: AsyncSession,
+    template_id: str,
+    *,
+    workspace_id: str,
+    project_id: str,
+    name: str,
+    actor_id: str,
+) -> dict[str, Any]:
+    template = await session.get(WorkflowTemplate, template_id)
+    if template is None or template.status != "published" or not template.published_revision_id:
+        raise ConflictError("workflow_template_not_published", id=template_id)
+    source, nodes, edges = await _revision_graph(session, template.published_revision_id, actor_id=None)
+    definition = await create_definition(
+        session, workspace_id=workspace_id, project_id=project_id, name=name, actor_id=actor_id
+    )
+    revision = await create_revision(
+        session,
+        definition_id=definition["id"],
+        nodes=nodes,
+        edges=edges,
+        template_lock={
+            "template_id": template.id,
+            "source_revision_id": source.id,
+            "derived_at": utc_now().isoformat(),
+        },
+        actor_id=actor_id,
+        content_mode=source.content_mode,
+        generation_mode=source.generation_mode,
+        input_schema=_loads(source.input_schema_json, {}),
+    )
+    await publish_revision(session, revision["id"], actor_id=actor_id)
+    stats = await session.get(WorkflowUsageStats, template.id)
+    if stats:
+        stats.derivations += 1
+    await session.commit()
+    return {"definition_id": definition["id"], "revision_id": revision["id"], "template_id": template.id}
+
+
+async def validate_patch_for_run(
+    session: AsyncSession, run_id: str, patch: WorkflowPatch, *, actor_id: str
+) -> dict[str, Any]:
+    run = await session.get(WorkflowRun, run_id)
+    if run is None or run.user_id != actor_id:
+        raise NotFoundError("workflow_run_not_found", id=run_id)
+    revision, nodes, edges = await _revision_graph(session, run.workflow_revision_id, actor_id=actor_id)
+    if patch.base_revision_id != revision.id:
+        raise ConflictError("workflow_patch_stale_revision", expected=revision.id, actual=patch.base_revision_id)
+    remaining = None if run.budget_limit is None else run.budget_limit - run.spent_amount - run.reserved_amount
+    return validate_patch(nodes, edges, patch, remaining_budget=remaining)
+
+
+async def apply_patch_for_run(
+    session: AsyncSession,
+    run_id: str,
+    patch: WorkflowPatch,
+    *,
+    actor_id: str,
+    confirmed: bool,
+    start: bool = False,
+) -> dict[str, Any]:
+    """Authorize a patch, persist a new draft revision, and optionally plan it."""
+    run = await session.get(WorkflowRun, run_id)
+    if run is None or run.user_id != actor_id:
+        raise NotFoundError("workflow_run_not_found", id=run_id)
+    revision, nodes, edges = await _revision_graph(session, run.workflow_revision_id, actor_id=actor_id)
+    if patch.base_revision_id != revision.id:
+        raise ConflictError("workflow_patch_stale_revision", expected=revision.id, actual=patch.base_revision_id)
+    remaining = None if run.budget_limit is None else run.budget_limit - run.spent_amount - run.reserved_amount
+    preview = validate_patch(nodes, edges, patch, remaining_budget=remaining, allow_destructive=confirmed)
+    if preview["requires_confirmation"] and not confirmed:
+        raise WorkflowValidationError("workflow_patch_confirmation_required", operation="patch")
+    next_nodes, next_edges = apply_patch_to_graph(nodes, edges, patch)
+    result = await create_revision(
+        session,
+        definition_id=revision.definition_id,
+        nodes=next_nodes,
+        edges=next_edges,
+        template_lock={
+            **(_loads(revision.template_lock_json, {}) or {}),
+            "parent_revision_id": revision.id,
+            "patch_reason": patch.reason,
+            "patch_scope": patch.scope,
+        },
+        actor_id=actor_id,
+        content_mode=revision.content_mode,
+        generation_mode=revision.generation_mode,
+        input_schema=_loads(revision.input_schema_json, {}),
+    )
+    response: dict[str, Any] = {
+        "revision_id": result["id"],
+        "status": result["status"],
+        "parent_revision_id": revision.id,
+        "affected_nodes": preview["affected_nodes"],
+        "estimated_cost_delta": preview["estimated_cost_delta"],
+    }
+    if start:
+        published = await publish_revision(session, result["id"], actor_id=actor_id)
+        planned = await plan_run(
+            session,
+            revision_id=result["id"],
+            workspace_id=run.workspace_id,
+            project_id=run.project_id,
+            script_revision_id=run.script_revision_id,
+            mode=run.mode,
+            input_snapshot=_loads(run.input_snapshot_json, {}),
+            actor_id=actor_id,
+            episode_id=run.episode_id,
+            budget_limit=run.budget_limit,
+        )
+        response.update({"published": published, "run": planned})
+    return response
+
+
+async def list_pending_template_reviews(
+    session: AsyncSession,
+    *,
+    template_type: str | None = None,
+    risk_tag: str | None = None,
+    limit: int = 100,
+) -> dict[str, Any]:
+    stmt = select(WorkflowTemplate).where(WorkflowTemplate.status.in_(("submitted", "under_review")))
+    if template_type:
+        stmt = stmt.where(WorkflowTemplate.template_type == template_type)
+    rows = (await session.execute(stmt.order_by(WorkflowTemplate.submitted_at.asc()).limit(limit))).scalars().all()
+    items: list[dict[str, Any]] = []
+    for template in rows:
+        contract = _loads(template.contract_json, {})
+        tags = contract.get("risk_tags", []) if isinstance(contract, dict) else []
+        if risk_tag and risk_tag not in tags:
+            continue
+        reviews = (
+            (
+                await session.execute(
+                    select(WorkflowMarketplaceReview)
+                    .where(WorkflowMarketplaceReview.template_id == template.id)
+                    .order_by(WorkflowMarketplaceReview.created_at.desc())
+                    .limit(10)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        detail = await get_template(session, template.id, actor_id=template.user_id, public=False)
+        items.append(
+            {
+                **detail,
+                "risk_tags": tags,
+                "reviews": [
+                    {
+                        "id": review.id,
+                        "decision": review.decision,
+                        "comment": review.comment,
+                        "reviewer_id": review.reviewer_id,
+                        "created_at": review.created_at.isoformat(),
+                    }
+                    for review in reviews
+                ],
+            }
+        )
+    return {"items": items}
+
+
+async def reserve_run_budget(session: AsyncSession, run_id: str, *, amount: float, actor_id: str) -> dict[str, Any]:
+    if amount <= 0:
+        raise WorkflowValidationError("workflow_input_invalid", reason="budget_reservation")
+    run = await session.get(WorkflowRun, run_id)
+    if run is None or run.user_id != actor_id:
+        raise NotFoundError("workflow_run_not_found", id=run_id)
+    remaining = None if run.budget_limit is None else run.budget_limit - run.spent_amount - run.reserved_amount
+    if remaining is not None and amount > remaining:
+        raise WorkflowValidationError("workflow_budget_exceeded", requested=amount, remaining=remaining)
+    reservation = BudgetReservation(
+        id=uuid.uuid4().hex,
+        workspace_id=run.workspace_id,
+        workflow_run_id=run.id,
+        currency="USD",
+        estimated_amount=amount,
+        reserved_amount=amount,
+        settled_amount=0,
+        status="reserved",
+    )
+    session.add(reservation)
+    run.reserved_amount += amount
+    await session.commit()
+    return {
+        "reservation_id": reservation.id,
+        "run_id": run.id,
+        "reserved_amount": run.reserved_amount,
+        "remaining_amount": None
+        if run.budget_limit is None
+        else run.budget_limit - run.spent_amount - run.reserved_amount,
+    }
+
+
+async def settle_run_budget(
+    session: AsyncSession, reservation_id: str, *, amount: float, actor_id: str
+) -> dict[str, Any]:
+    reservation = await session.get(BudgetReservation, reservation_id)
+    if reservation is None:
+        raise NotFoundError("workflow_budget_reservation_not_found", id=reservation_id)
+    run = await session.get(WorkflowRun, reservation.workflow_run_id)
+    if run is None or run.user_id != actor_id:
+        raise NotFoundError("workflow_run_not_found", id=reservation.workflow_run_id)
+    if amount < 0 or amount > reservation.reserved_amount:
+        raise WorkflowValidationError("workflow_input_invalid", reason="settled_amount")
+    reservation.reserved_amount -= amount
+    reservation.settled_amount += amount
+    reservation.status = "settled" if reservation.reserved_amount == 0 else "reserved"
+    run.reserved_amount = max(0.0, run.reserved_amount - amount)
+    run.spent_amount += amount
+    if run.budget_limit is not None and run.spent_amount > run.budget_limit:
+        raise WorkflowValidationError("workflow_budget_exceeded", spent=run.spent_amount, limit=run.budget_limit)
+    await session.commit()
+    return {
+        "reservation_id": reservation.id,
+        "spent_amount": run.spent_amount,
+        "reserved_amount": run.reserved_amount,
+        "remaining_amount": None
+        if run.budget_limit is None
+        else run.budget_limit - run.spent_amount - run.reserved_amount,
+    }

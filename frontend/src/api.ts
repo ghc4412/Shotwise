@@ -67,6 +67,10 @@ import type {
   WorkflowDefinitionSummary,
   WorkflowNodeInput,
   WorkflowNodeLogEntry,
+  WorkflowPatch,
+  WorkflowPatchApplyResult,
+  WorkflowPatchPreview,
+  WorkflowReviewItem,
   WorkflowRevisionSummary,
   WorkflowTemplateCatalogItem,
   WorkflowRunDetail,
@@ -2838,6 +2842,7 @@ class API {
   static async planWorkflowRun(
     revisionId: string,
     projectName: string,
+    options?: { episode_id?: string; budget_limit?: number },
   ): Promise<{ id: string; version: number }> {
     return this.request(`/workflow-revisions/${encodeURIComponent(revisionId)}/runs`, {
       method: "POST",
@@ -2846,6 +2851,8 @@ class API {
         project_id: projectName,
         mode: "hybrid",
         input_snapshot: { project_id: projectName },
+        episode_id: options?.episode_id,
+        budget_limit: options?.budget_limit,
       }),
     });
   }
@@ -2881,6 +2888,27 @@ class API {
     });
   }
 
+  static async reserveWorkflowBudget(
+    runId: string,
+    amount: number,
+  ): Promise<{ reservation_id: string; remaining_amount: number | null }> {
+    return this.request(`/workflow-runs/${encodeURIComponent(runId)}/budget/reserve`, {
+      method: "POST",
+      body: JSON.stringify({ amount }),
+    });
+  }
+
+  static async settleWorkflowBudget(
+    runId: string,
+    reservationId: string,
+    amount: number,
+  ): Promise<{ spent_amount: number; remaining_amount: number | null }> {
+    return this.request(`/workflow-runs/${encodeURIComponent(runId)}/budget/settle`, {
+      method: "POST",
+      body: JSON.stringify({ reservation_id: reservationId, amount }),
+    });
+  }
+
   static async listWorkflowRevisions(
     definitionId: string,
   ): Promise<{ items: WorkflowRevisionSummary[] }> {
@@ -2901,6 +2929,79 @@ class API {
     return this.request("/workflow-templates");
   }
 
+  static async createWorkflowTemplateDraft(body: {
+    name: string;
+    description?: string;
+    template_type: "manga" | "short_drama";
+    contract?: Record<string, unknown>;
+    nodes: WorkflowNodeInput[];
+    edges: WorkflowEdgeInput[];
+    content_mode?: string;
+    generation_mode?: string;
+    cover_ref?: string | null;
+  }): Promise<{ id: string; status: string }> {
+    return this.request("/workflow-templates", { method: "POST", body: JSON.stringify(body) });
+  }
+
+  static async submitWorkflowTemplate(templateId: string): Promise<{ id: string; status: string }> {
+    return this.request(`/workflow-templates/${encodeURIComponent(templateId)}/submit`, { method: "POST" });
+  }
+
+  static async deriveWorkflowTemplate(
+    templateId: string,
+    body: { workspace_id: string; project_id: string; name: string },
+  ): Promise<{ definition_id: string; revision_id: string; template_id: string }> {
+    return this.request(`/workflow-templates/${encodeURIComponent(templateId)}/derive`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  static async validateWorkflowPatch(runId: string, patch: WorkflowPatch): Promise<{
+    valid: boolean;
+    affected_nodes: string[];
+    estimated_cost_delta: number;
+    requires_confirmation: boolean;
+  }> {
+    return this.request(`/workflow-runs/${encodeURIComponent(runId)}/patch/validate`, {
+      method: "POST",
+      body: JSON.stringify({ patch }),
+    });
+  }
+
+  static async applyWorkflowPatch(
+    runId: string,
+    patch: WorkflowPatch,
+    options?: { confirmed?: boolean; start?: boolean },
+  ): Promise<WorkflowPatchApplyResult> {
+    return this.request(`/workflow-runs/${encodeURIComponent(runId)}/patch/apply`, {
+      method: "POST",
+      body: JSON.stringify({ patch, confirmed: options?.confirmed ?? false, start: options?.start ?? false }),
+    });
+  }
+
+  static async listWorkflowReviewQueue(options?: {
+    template_type?: "manga" | "short_drama";
+    risk_tag?: string;
+  }): Promise<{ items: WorkflowReviewItem[] }> {
+    const query = new URLSearchParams();
+    if (options?.template_type) query.set("template_type", options.template_type);
+    if (options?.risk_tag) query.set("risk_tag", options.risk_tag);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return this.request(`/admin/workflow-templates/reviews${suffix}`);
+  }
+
+  static async rateWorkflowTemplate(templateId: string, rating: number): Promise<{
+    template_id: string;
+    rating: number;
+    rating_count: number;
+  }> {
+    return this.request(`/workflow-templates/${encodeURIComponent(templateId)}/rating`, {
+      method: "POST",
+      body: JSON.stringify({ rating }),
+    });
+  }
+
   static async exportWorkflowDefinition(definitionId: string): Promise<WorkflowExport> {
     return this.request(`/workflows/${encodeURIComponent(definitionId)}/export`);
   }
@@ -2913,6 +3014,9 @@ class API {
       nodes: WorkflowNodeInput[];
       edges: WorkflowEdgeInput[];
       template_lock?: Record<string, unknown> | null;
+      content_mode?: string;
+      generation_mode?: string;
+      input_schema?: Record<string, unknown>;
     },
   ): Promise<{ definition_id: string; revision_id: string }> {
     return this.request(`/projects/${encodeURIComponent(projectName)}/workflows/import`, {
