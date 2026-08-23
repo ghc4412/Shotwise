@@ -7,6 +7,7 @@ MESSAGES = {
     "workflow_invalid_transition": "{entity} không thể chuyển từ {status} sang {target}",
     "workflow_revision_immutable": "Phiên bản quy trình {id} đang ở trạng thái {status} và không thể sửa",
     "workflow_revision_not_published": "Phiên bản quy trình {id} chưa được phát hành",
+    "workflow_template_not_published": "Mẫu này chưa được phát hành nên chưa thể sử dụng",
     "workflow_version_conflict": "Quy trình đã thay đổi: cần phiên bản {expected}, hiện tại là {actual}",
     "project_not_found": "Dự án '{name}' không tồn tại hoặc chưa được khởi tạo",
     "resource_not_found": "Tài nguyên được yêu cầu không tồn tại",
@@ -135,10 +136,10 @@ MESSAGES = {
     "segment_splitting": "Chia đoạn",
     # Source loader
     "source_unsupported_format": "Định dạng nguồn không hỗ trợ: {ext} (hỗ trợ: .txt / .md / .docx / .epub / .pdf)",
-    "source_decode_failed": "Không giải mã được tệp nguồn '{filename}' (đã thử: {tried})",
-    "source_corrupt_file": "Tệp nguồn '{filename}' không thể phân tích: {reason}",
-    "source_too_large": "Tệp nguồn '{filename}' quá lớn ({size_mb} MB > {limit_mb} MB)",
-    "source_conflict": "Tệp nguồn '{existing}' đã tồn tại; gợi ý đổi tên: '{suggested}'",
+    "source_decode_failed": "Không giải mã được bản thảo '{filename}' (đã thử: {tried})",
+    "source_corrupt_file": "Bản thảo '{filename}' không thể phân tích: {reason}",
+    "source_too_large": "Bản thảo '{filename}' quá lớn ({size_mb} MB > {limit_mb} MB)",
+    "source_conflict": "Bản thảo '{existing}' đã tồn tại; gợi ý đổi tên: '{suggested}'",
     # Providers
     "unknown_provider": "Nhà cung cấp không xác định: {provider_id}",
     "max_workers_must_be_positive_integer": "{field} phải là số nguyên dương, đã nhận: {value}",
@@ -378,4 +379,8 @@ MESSAGES = {
     "project_config_invalid": "Cấu hình dự án không hợp lệ; hãy kiểm tra tham số và thử lại",
     "invalid_discovery_format": "Định dạng khám phá mô hình không được hỗ trợ: {discovery_format}",
     "request_invalid": "Yêu cầu không hợp lệ, vui lòng kiểm tra và thử lại",
+    "workflow_template_upgrade_confirmation_required": "Bản nâng cấp mẫu cần được xác nhận",
+    "workflow_template_upgrade_unavailable": "Không có bản nâng cấp mẫu đã phát hành",
+    "workflow_template_upgrade_incompatible": "Bản nâng cấp mẫu không tương thích: {reasons}",
+    "workflow_quality_gate_required": "Không thể bỏ qua cổng chất lượng",
 }

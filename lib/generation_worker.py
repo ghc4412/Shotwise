@@ -718,6 +718,28 @@ class GenerationWorker:
         await asyncio.gather(*active_tasks, return_exceptions=True)
         self._slots.clear()
 
+    async def _index_successful_media(self, task: dict[str, Any], result: Any) -> Any:
+        """Best-effort MediaAsset registration after a task has produced its result."""
+
+        from server.services.media_assets import index_generation_task_result
+
+        try:
+            return await asyncio.to_thread(
+                index_generation_task_result,
+                project_id=str(task.get("project_name") or ""),
+                project_root=task.get("project_root"),
+                task_id=task["task_id"],
+                task_type=str(task.get("task_type") or "unknown"),
+                result=result,
+                payload=task.get("payload") or {},
+                provider_id=str(task.get("provider_id") or "") or None,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 -- indexing must never change generation outcome
+            logger.exception("登记任务媒体失败 task_id=%s", task.get("task_id"))
+            return result
+
     async def _process_task(self, task: dict[str, Any]) -> None:
         """Run a generation task with 0-rows-cancelled finally protocol (ADR 0006).
 
@@ -734,6 +756,7 @@ class GenerationWorker:
 
         try:
             result = await execute_generation_task(task)
+            result = await self._index_successful_media(task, result)
         except asyncio.CancelledError:
             # 用户/级联取消：worker.request_cancel 触发 asyncio.Task.cancel()
             await asyncio.shield(self.queue.mark_task_cancelled(task_id, cancelled_by="user"))
@@ -849,6 +872,7 @@ class GenerationWorker:
             return
 
         try:
+            result = await self._index_successful_media(task, result)
             rows = await asyncio.shield(self.queue.mark_task_succeeded(task_id, result))
         except asyncio.CancelledError:
             await asyncio.shield(self.queue.mark_task_cancelled(task_id, cancelled_by="user"))

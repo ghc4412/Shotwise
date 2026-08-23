@@ -32,7 +32,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "server.app:app",
-        host=os.environ.get("LISTEN_HOST") or "0.0.0.0",
+        host=os.environ.get("LISTEN_HOST") or "127.0.0.1",
         port=int(os.environ.get("LISTEN_PORT") or "1241"),
         reload=True,
         reload_dirs=["server", "lib"],

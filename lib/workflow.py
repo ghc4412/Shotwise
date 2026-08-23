@@ -266,6 +266,67 @@ def affected_nodes(nodes: list[dict[str, Any]], edges: list[dict[str, Any]], pat
     return {str(value) for value in result}
 
 
+def _quality_gate_node_keys(nodes: list[dict[str, Any]]) -> set[str]:
+    keys: set[str] = set()
+    for node in nodes:
+        node_type = str(node.get("node_type", "")).lower()
+        config = node.get("config")
+        if not isinstance(config, dict):
+            config = {}
+        if "quality" in node_type or config.get("quality_gate") is True:
+            keys.add(str(node.get("node_key", "")))
+    return keys
+
+
+def _ensure_quality_gates_intact(
+    nodes: list[dict[str, Any]], edges: list[dict[str, Any]], patch: WorkflowPatch
+) -> None:
+    quality_keys = _quality_gate_node_keys(nodes)
+    if not quality_keys:
+        return
+    edge_by_key = {str(edge.get("edge_key", "")): edge for edge in edges}
+    for operation in patch.operations:
+        target = str(operation.target_node or "")
+        if operation.operation == "remove_node" and target in quality_keys:
+            raise WorkflowValidationError("workflow_quality_gate_required", node_key=target)
+        if operation.operation == "remove_edge":
+            edge = edge_by_key.get(target)
+            if edge and ({str(edge.get("source_node_key")), str(edge.get("target_node_key"))} & quality_keys):
+                raise WorkflowValidationError("workflow_quality_gate_required", node_key=target)
+        if operation.operation == "set_config" and target in quality_keys:
+            path = (operation.path or "").lower().replace("-", "_")
+            if path.split(".")[-1] == "disabled" and bool(operation.after):
+                raise WorkflowValidationError("workflow_quality_gate_required", node_key=target)
+            if "quality_gate" in path and operation.after is False:
+                raise WorkflowValidationError("workflow_quality_gate_required", node_key=target)
+
+
+def patch_requires_confirmation(
+    nodes: list[dict[str, Any]],
+    patch: WorkflowPatch,
+    *,
+    completed_nodes: set[str] | frozenset[str] = frozenset(),
+) -> bool:
+    """Return whether a patch needs an explicit user confirmation."""
+    if patch.rerun:
+        return True
+    confirmation_paths = {"provider", "supplier", "model", "backend", "engine", "executor", "format"}
+    for operation in patch.operations:
+        if operation.requires_confirmation:
+            return True
+        if operation.operation in {"add_node", "remove_node", "add_edge", "remove_edge"}:
+            return True
+        if float(operation.estimated_cost_delta) > 0:
+            return True
+        if operation.target_node and str(operation.target_node) in completed_nodes:
+            return True
+        if operation.operation == "set_config":
+            path_parts = {(operation.path or "").lower().replace("-", "_").split(".")[-1]}
+            if path_parts & confirmation_paths:
+                return True
+    return False
+
+
 def validate_patch(
     nodes: list[dict[str, Any]],
     edges: list[dict[str, Any]],
@@ -273,9 +334,11 @@ def validate_patch(
     *,
     remaining_budget: float | None = None,
     allow_destructive: bool = False,
+    completed_nodes: set[str] | frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     """Validate an agent patch without mutating a published revision."""
     validate_graph(nodes, edges)
+    _ensure_quality_gates_intact(nodes, edges, patch)
     keys = {str(node["node_key"]) for node in nodes}
     total_delta = sum(float(op.estimated_cost_delta) for op in patch.operations)
     for op in patch.operations:
@@ -293,7 +356,7 @@ def validate_patch(
         "valid": True,
         "affected_nodes": sorted(affected_nodes(nodes, edges, patch)),
         "estimated_cost_delta": total_delta,
-        "requires_confirmation": any(op.requires_confirmation for op in patch.operations),
+        "requires_confirmation": patch_requires_confirmation(nodes, patch, completed_nodes=completed_nodes),
     }
 
 

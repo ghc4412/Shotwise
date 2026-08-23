@@ -4,8 +4,9 @@ import { ChevronDown, FileText, Plus, Save, Trash2 } from "lucide-react";
 import { API } from "@/api";
 import { useAppStore } from "@/stores/app-store";
 import { errMsg, voidPromise } from "@/utils/async";
+import { CREATIVE_OUTLINE_FILENAME } from "./source-outline";
 
-export const CREATIVE_OUTLINE_FILENAME = "_creative_outline.json";
+export { CREATIVE_OUTLINE_FILENAME } from "./source-outline";
 
 export type CreativeOutlineChapter = {
   id: string;
@@ -265,7 +266,7 @@ export function CreativeOutlineManager({
 
   if (loading) {
     return (
-      <aside className="min-h-0 overflow-y-auto rounded-lg p-3" style={{ border: "1px solid var(--color-hairline-soft)", background: "var(--panel-card-bg)" }}>
+      <aside className="flex min-h-0 flex-col overflow-hidden rounded-lg p-3" style={{ border: "1px solid var(--color-hairline-soft)", background: "var(--panel-card-bg)" }}>
         <span className="text-[11px]" style={{ color: "var(--color-text-4)" }}>
           {t("dashboard:creative_outline_loading")}
         </span>
@@ -274,7 +275,7 @@ export function CreativeOutlineManager({
   }
 
   return (
-    <aside className="min-h-0 overflow-y-auto rounded-lg p-3" style={{ border: "1px solid var(--color-hairline-soft)", background: "var(--panel-card-bg)" }}>
+    <aside className="source-file-scroll min-h-0 overflow-y-scroll rounded-lg p-3" style={{ border: "1px solid var(--color-hairline-soft)", background: "var(--panel-card-bg)" }}>
       <header className="flex items-center gap-2 border-b pb-2.5" style={{ borderColor: "var(--color-hairline-soft)" }}>
         <FileText className="h-3.5 w-3.5" style={{ color: "var(--color-accent-2)" }} aria-hidden />
         <h3 className="flex-1 text-[12px] font-semibold" style={{ color: "var(--color-text)" }}>
@@ -314,7 +315,7 @@ export function CreativeOutlineManager({
         </button>
       ) : null}
 
-      <div className="mt-3 space-y-2.5">
+      <div className="source-file-scroll mt-3 min-h-0 flex-1 overflow-y-scroll space-y-2.5 pr-1">
         {outline.volumes.map((volume) => (
           <section key={volume.id} className="border-b pb-2.5" style={{ borderColor: "var(--color-hairline-soft)" }}>
             <div className="flex items-center gap-1">

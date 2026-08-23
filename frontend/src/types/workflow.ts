@@ -92,7 +92,7 @@ export interface WorkflowNodeInput {
   executor_id?: string;
   required_capabilities?: string[];
   estimated_cost?: number;
-  cache_policy?: "reuse" | "refresh" | "never" | string;
+  cache_policy?: string;
 }
 
 export interface WorkflowEdgeInput {
@@ -112,6 +112,20 @@ export interface WorkflowDefinitionSummary {
   updated_at: string;
 }
 
+export interface WorkflowRevisionDetail {
+  id: string;
+  revision_no: number;
+  status: string;
+  graph_hash: string;
+  execution_hash: string;
+  content_mode?: string;
+  generation_mode?: string;
+  input_schema?: Record<string, unknown>;
+  template_lock: Record<string, unknown> | null;
+  nodes: WorkflowNodeInput[];
+  edges: WorkflowEdgeInput[];
+}
+
 export interface WorkflowDefinitionDetail {
   id: string;
   workspace_id: string;
@@ -119,19 +133,8 @@ export interface WorkflowDefinitionDetail {
   name: string;
   scope: string;
   active_revision_id: string | null;
-  active_revision?: {
-    id: string;
-    revision_no: number;
-    status: string;
-    graph_hash: string;
-    execution_hash: string;
-    content_mode?: string;
-    generation_mode?: string;
-    input_schema?: Record<string, unknown>;
-    template_lock: Record<string, unknown> | null;
-    nodes: WorkflowNodeInput[];
-    edges: WorkflowEdgeInput[];
-  };
+  active_revision?: WorkflowRevisionDetail;
+  draft_revision?: WorkflowRevisionDetail;
 }
 
 export interface WorkflowRevisionSummary {
@@ -212,6 +215,12 @@ export interface WorkflowPatchApplyResult {
 
 export interface WorkflowReviewItem extends WorkflowTemplateCatalogItem {
   risk_tags: string[];
+  static_validation?: {
+    valid: boolean;
+    node_count: number;
+    edge_count: number;
+    missing_endpoints: Array<Record<string, unknown>>;
+  };
   reviews: Array<{
     id: string;
     decision: string;
@@ -230,6 +239,28 @@ export interface WorkflowExport {
   content_mode?: string;
   generation_mode?: string;
   input_schema?: Record<string, unknown>;
+}
+
+export interface WorkflowTemplateUpgradeChanges {
+  added_nodes: string[];
+  removed_nodes: string[];
+  changed_nodes: string[];
+  added_edges: string[];
+  removed_edges: string[];
+}
+
+export interface WorkflowTemplateUpgrade {
+  available: boolean;
+  reason?: string;
+  template_id?: string;
+  current_revision_id?: string;
+  current_source_revision_id?: string;
+  latest_revision_id?: string;
+  latest_revision_no?: number;
+  compatible?: boolean;
+  compatibility_reasons?: string[];
+  estimated_cost_delta?: number;
+  changes?: WorkflowTemplateUpgradeChanges;
 }
 
 export interface WorkflowNodeLogEntry {

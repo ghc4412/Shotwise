@@ -5,8 +5,16 @@ from lib.db.models.api_call import ApiCall
 from lib.db.models.api_key import ApiKey
 from lib.db.models.asset import Asset
 from lib.db.models.config import ProviderConfig, SystemSetting
+from lib.db.models.creation_plan import CreationCompatibilityEvent, CreationPlanRecord
+from lib.db.models.creation_skill import (
+    CreationSkillCompatibilityRecord,
+    CreationSkillDefinitionRecord,
+    CreationSkillVersionRecord,
+)
+from lib.db.models.creative_board import CreativeBoard, CreativeBoardEdge, CreativeBoardItem
 from lib.db.models.credential import ProviderCredential
 from lib.db.models.custom_provider import CustomProvider, CustomProviderModel
+from lib.db.models.media_asset import MediaAsset, MediaBinding, MediaDerivation
 from lib.db.models.session import AgentSession
 from lib.db.models.session_event import AgentSessionEventLogEntry
 from lib.db.models.session_message_link import AgentSessionUserMessageLink
@@ -45,6 +53,17 @@ __all__ = [
     "CustomProviderModel",
     "Asset",
     "AgentAnthropicCredential",
+    "CreationPlanRecord",
+    "CreationCompatibilityEvent",
+    "CreationSkillDefinitionRecord",
+    "CreationSkillVersionRecord",
+    "CreationSkillCompatibilityRecord",
+    "CreativeBoard",
+    "CreativeBoardItem",
+    "CreativeBoardEdge",
+    "MediaAsset",
+    "MediaBinding",
+    "MediaDerivation",
     "WorkflowDefinition",
     "WorkflowRevision",
     "WorkflowTemplate",

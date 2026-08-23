@@ -7,6 +7,7 @@ MESSAGES = {
     "workflow_invalid_transition": "The {entity} cannot move from {status} to {target}",
     "workflow_revision_immutable": "Workflow revision {id} is {status} and cannot be changed",
     "workflow_revision_not_published": "Workflow revision {id} is not published",
+    "workflow_template_not_published": "This template has not been published yet and cannot be used",
     "workflow_version_conflict": "The workflow changed: expected version {expected}, current version {actual}",
     "project_not_found": "Project '{name}' does not exist or is not initialized",
     "resource_not_found": "The requested resource does not exist",
@@ -135,10 +136,10 @@ MESSAGES = {
     "segment_splitting": "Segment Splitting",
     # Source loader
     "source_unsupported_format": "Unsupported source format: {ext} (supported: .txt / .md / .docx / .epub / .pdf)",
-    "source_decode_failed": "Failed to decode source file '{filename}' (tried: {tried})",
-    "source_corrupt_file": "Source file '{filename}' is not parseable: {reason}",
-    "source_too_large": "Source file '{filename}' is too large ({size_mb} MB > {limit_mb} MB)",
-    "source_conflict": "Source file '{existing}' already exists; suggested rename: '{suggested}'",
+    "source_decode_failed": "Failed to decode manuscript '{filename}' (tried: {tried})",
+    "source_corrupt_file": "manuscript '{filename}' is not parseable: {reason}",
+    "source_too_large": "manuscript '{filename}' is too large ({size_mb} MB > {limit_mb} MB)",
+    "source_conflict": "manuscript '{existing}' already exists; suggested rename: '{suggested}'",
     # Providers
     "unknown_provider": "Unknown provider: {provider_id}",
     "max_workers_must_be_positive_integer": "{field} must be a positive integer, got: {value}",
@@ -376,4 +377,8 @@ MESSAGES = {
     "project_config_invalid": "Invalid project configuration; check the parameters and retry",
     "invalid_discovery_format": "Unsupported model discovery format: {discovery_format}",
     "request_invalid": "Invalid request, please check and retry",
+    "workflow_template_upgrade_confirmation_required": "Template upgrade requires confirmation",
+    "workflow_template_upgrade_unavailable": "No published template upgrade is available",
+    "workflow_template_upgrade_incompatible": "Template upgrade is incompatible: {reasons}",
+    "workflow_quality_gate_required": "Quality gates cannot be bypassed",
 }

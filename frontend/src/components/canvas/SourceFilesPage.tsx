@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useTranslation } from "react-i18next";
-import { BookOpen, FileText, Plus, Trash2, Upload, ArrowRight } from "lucide-react";
+import { ArrowDownToLine, ArrowRight, BookOpen, FileText, Plus, Trash2, Upload } from "lucide-react";
 import { API, ConflictError } from "@/api";
 import { useAppStore } from "@/stores/app-store";
 import { useProjectsStore } from "@/stores/projects-store";
@@ -64,7 +64,7 @@ export function SourceFilesPage({ projectName }: SourceFilesPageProps) {
   projectNameRef.current = projectName;
   const sourceFilesVersion = useAppStore((s) => s.sourceFilesVersion);
   const sourceFiles = files.filter(
-    (file) => file.name !== "creative_draft.md" && file.name !== "_creative_outline.json",
+    (file) => file.name !== "demo.txt" && file.name !== "_creative_outline.json",
   );
 
   useEffect(() => {
@@ -580,6 +580,29 @@ export function SourceFilesPage({ projectName }: SourceFilesPageProps) {
                   >
                     {t("dashboard:source_open")}
                     <ArrowRight className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const link = document.createElement("a");
+                      link.href = file.url;
+                      link.download = file.name;
+                      link.click();
+                    }}
+                    aria-label={t("common:download")}
+                    title={t("common:download")}
+                    className="focus-ring grid h-7 w-7 place-items-center rounded-md transition-colors"
+                    style={{ color: "var(--color-text-4)" }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = "var(--color-text)";
+                      e.currentTarget.style.background = "var(--color-shell-btn)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = "var(--color-text-4)";
+                      e.currentTarget.style.background = "transparent";
+                    }}
+                  >
+                    <ArrowDownToLine className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>
                   <button
                     type="button"

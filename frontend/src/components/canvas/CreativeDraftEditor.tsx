@@ -8,7 +8,7 @@ import { useProjectsStore } from "@/stores/projects-store";
 import { errMsg, voidPromise } from "@/utils/async";
 import { CreativeOutlineManager, type CreativeOutlineChapter } from "./CreativeOutlineManager";
 
-const DRAFT_FILENAME = "creative_draft.md";
+const DRAFT_FILENAME = "demo.txt";
 
 type CreativeDraftEditorProps = {
   projectName: string;
@@ -105,6 +105,8 @@ export function CreativeDraftEditor({
   const { t } = useTranslation(["dashboard", "common"]);
   const [draft, setDraft] = useState("");
   const [savedDraft, setSavedDraft] = useState("");
+  const [confirmSourceOpen, setConfirmSourceOpen] = useState(false);
+  const [sourceFilename, setSourceFilename] = useState(DRAFT_FILENAME);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -126,6 +128,11 @@ export function CreativeDraftEditor({
     tone: "",
   });
   const instructionRef = useRef<HTMLTextAreaElement>(null);
+  const sourceFilenameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (confirmSourceOpen) sourceFilenameRef.current?.focus();
+  }, [confirmSourceOpen]);
 
   const dirty = draft !== savedDraft;
   const characterCount = Array.from(draft).length;
@@ -175,7 +182,7 @@ export function CreativeDraftEditor({
     async (showSuccess = true) => {
       setSaving(true);
       try {
-        await API.saveSourceFile(projectName, DRAFT_FILENAME, draft);
+        await API.saveSourceFile(projectName, sourceFilename, draft);
         setSavedDraft(draft);
         useAppStore.getState().invalidateSourceFiles();
         if (showSuccess) useAppStore.getState().pushToast(t("dashboard:creative_draft_saved"), "success");
@@ -189,7 +196,7 @@ export function CreativeDraftEditor({
         setSaving(false);
       }
     },
-    [draft, projectName, t],
+    [draft, projectName, sourceFilename, t],
   );
 
   const runOperation = useCallback(
@@ -286,7 +293,7 @@ export function CreativeDraftEditor({
   }, [draft, suggestion, suggestionSelection, t]);
 
   const handoffToAssistant = useCallback(
-    (kind: "assets" | "production") => {
+    (kind: "assets" | "production", filename = DRAFT_FILENAME) => {
       const promptKey =
         kind === "assets"
           ? "creative_draft_assets_prompt"
@@ -295,7 +302,7 @@ export function CreativeDraftEditor({
             : sourceKind === "screenplay"
               ? "creative_draft_confirm_screenplay_prompt"
               : "creative_draft_confirm_novel_prompt";
-      useAssistantStore.getState().setInput(t(`dashboard:${promptKey}`, { filename: DRAFT_FILENAME }));
+      useAssistantStore.getState().setInput(t(`dashboard:${promptKey}`, { filename }));
       useAppStore.getState().setAssistantPanelOpen(true);
     },
     [contentMode, sourceKind, t],
@@ -311,18 +318,29 @@ export function CreativeDraftEditor({
     handoffToAssistant("assets");
   }, [draft, handoffToAssistant, saveDraft, t]);
 
-  const handleConfirmSource = useCallback(async () => {
+  const handleConfirmSource = useCallback(() => {
     if (!draft.trim()) {
       useAppStore.getState().pushToast(t("dashboard:creative_draft_content_required"), "error");
       return;
     }
+    setSourceFilename((current) => current || DRAFT_FILENAME);
+    setConfirmSourceOpen(true);
+  }, [draft, t]);
+
+  const handleSaveConfirmedSource = useCallback(async () => {
+    const trimmedFilename = sourceFilename.trim();
+    if (!trimmedFilename) return;
+    const filename = /\.[^./\\]+$/.test(trimmedFilename) ? trimmedFilename : trimmedFilename + ".txt";
     setConfirming(true);
     try {
-      const saved = dirty ? await saveDraft(false) : true;
-      if (!saved) return;
+      await API.saveSourceFile(projectName, filename, draft);
+      setSavedDraft(draft);
+      setSourceFilename(filename);
+      useAppStore.getState().invalidateSourceFiles();
       await API.generateOverview(projectName);
       await useProjectsStore.getState().refreshProject(projectName);
-      handoffToAssistant("production");
+      handoffToAssistant("production", filename);
+      setConfirmSourceOpen(false);
       useAppStore.getState().pushToast(t("dashboard:creative_draft_confirmed"), "success");
     } catch (error) {
       useAppStore
@@ -331,7 +349,7 @@ export function CreativeDraftEditor({
     } finally {
       setConfirming(false);
     }
-  }, [dirty, draft, handoffToAssistant, projectName, saveDraft, t]);
+  }, [draft, handoffToAssistant, projectName, sourceFilename, t]);
 
   if (loading) {
     return (
@@ -347,9 +365,18 @@ export function CreativeDraftEditor({
         className="flex flex-wrap items-center gap-2 border-b px-5 py-2.5"
         style={{ borderColor: "var(--color-hairline-soft)", background: "var(--panel-card-bg)" }}
       >
-        <span className="text-[11px]" style={{ color: dirty ? "var(--color-warm)" : "var(--color-text-4)" }}>
-          {dirty ? t("dashboard:creative_draft_unsaved") : DRAFT_FILENAME}
-        </span>
+        <button
+          type="button"
+          onClick={handleConfirmSource}
+          aria-label={t("dashboard:creative_draft_source_filename")}
+          className="focus-ring rounded px-1 text-[11px]"
+          style={{
+            color: dirty ? "var(--color-warm)" : "var(--color-text-4)",
+            background: "transparent",
+          }}
+        >
+          {dirty ? t("dashboard:creative_draft_unsaved") : sourceFilename}
+        </button>
         {showNovelProfile ? (
           <button
             type="button"
@@ -375,7 +402,7 @@ export function CreativeDraftEditor({
         </button>
         <button
           type="button"
-          onClick={voidPromise(handleConfirmSource)}
+          onClick={handleConfirmSource}
           disabled={confirming || saving}
           className="focus-ring inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-[11.5px] font-medium disabled:opacity-50"
           style={{ color: "oklch(0.14 0 0)", background: "linear-gradient(135deg, var(--color-accent-2), var(--color-accent))" }}
@@ -558,6 +585,90 @@ export function CreativeDraftEditor({
           </section>
         </aside>
       </div>
+      {confirmSourceOpen ? (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 p-4"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="creative-draft-save-title"
+            className="w-full max-w-md rounded-xl p-5 shadow-2xl"
+            style={{
+              background: "var(--panel-card-bg)",
+              border: "1px solid var(--color-hairline)",
+              boxShadow: "0 24px 70px -28px oklch(0 0 0 / 0.8)",
+            }}
+          >
+            <div
+              id="creative-draft-save-title"
+              className="display-serif text-[17px] font-semibold"
+              style={{ color: "var(--color-text)" }}
+            >
+              {t("dashboard:creative_draft_confirm_source")}
+            </div>
+            <p
+              id="creative-draft-save-hint"
+              className="mt-2 text-[12px] leading-relaxed"
+              style={{ color: "var(--color-text-3)" }}
+            >
+              {t("dashboard:creative_draft_confirm_source_hint")}
+            </p>
+            <label
+              htmlFor="creative-draft-source-filename"
+              className="mt-4 block text-[11px] font-semibold"
+              style={{ color: "var(--color-text-2)" }}
+            >
+              {t("dashboard:creative_draft_source_filename")}
+            </label>
+            <input
+              id="creative-draft-source-filename"
+              type="text"
+              value={sourceFilename}
+              ref={sourceFilenameRef}
+              aria-describedby="creative-draft-save-hint"
+              onChange={(event) => setSourceFilename(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && !confirming) setConfirmSourceOpen(false);
+                if (event.key === "Enter" && !confirming && sourceFilename.trim()) void handleSaveConfirmedSource();
+              }}
+              className="focus-ring mt-1.5 w-full rounded-md px-3 py-2 text-[12px]"
+              style={{
+                color: "var(--color-text)",
+                background: "var(--color-shell-field)",
+                border: "1px solid var(--color-hairline)",
+              }}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={confirming}
+                onClick={() => setConfirmSourceOpen(false)}
+                className="focus-ring rounded-md px-3 py-1.5 text-[11.5px]"
+                style={{
+                  color: "var(--color-text-3)",
+                  border: "1px solid var(--color-hairline)",
+                  background: "var(--color-shell-btn)",
+                }}
+              >
+                {t("common:cancel")}
+              </button>
+              <button
+                type="button"
+                disabled={confirming || !sourceFilename.trim()}
+                onClick={voidPromise(handleSaveConfirmedSource)}
+                className="focus-ring rounded-md px-3 py-1.5 text-[11.5px] font-medium disabled:opacity-50"
+                style={{
+                  color: "oklch(0.14 0 0)",
+                  background: "linear-gradient(135deg, var(--color-accent-2), var(--color-accent))",
+                }}
+              >
+                {confirming ? t("common:saving") : t("dashboard:creative_draft_save")}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -10,9 +10,9 @@ export default {
   'validation_error': 'Xác thực dữ liệu thất bại',
   'source_unsupported_format': 'Định dạng nguồn không hỗ trợ: {{ext}}',
   'source_decode_failed': 'Không giải mã được "{{filename}}" (đã thử: {{tried}})',
-  'source_corrupt_file': 'Tệp nguồn "{{filename}}" không thể phân tích: {{reason}}',
-  'source_too_large': 'Tệp nguồn "{{filename}}" quá lớn ({{size_mb}} MB > {{limit_mb}} MB)',
-  'source_conflict': 'Tệp nguồn "{{existing}}" đã tồn tại',
+  'source_corrupt_file': 'Bản thảo "{{filename}}" không thể phân tích: {{reason}}',
+  'source_too_large': 'Bản thảo "{{filename}}" quá lớn ({{size_mb}} MB > {{limit_mb}} MB)',
+  'source_conflict': 'Bản thảo "{{existing}}" đã tồn tại',
   // Image Capability
   'image_endpoint_mismatch_no_i2i': 'Mô hình {{model}} chỉ hỗ trợ text-to-image (không có /v1/images/edits)',
   'image_endpoint_mismatch_no_t2i': 'Mô hình {{model}} chỉ hỗ trợ image-to-image (yêu cầu ảnh tham chiếu)',

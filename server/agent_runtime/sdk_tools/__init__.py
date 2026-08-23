@@ -19,6 +19,7 @@ from claude_agent_sdk import create_sdk_mcp_server
 
 from server.agent_runtime.sdk_tools._context import ToolContext
 from server.agent_runtime.sdk_tools.character_relations import analyze_character_relations_tool
+from server.agent_runtime.sdk_tools.creative_context import context_reference_tool
 from server.agent_runtime.sdk_tools.enqueue_assets import (
     generate_assets_tool,
     list_pending_assets_tool,
@@ -136,6 +137,7 @@ def build_shotwise_tool_list(*, project_name: str, projects_root: Path) -> list[
         patch_project_tool(ctx),
         rename_asset_tool(ctx),
         analyze_character_relations_tool(ctx),
+        context_reference_tool(ctx),
     ]
 
 

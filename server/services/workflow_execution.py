@@ -75,6 +75,8 @@ class AssetRef:
     path: str | None = None
     count: int | None = None
     label: str = ""
+    media_asset_id: str | None = None
+    legacy_field: str | None = None
 
 
 @dataclass
@@ -90,6 +92,7 @@ class NodeContext:
     log: Callable[[str, str], None]
     progress: Callable[[float], None]
     cancelled: Callable[[], Awaitable[bool]]
+    generation_mode: str = "storyboard"
 
 
 @dataclass
@@ -110,7 +113,106 @@ def _loads(value: str | None, default: Any) -> Any:
 
 
 def _ref_to_dict(ref: AssetRef) -> dict[str, Any]:
-    return {"kind": ref.kind, "path": ref.path, "count": ref.count, "label": ref.label}
+    return {
+        "kind": ref.kind,
+        "path": ref.path,
+        "count": ref.count,
+        "label": ref.label,
+        "media_asset_id": ref.media_asset_id,
+    }
+
+
+def _iter_dicts(value: Any):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _iter_dicts(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _iter_dicts(child)
+
+
+def _legacy_script_path(project_path: Path, config: dict[str, Any]) -> Path | None:
+    candidates: list[Path] = []
+    configured = config.get("script_file")
+    if isinstance(configured, str) and configured.strip():
+        candidates.extend((project_path / configured, project_path / "scripts" / Path(configured).name))
+    try:
+        project = json.loads((project_path / "project.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        project = {}
+    episodes = project.get("episodes") if isinstance(project, dict) else None
+    if isinstance(episodes, list):
+        for episode in episodes:
+            if isinstance(episode, dict) and episode.get("script_file"):
+                value = str(episode["script_file"])
+                candidates.extend((project_path / value, project_path / "scripts" / Path(value).name))
+    return next((path for path in candidates if path.exists() and path.is_file()), None)
+
+
+def _sync_legacy_outputs(project_path: Path, config: dict[str, Any], outputs: dict[str, list[AssetRef]]) -> None:
+    refs = [ref for port_refs in outputs.values() for ref in port_refs if ref.legacy_field and ref.path and ref.label]
+    if not refs:
+        return
+    script_path = _legacy_script_path(project_path, config)
+    if script_path is None:
+        return
+    try:
+        script = json.loads(script_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    changed = False
+    id_keys = ("shot_id", "scene_id", "segment_id", "unit_id", "id")
+    for ref in refs:
+        target = next(
+            (item for item in _iter_dicts(script) if any(str(item.get(key)) == ref.label for key in id_keys)),
+            None,
+        )
+        if target is None:
+            continue
+        generated = target.get("generated_assets")
+        if not isinstance(generated, dict):
+            generated = {}
+            target["generated_assets"] = generated
+        if generated.get(ref.legacy_field) != ref.path:
+            generated[ref.legacy_field] = ref.path
+            changed = True
+        if ref.media_asset_id:
+            media_key = f"{ref.legacy_field}_media_asset_id"
+            if generated.get(media_key) != ref.media_asset_id:
+                generated[media_key] = ref.media_asset_id
+                changed = True
+    if changed:
+        script_path.write_text(json.dumps(script, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _quality_gate_error_params(message: str) -> dict[str, Any]:
+    """Normalize a quality-gate failure into agent-actionable error data."""
+    prefix = "quality_gate_failed:"
+    detail = message[len(prefix) :].strip() if message.startswith(prefix) else message
+    try:
+        payload = json.loads(detail)
+    except (TypeError, json.JSONDecodeError):
+        payload = None
+    if isinstance(payload, dict):
+        failures = payload.get("failures")
+        if isinstance(failures, list):
+            return {
+                "message": str(payload.get("message") or "质量门禁未通过"),
+                "passed": False,
+                "failures": failures,
+                "repair_suggestions": [
+                    str(item.get("suggestion"))
+                    for item in failures
+                    if isinstance(item, dict) and item.get("suggestion")
+                ],
+            }
+    return {
+        "message": detail or "质量门禁未通过",
+        "passed": False,
+        "failures": [],
+        "repair_suggestions": ["检查失败门禁所需的输入和上游产物"],
+    }
 
 
 async def _append_event(
@@ -224,6 +326,7 @@ async def _execute_node(
     node: dict[str, Any],
     incoming: dict[str, set[str]],
     node_runs: dict[str, WorkflowNodeRun],
+    generation_mode: str = "storyboard",
 ) -> None:
     # blocked -> ready -> queued -> running (root nodes are planned as "ready")
     if node_run.status == "blocked":
@@ -263,6 +366,7 @@ async def _execute_node(
         log=log,
         progress=progress,
         cancelled=cancelled,
+        generation_mode=generation_mode,
     )
 
     try:
@@ -284,12 +388,37 @@ async def _execute_node(
             "quality_gate_failed" if message.startswith("quality_gate_failed:") else type(exc).__name__
         )
         if node_run.error_code == "quality_gate_failed":
-            node_run.error_params_json = canonical_json({"message": message})
+            node_run.error_params_json = canonical_json(_quality_gate_error_params(message))
         await _transition_node_run(session, run, node_run, "failed")
         logs.append(("error", f"node failed: {message}"))
     else:
+        from server.services.media_assets import index_workflow_outputs
+
+        parent_media_asset_ids = [
+            str(ref.media_asset_id)
+            for port_refs in ctx.upstream_outputs.values()
+            for refs in port_refs.values()
+            for ref in refs
+            if ref.media_asset_id
+        ]
+        indexed_outputs = await asyncio.to_thread(
+            index_workflow_outputs,
+            project_id=ctx.project_name,
+            project_root=ctx.project_path,
+            workflow_run_id=run.id,
+            workflow_node_key=node_run.node_key,
+            outputs=result.outputs,
+            parent_media_asset_ids=parent_media_asset_ids,
+        )
+        legacy_fields = {
+            ref.label: ref.legacy_field for refs in result.outputs.values() for ref in refs if ref.legacy_field
+        }
+        for refs in indexed_outputs.values():
+            for ref in refs:
+                ref.legacy_field = ref.legacy_field or legacy_fields.get(ref.label)
+        _sync_legacy_outputs(ctx.project_path, ctx.config, indexed_outputs)
         node_run.output_refs_json = canonical_json(
-            {port: [_ref_to_dict(ref) for ref in refs] for port, refs in result.outputs.items()}
+            {port: [_ref_to_dict(ref) for ref in refs] for port, refs in indexed_outputs.items()}
         )
         node_run.progress = progress_holder["value"]
         await _transition_node_run(session, run, node_run, "collecting")
@@ -378,7 +507,15 @@ async def run_workflow_run(session: AsyncSession, run_id: str) -> dict[str, Any]
             await session.refresh(run)
             if run.status != "running":
                 break
-            await _execute_node(session, run, node_runs[key], by_key[key], incoming, node_runs)
+            await _execute_node(
+                session,
+                run,
+                node_runs[key],
+                by_key[key],
+                incoming,
+                node_runs,
+                generation_mode=revision.generation_mode,
+            )
             await session.commit()
 
     # Terminal evaluation: all nodes finished -> succeeded/failed; a failed node
@@ -391,10 +528,10 @@ async def run_workflow_run(session: AsyncSession, run_id: str) -> dict[str, Any]
     target: str | None = None
     if run.status == "running":
         quality_gate_failed = any(node_runs[key].error_code == "quality_gate_failed" for key in node_runs)
-        if all(status in TERMINAL_NODE_STATUSES for status in statuses):
-            target = (
-                "waiting_review" if quality_gate_failed else ("succeeded" if "failed" not in statuses else "failed")
-            )
+        if quality_gate_failed:
+            target = "waiting_review"
+        elif all(status in TERMINAL_NODE_STATUSES for status in statuses):
+            target = "succeeded" if "failed" not in statuses else "failed"
         elif any(status in {"failed", "stale", "orphaned"} for status in statuses):
             target = "failed"
     if target is not None:

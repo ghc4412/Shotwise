@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useId } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, FileText, Edit3, Save, X, Trash2 } from "lucide-react";
+import { ArrowLeft, FileText, Edit3, Save, X, Trash2, Type } from "lucide-react";
 import { useLocation } from "wouter";
 import { API } from "@/api";
 import { voidPromise } from "@/utils/async";
 import { useAppStore } from "@/stores/app-store";
+import { SourceOutlineSidebar } from "./SourceOutlineSidebar";
 
 // ---------------------------------------------------------------------------
 // SourceFileViewer — 源文件预览/编辑组件（v3 视觉）
@@ -24,6 +25,7 @@ export function SourceFileViewer({ projectName, filename }: SourceFileViewerProp
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
   const filenameHeadingId = useId();
+  const [fontSize, setFontSize] = useState(13);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,6 +117,11 @@ export function SourceFileViewer({ projectName, filename }: SourceFileViewerProp
       >
         {editing ? (
           <>
+            <FontSizeControl
+              fontSize={fontSize}
+              onChange={setFontSize}
+              label={t("dashboard:source_editor_font_size")}
+            />
             <ToolbarButton
               onClick={voidPromise(handleSave)}
               disabled={saving}
@@ -150,37 +157,43 @@ export function SourceFileViewer({ projectName, filename }: SourceFileViewerProp
         )}
       </ViewerToolbar>
 
-      <div className="source-file-scroll min-h-0 flex-1 overflow-auto p-5">
-        {editing ? (
-          <textarea
-            aria-labelledby={filenameHeadingId}
-            aria-busy={saving}
-            readOnly={saving}
-            value={editContent}
-            onChange={(e) => setEditContent(e.target.value)}
-            className="source-file-scroll focus-ring h-full w-full resize-none rounded-lg p-4 font-mono text-[13px] leading-[1.7] outline-none"
-            style={{
-              background:
-                "var(--color-shell-field)",
-              border: "1px solid var(--color-hairline-soft)",
-              color: "var(--color-text)",
-              boxShadow: "inset 0 1px 0 oklch(1 0 0 / 0.03)",
-            }}
-          />
-        ) : (
-          <pre
-            className="whitespace-pre-wrap rounded-lg p-4 font-mono text-[13px] leading-[1.7]"
-            style={{
-              background:
-                "linear-gradient(180deg, var(--color-shell-field), var(--panel-spec-bar-bg))",
-              border: "1px solid var(--color-hairline-soft)",
-              color: "var(--color-text-2)",
-              boxShadow: "inset 0 1px 0 oklch(1 0 0 / 0.03)",
-            }}
-          >
-            {content}
-          </pre>
-        )}
+      <div className="flex min-h-0 flex-1">
+        <SourceOutlineSidebar
+          projectName={projectName}
+          filename={filename}
+          content={editing ? editContent : content}
+        />
+        <div className="source-file-scroll min-h-0 flex-1 overflow-auto p-5">
+          {editing ? (
+            <textarea
+              aria-labelledby={filenameHeadingId}
+              aria-busy={saving}
+              readOnly={saving}
+              value={editContent}
+              onChange={(e) => setEditContent(e.target.value)}
+              className="source-file-scroll focus-ring h-full w-full resize-none rounded-lg p-4 font-mono text-[13px] leading-[1.7] outline-none"
+              style={{
+                fontSize: `${fontSize}px`,
+                background: "var(--color-shell-field)",
+                border: "1px solid var(--color-hairline-soft)",
+                color: "var(--color-text)",
+                boxShadow: "inset 0 1px 0 oklch(1 0 0 / 0.03)",
+              }}
+            />
+          ) : (
+            <pre
+              className="whitespace-pre-wrap rounded-lg p-4 font-mono text-[13px] leading-[1.7]"
+              style={{
+                background: "linear-gradient(180deg, var(--color-shell-field), var(--panel-spec-bar-bg))",
+                border: "1px solid var(--color-hairline-soft)",
+                color: "var(--color-text-2)",
+                boxShadow: "inset 0 1px 0 oklch(1 0 0 / 0.03)",
+              }}
+            >
+              {content}
+            </pre>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -258,6 +271,47 @@ function ViewerToolbar({
         <div className="flex items-center gap-1">{children}</div>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// FontSizeControl — compact editor typography control
+// ---------------------------------------------------------------------------
+
+function FontSizeControl({
+  fontSize,
+  onChange,
+  label,
+}: {
+  fontSize: number;
+  onChange: (fontSize: number) => void;
+  label: string;
+}) {
+  return (
+    <label
+      className="focus-ring inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px]"
+      style={{
+        color: "var(--color-text-3)",
+        border: "1px solid var(--color-hairline)",
+        background: "var(--color-shell-btn)",
+      }}
+      title={label}
+    >
+      <Type className="h-3.5 w-3.5" aria-hidden="true" />
+      <span className="sr-only">{label}</span>
+      <select
+        aria-label={label}
+        value={fontSize}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="cursor-pointer bg-transparent outline-none"
+      >
+        {[12, 13, 14, 16, 18, 20, 24].map((size) => (
+          <option key={size} value={size}>
+            {size}px
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

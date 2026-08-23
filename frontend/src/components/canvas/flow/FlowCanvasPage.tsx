@@ -6,16 +6,18 @@ import {
   Clock3,
   Eye,
   History,
-  LayoutGrid,
   Loader2,
   Pause,
   Play,
   RefreshCw,
   RotateCcw,
+  Save,
+  ShieldCheck,
   Workflow,
   X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { useLocation } from "wouter";
 import { API } from "@/api";
 import type {
   WorkflowDefinitionDetail,
@@ -30,22 +32,23 @@ import type {
 } from "@/types";
 import { errMsg } from "@/utils/async";
 import { FlowCanvas } from "./FlowCanvas";
-import { FlowMonitor } from "./FlowMonitor";
+import { WorkflowTemplateLauncher } from "./WorkflowTemplateLauncher";
+import { WorkflowRunBudgetPanel } from "./WorkflowRunBudgetPanel";
+import { WorkflowTemplateUpgradeNotice } from "./WorkflowTemplateUpgradeNotice";
 import type { GroupMeta } from "./workflow-utils";
+import { validateWorkflowGraph } from "./workflow-preflight";
 
-type CanvasMode = "simple" | "canvas";
+type CanvasMode = "template" | "canvas";
 
 const POLL_INTERVAL_MS = 2000;
 
-/** Remember the last used view per user; first-time users land on the simple wizard. */
-const FLOW_DEFAULT_VIEW_KEY = "shotwise-flow-default-view";
+function graphFingerprint(nodes: WorkflowNodeInput[], edges: WorkflowEdgeInput[], groups: GroupMeta[]): string {
+  return JSON.stringify({ nodes, edges, groups });
+}
 
-function readDefaultMode(): CanvasMode {
-  try {
-    return window.localStorage.getItem(FLOW_DEFAULT_VIEW_KEY) === "canvas" ? "canvas" : "simple";
-  } catch {
-    return "simple";
-  }
+function getTemplateSourceId(templateLock: Record<string, unknown> | null | undefined): string | null {
+  const value = templateLock?.template_id;
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function RunStatusBadge({ status }: { status: string }) {
@@ -73,29 +76,45 @@ interface FlowCanvasPageProps {
 
 export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
   const { t } = useTranslation("dashboard");
-  const [mode, setModeState] = useState<CanvasMode>(readDefaultMode);
-  const switchMode = useCallback((next: CanvasMode) => {
-    setModeState(next);
-    try {
-      window.localStorage.setItem(FLOW_DEFAULT_VIEW_KEY, next);
-    } catch {
-      // persistence is best-effort
-    }
-  }, []);
-  const setMode = switchMode;
+  const [, navigate] = useLocation();
+  const canvasSaveRef = useRef<(() => Promise<boolean>) | null>(null);
+  const [mode, setMode] = useState<CanvasMode>("template");
   const [definition, setDefinition] = useState<WorkflowDefinitionDetail | null>(null);
   const [graphNodes, setGraphNodes] = useState<WorkflowNodeInput[]>([]);
   const [graphEdges, setGraphEdges] = useState<WorkflowEdgeInput[]>([]);
   const [graphGroups, setGraphGroups] = useState<GroupMeta[]>([]);
+  const [sourceTemplateId, setSourceTemplateId] = useState<string | null>(null);
+  const [draftStatus, setDraftStatus] = useState<"saved" | "dirty" | "saving">("saved");
+  const savedGraphFingerprint = useRef<string | null>(null);
+  const [liveGraphNodes, setLiveGraphNodes] = useState<WorkflowNodeInput[]>(graphNodes);
+  const [liveGraphEdges, setLiveGraphEdges] = useState<WorkflowEdgeInput[]>(graphEdges);
+
+  useEffect(() => {
+    // The server graph is an external source of truth for the local canvas draft.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the draft after a server graph load
+    setLiveGraphNodes(graphNodes);
+    setLiveGraphEdges(graphEdges);
+  }, [graphEdges, graphNodes]);
+
+  const handleGraphChange = useCallback(
+    (nodes: WorkflowNodeInput[], edges: WorkflowEdgeInput[], groups: GroupMeta[]) => {
+      setLiveGraphNodes(nodes);
+      setLiveGraphEdges(edges);
+      setDraftStatus(graphFingerprint(nodes, edges, groups) === savedGraphFingerprint.current ? "saved" : "dirty");
+    },
+    [],
+  );
   const [run, setRun] = useState<WorkflowRunDetail | null>(null);
   const [events, setEvents] = useState<WorkflowEvent[]>([]);
   const [eventsCollapsed, setEventsCollapsed] = useState(true);
   const [nodeLogs, setNodeLogs] = useState<{ nodeKey: string; items: WorkflowNodeLogEntry[] } | null>(null);
   const [revisions, setRevisions] = useState<WorkflowRevisionSummary[]>([]);
   const [revisionsOpen, setRevisionsOpen] = useState(false);
+  const [preflightOpen, setPreflightOpen] = useState(false);
   const [preview, setPreview] = useState<{ nodeKey: string; run: WorkflowNodeRun } | null>(null);
   const [loading, setLoading] = useState(true);
   const [mutating, setMutating] = useState(false);
+  const [savingAndExiting, setSavingAndExiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const pollTimer = useRef<number | null>(null);
 
@@ -149,11 +168,20 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
     if (list.items.length === 0) return;
     const detail = await API.getWorkflowDefinition(list.items[0].id, { signal });
     setDefinition(detail);
-    if (detail.active_revision) {
-      setGraphNodes(detail.active_revision.nodes);
-      setGraphEdges(detail.active_revision.edges);
-      const groups = detail.active_revision.template_lock?.canvas_groups;
-      setGraphGroups(Array.isArray(groups) ? (groups as GroupMeta[]) : []);
+    const selectedRevision = detail.draft_revision ?? detail.active_revision;
+    if (selectedRevision) {
+      const groups = selectedRevision.template_lock?.canvas_groups;
+      const nextGroups = Array.isArray(groups) ? (groups as GroupMeta[]) : [];
+      setGraphNodes(selectedRevision.nodes);
+      setGraphEdges(selectedRevision.edges);
+      setGraphGroups(nextGroups);
+      setSourceTemplateId(getTemplateSourceId(selectedRevision.template_lock));
+      savedGraphFingerprint.current = graphFingerprint(selectedRevision.nodes, selectedRevision.edges, nextGroups);
+      setDraftStatus("saved");
+    } else {
+      setSourceTemplateId(null);
+      savedGraphFingerprint.current = graphFingerprint([], [], []);
+      setDraftStatus("saved");
     }
   }, [projectName]);
 
@@ -197,46 +225,60 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
 
   const saveGraph = useCallback(
     async (nodes: WorkflowNodeInput[], edges: WorkflowEdgeInput[], groups: GroupMeta[]) => {
-      if (!definition) return;
+      if (!definition) return false;
       setMutating(true);
+      setDraftStatus("saving");
       try {
-        const revision = await API.createWorkflowRevision(definition.id, {
+        const templateLock = {
+          template_schema_version: 1,
+          canvas_groups: groups,
+          ...(sourceTemplateId ? { template_id: sourceTemplateId } : {}),
+        };
+        await API.createWorkflowRevision(definition.id, {
           nodes,
           edges,
-          template_lock: { template_schema_version: 1, canvas_groups: groups },
+          template_lock: templateLock,
         });
-        await API.publishWorkflowRevision(revision.id);
+        setGraphNodes(nodes);
+        setGraphEdges(edges);
         setGraphGroups(groups);
-        await loadDefinition();
-        return revision.id;
+        savedGraphFingerprint.current = graphFingerprint(nodes, edges, groups);
+        setDraftStatus("saved");
+        return true;
       } catch (requestError) {
+        setDraftStatus("dirty");
         setError(errMsg(requestError));
-        return null;
+        return false;
       } finally {
         setMutating(false);
       }
     },
-    [definition, loadDefinition],
+    [definition, sourceTemplateId],
   );
+
+  const registerCanvasSave = useCallback((save: (() => Promise<boolean>) | null) => {
+    canvasSaveRef.current = save;
+  }, []);
+
+  const saveAndExit = useCallback(async () => {
+    if (savingAndExiting) return;
+    setSavingAndExiting(true);
+    try {
+      const save = canvasSaveRef.current;
+      const saved = draftStatus === "dirty" ? Boolean(save && (await save())) : true;
+      if (saved) navigate(`/app/projects/${encodeURIComponent(projectName)}`);
+    } catch (requestError) {
+      setError(errMsg(requestError));
+    } finally {
+      setSavingAndExiting(false);
+    }
+  }, [draftStatus, navigate, projectName, savingAndExiting]);
 
   const importWorkflow = useCallback(
     async (nodes: WorkflowNodeInput[], edges: WorkflowEdgeInput[], groups: GroupMeta[]) => {
-      const result = await saveGraph(nodes, edges, groups);
-      if (result) {
-        const list = await API.listWorkflowDefinitions(projectName);
-        if (list.items[0]) {
-          const detail = await API.getWorkflowDefinition(list.items[0].id);
-          setDefinition(detail);
-          if (detail.active_revision) {
-            setGraphNodes(detail.active_revision.nodes);
-            setGraphEdges(detail.active_revision.edges);
-            const importedGroups = detail.active_revision.template_lock?.canvas_groups;
-            setGraphGroups(Array.isArray(importedGroups) ? (importedGroups as GroupMeta[]) : []);
-          }
-        }
-      }
+      await saveGraph(nodes, edges, groups);
     },
-    [projectName, saveGraph],
+    [saveGraph],
   );
 
   const runWorkflow = useCallback(async (
@@ -250,12 +292,18 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
       const revision = await API.createWorkflowRevision(definition.id, {
         nodes,
         edges,
-        template_lock: { template_schema_version: 1, canvas_groups: groups },
+        template_lock: {
+          template_schema_version: 1,
+          canvas_groups: groups,
+          ...(sourceTemplateId ? { template_id: sourceTemplateId } : {}),
+        },
       });
       await API.publishWorkflowRevision(revision.id);
       setGraphNodes(nodes);
       setGraphEdges(edges);
       setGraphGroups(groups);
+      savedGraphFingerprint.current = graphFingerprint(nodes, edges, groups);
+      setDraftStatus("saved");
       const planned = await API.planWorkflowRun(revision.id, projectName);
       const started = await API.transitionWorkflowRun(planned.id, "start", planned.version);
       await loadRunDetail(started.id);
@@ -265,7 +313,7 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
     } finally {
       setMutating(false);
     }
-  }, [definition, graphNodes, graphEdges, graphGroups, loadRunDetail, projectName, startPolling]);
+  }, [definition, graphNodes, graphEdges, graphGroups, loadRunDetail, projectName, sourceTemplateId, startPolling]);
 
   const transition = useCallback(
     async (action: "start" | "pause" | "resume" | "cancel") => {
@@ -373,44 +421,86 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
   }, [run]);
 
   const ActionIcon = action?.icon;
+  const unpublishedTemplateMessage = t("flow_template_not_published", {
+    defaultValue: "该模板尚未发布，暂时无法使用。",
+  });
+  const displayError = error && error.toLowerCase().replace(/[^a-z0-9]/g, "").includes("workflowtemplatenotpublished")
+    ? unpublishedTemplateMessage === "flow_template_not_published"
+      ? "该模板尚未发布，暂时无法使用。"
+      : unpublishedTemplateMessage
+    : error;
+  const preflight = useMemo(
+    () => validateWorkflowGraph(liveGraphNodes, liveGraphEdges, {
+      contentMode: definition?.active_revision?.content_mode,
+      generationMode: definition?.active_revision?.generation_mode,
+    }),
+    [definition?.active_revision?.content_mode, definition?.active_revision?.generation_mode, liveGraphEdges, liveGraphNodes],
+  );
 
   return (
-    <section className="flex h-full min-w-0 flex-col overflow-hidden bg-bg">
-      <header className="flex min-h-[72px] shrink-0 items-center justify-between gap-4 border-b border-hairline px-5 py-3">
+    <section className={mode === "template" ? "relative min-w-0 overflow-y-auto bg-bg" : "relative flex h-full min-w-0 flex-col overflow-hidden bg-bg"}>
+      {mode === "canvas" ? <WorkflowRunBudgetPanel run={run} /> : null}
+      {mode === "template" ? (
+        <WorkflowTemplateLauncher
+          projectName={projectName}
+          onDerived={() => void loadAll(null)}
+          onOpenCanvas={() => setMode("canvas")}
+        />
+      ) : null}
+
+      {mode === "canvas" ? (
+        <section className="shrink-0 border-b border-hairline bg-bg-raised/70">
+          <button
+            type="button"
+            onClick={() => setPreflightOpen((open) => !open)}
+            className="flex h-8 w-full items-center justify-between gap-3 px-5 text-left text-[10px] hover:bg-bg-raised focus-ring"
+            aria-expanded={preflightOpen}
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <ShieldCheck aria-hidden className={preflight.canRun ? "h-3.5 w-3.5 text-good" : "h-3.5 w-3.5 text-danger"} />
+              <span className="font-semibold text-text-2">{t("flow_preflight_title")}</span>
+              <span className={preflight.canRun ? "text-good" : "text-danger"}>
+                {preflight.canRun ? t("flow_preflight_ready") : t("flow_preflight_blocked")}
+              </span>
+              {preflight.warnings.length > 0 ? <span className="text-warn">{t("flow_preflight_warning_count", { count: preflight.warnings.length })}</span> : null}
+            </span>
+            {preflightOpen ? <ChevronUp aria-hidden className="h-3.5 w-3.5 text-text-4" /> : <ChevronDown aria-hidden className="h-3.5 w-3.5 text-text-4" />}
+          </button>
+          {preflightOpen ? (
+            <div className="space-y-1 border-t border-hairline-soft px-5 py-2">
+              {[...preflight.errors, ...preflight.warnings].map((item) => (
+                <div key={`${item.code}-${item.params?.node ?? "graph"}`} className={item.severity === "error" ? "flex items-start gap-2 text-[10px] text-danger" : "flex items-start gap-2 text-[10px] text-warn"}>
+                  <span aria-hidden>{item.severity === "error" ? "!" : "•"}</span>
+                  <span>{t(item.messageKey, item.params)}</span>
+                </div>
+              ))}
+              {preflight.errors.length === 0 && preflight.warnings.length === 0 ? <span className="text-[10px] text-text-4">{t("flow_preflight_no_issues")}</span> : null}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+      {mode === "canvas" ? (
+        <WorkflowTemplateUpgradeNotice
+          definitionId={definition?.id ?? null}
+          onApplied={() => void loadAll(run?.id ?? null)}
+        />
+      ) : null}
+      {mode === "canvas" ? (
+        <header className="relative flex min-h-[72px] shrink-0 items-center justify-between gap-4 border-b border-hairline px-5 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <div className="flex items-center gap-2 text-text">
             <Workflow aria-hidden className="h-4 w-4 text-accent-2" />
-            <h2 className="text-[15px] font-semibold">{t("flow_title")}</h2>
-          </div>
-          <div
-            className="inline-flex rounded-md border border-hairline p-0.5"
-            role="tablist"
-            aria-label={t("flow_mode_label")}
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === "simple"}
-              onClick={() => setMode("simple")}
-              className={`inline-flex h-7 items-center gap-1.5 rounded px-3 text-[11px] font-semibold transition-colors focus-ring ${
-                mode === "simple" ? "bg-accent text-black" : "text-text-3 hover:text-text"
-              }`}
-            >
-              <LayoutGrid aria-hidden className="h-3.5 w-3.5" />
-              {t("flow_mode_simple")}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={mode === "canvas"}
-              onClick={() => setMode("canvas")}
-              className={`inline-flex h-7 items-center gap-1.5 rounded px-3 text-[11px] font-semibold transition-colors focus-ring ${
-                mode === "canvas" ? "bg-accent text-black" : "text-text-3 hover:text-text"
-              }`}
-            >
-              <Workflow aria-hidden className="h-3.5 w-3.5" />
-              {t("flow_mode_canvas")}
-            </button>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h2 className="text-[15px] font-semibold">{t("flow_title")}</h2>
+                <span className={draftStatus === "dirty" ? "rounded border border-warn/50 px-1.5 py-0.5 text-[9px] font-semibold text-warn" : draftStatus === "saving" ? "rounded border border-accent-2/40 px-1.5 py-0.5 text-[9px] font-semibold text-accent-2" : "rounded border border-good/40 px-1.5 py-0.5 text-[9px] font-semibold text-good"}>
+                  {draftStatus === "dirty" ? t("flow_draft_dirty") : draftStatus === "saving" ? t("flow_draft_saving") : t("flow_draft_saved")}
+                </span>
+              </div>
+              <div className="mt-0.5 truncate text-[9px] text-text-4">
+                {sourceTemplateId ? t("flow_source_template", { template: sourceTemplateId }) : t("flow_source_blank")}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -467,13 +557,25 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
           >
             <RefreshCw aria-hidden className={`h-3.5 w-3.5 ${loading ? "motion-safe:animate-spin" : ""}`} />
           </button>
+          <button
+            type="button"
+            onClick={() => void saveAndExit()}
+            disabled={!definition || loading || mutating || savingAndExiting || ["running", "paused", "waiting_review"].includes(run?.status ?? "")}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-accent-2/45 bg-accent-2/10 px-2.5 text-[11px] font-semibold text-accent-2 transition-colors hover:bg-accent-2/20 focus-ring disabled:opacity-40"
+            title={t("flow_save_exit")}
+            aria-label={t("flow_save_exit")}
+          >
+            <Save aria-hidden className="h-3.5 w-3.5" />
+            <span>{savingAndExiting ? t("flow_saving_exit") : t("flow_save_exit")}</span>
+          </button>
         </div>
-      </header>
+        </header>
+      ) : null}
 
-      {error ? (
+      {displayError && mode === "canvas" ? (
         <div className="flex items-center gap-2 border-b border-danger/30 bg-danger/10 px-5 py-2 text-[11px] text-danger">
           <AlertTriangle aria-hidden className="h-3.5 w-3.5" />
-          <span className="min-w-0 flex-1 truncate">{error}</span>
+          <span className="min-w-0 flex-1 truncate">{displayError}</span>
           <button type="button" onClick={() => setError(null)} aria-label={t("flow_close_error")} className="focus-ring">
             <X aria-hidden className="h-3 w-3" />
           </button>
@@ -481,7 +583,7 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
       ) : null}
 
       {revisionsOpen && definition ? (
-        <div className="absolute right-4 top-14 z-40 flex max-h-[60vh] w-[380px] flex-col rounded-md border border-hairline bg-bg-raised shadow-lg">
+        <div className="absolute right-4 top-24 z-40 flex max-h-[60vh] w-[380px] flex-col rounded-md border border-hairline bg-bg-raised shadow-lg">
           <header className="flex items-center justify-between border-b border-hairline px-3 py-2">
             <span className="flex items-center gap-2 text-[11px] font-semibold text-text">
               <History aria-hidden className="h-3.5 w-3.5 text-accent-2" />
@@ -539,32 +641,20 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
         <div className="grid flex-1 place-items-center text-text-4">
           <Loader2 aria-hidden className="h-5 w-5 motion-safe:animate-spin" />
         </div>
-      ) : mode === "simple" ? (
-        <div className="min-h-0 flex-1">
-          <FlowMonitor
-            projectName={projectName}
-            nodes={graphNodes}
-            onOpenCanvas={() => setMode("canvas")}
-            onQuickConfigChange={(nodeKey, config) => {
-              setGraphNodes((current) => current.map((node) => (node.node_key === nodeKey ? { ...node, config } : node)));
-            }}
-            onQuickRun={runWorkflow}
-            onRetryFromNode={(nodeKey) => void retryRunFromNode(nodeKey)}
-            onPreviewOutputs={(nodeKey) => openNodePreview(nodeKey)}
-          />
-        </div>
-      ) : (
+      ) : mode === "canvas" ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <FlowCanvas
+            onSaveReady={registerCanvasSave}
+            onGraphChange={handleGraphChange}
             initialNodes={graphNodes}
             initialEdges={graphEdges}
             initialGroups={graphGroups}
             runStatus={runStatusMap}
             running={running}
+            canRun={preflight.canRun}
+            runDisabledReason={preflight.errors[0] ? t(preflight.errors[0].messageKey, preflight.errors[0].params) : undefined}
             defaultName={definition?.name ?? projectName}
-            onSave={async (nodes, edges, groups) => {
-              await saveGraph(nodes, edges, groups);
-            }}
+            onSave={(nodes, edges, groups) => saveGraph(nodes, edges, groups)}
             onImportWorkflow={async (nodes, edges, groups) => {
               await importWorkflow(nodes, edges, groups);
             }}
@@ -653,7 +743,7 @@ export function FlowCanvasPage({ projectName }: FlowCanvasPageProps) {
             ) : null}
           </div>
         </div>
-      )}
+      ) : null}
     </section>
   );
 }

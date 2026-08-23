@@ -73,6 +73,10 @@ class RetryNodeRequest(BaseModel):
     start: bool = True
 
 
+class TemplateUpgradeApplyRequest(BaseModel):
+    confirmed: bool = False
+
+
 def _translate_validation(exc: WorkflowValidationError) -> None:
     raise BadRequestError(exc.code, **exc.params) from exc
 
@@ -99,6 +103,33 @@ async def get_workflow(
     session: AsyncSession = Depends(get_async_session),
 ):
     return await service.get_workflow(session, definition_id, actor_id=user.id)
+
+
+@router.get("/workflows/{definition_id}/template-upgrade")
+async def get_template_upgrade(
+    definition_id: str,
+    user: CurrentUser,
+    session: AsyncSession = Depends(get_async_session),
+):
+    return await service.get_template_upgrade(session, definition_id, actor_id=user.id)
+
+
+@router.post("/workflows/{definition_id}/template-upgrade")
+async def apply_template_upgrade(
+    definition_id: str,
+    body: TemplateUpgradeApplyRequest,
+    user: CurrentUser,
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        return await service.upgrade_workflow_template(
+            session,
+            definition_id,
+            actor_id=user.id,
+            confirmed=body.confirmed,
+        )
+    except WorkflowValidationError as exc:
+        _translate_validation(exc)
 
 
 @router.post("/workflows/{definition_id}/revisions")
@@ -259,6 +290,41 @@ async def create_workflow_template(
     try:
         return await service.create_template_draft(
             session,
+            name=body.name,
+            description=body.description,
+            template_type=body.template_type,
+            contract=body.contract,
+            nodes=[node.model_dump() for node in body.nodes],
+            edges=[edge.model_dump() for edge in body.edges],
+            actor_id=user.id,
+            content_mode=body.content_mode,
+            generation_mode=body.generation_mode,
+            cover_ref=body.cover_ref,
+        )
+    except WorkflowValidationError as exc:
+        _translate_validation(exc)
+
+
+class TemplateDraftUpdate(TemplateDraftCreate):
+    pass
+
+
+@router.get("/workflow-templates/mine")
+async def list_creator_workflow_templates(user: CurrentUser, session: AsyncSession = Depends(get_async_session)):
+    return await service.list_creator_templates(session, actor_id=user.id)
+
+
+@router.put("/workflow-templates/{template_id}")
+async def update_workflow_template(
+    template_id: str,
+    body: TemplateDraftUpdate,
+    user: CurrentUser,
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        return await service.update_template_draft(
+            session,
+            template_id,
             name=body.name,
             description=body.description,
             template_type=body.template_type,

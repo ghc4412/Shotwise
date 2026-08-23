@@ -67,12 +67,10 @@ import type {
   WorkflowDefinitionSummary,
   WorkflowNodeInput,
   WorkflowNodeLogEntry,
-  WorkflowPatch,
-  WorkflowPatchApplyResult,
-  WorkflowPatchPreview,
   WorkflowReviewItem,
   WorkflowRevisionSummary,
   WorkflowTemplateCatalogItem,
+  WorkflowTemplateUpgrade,
   WorkflowRunDetail,
   WorkflowRunSummary,
   CharacterRelationEdge,
@@ -345,8 +343,15 @@ async function throwIfNotOk(response: Response, fallbackMsg: string): Promise<vo
       .json()
       .catch(() => ({ detail: response.statusText })) as ErrorResponse;
     const detail = error.detail;
-    throw new Error(typeof detail === "string" ? detail || fallbackMsg : fallbackMsg);
+    const message = typeof detail === "string" ? detail || fallbackMsg : fallbackMsg;
+    throw new Error(localizeWorkflowError(message));
   }
+}
+
+function localizeWorkflowError(message: string): string {
+  const normalized = message.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!normalized.includes("workflowtemplatenotpublished")) return message;
+  return i18n.t("flow_template_not_published", { ns: "dashboard" });
 }
 
 function handleUnauthorized(response: Response): void {
@@ -477,7 +482,7 @@ class API {
       }
       let message = "请求失败";
       if (typeof error.detail === "string") {
-        message = error.detail;
+        message = localizeWorkflowError(error.detail);
       } else if (Array.isArray(error.detail) && error.detail.length > 0) {
         message = error.detail.map((e) => (typeof e === "string" ? e : e?.msg)).filter(Boolean).join("; ") || message;
       }
@@ -2842,7 +2847,7 @@ class API {
   static async planWorkflowRun(
     revisionId: string,
     projectName: string,
-    options?: { episode_id?: string; budget_limit?: number },
+    options?: { episode_id?: string; budget_limit?: number; input_snapshot?: Record<string, unknown> },
   ): Promise<{ id: string; version: number }> {
     return this.request(`/workflow-revisions/${encodeURIComponent(revisionId)}/runs`, {
       method: "POST",
@@ -2850,7 +2855,7 @@ class API {
         workspace_id: "default",
         project_id: projectName,
         mode: "hybrid",
-        input_snapshot: { project_id: projectName },
+        input_snapshot: { project_id: projectName, ...(options?.input_snapshot ?? {}) },
         episode_id: options?.episode_id,
         budget_limit: options?.budget_limit,
       }),
@@ -2868,6 +2873,98 @@ class API {
     });
   }
 
+  // ---- creation skills, plans, media and creative board ----
+  static async listCreationSkills(projectName: string): Promise<{ items: Array<Record<string, unknown>> }> {
+    return this.request("/creation-skills?project_id=" + encodeURIComponent(projectName));
+  }
+
+  static async listCreationSkillVersions(skillId: string): Promise<{ items: Array<Record<string, unknown>> }> {
+    return this.request("/creation-skills/" + encodeURIComponent(skillId) + "/versions");
+  }
+  static async listCreationResources(projectName: string): Promise<{ items: Array<Record<string, unknown>> }> {
+    return this.request("/creation-resources?project_id=" + encodeURIComponent(projectName));
+  }
+  static async previewCreationPlan(projectName: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.request("/creation-plans/preview", { method: "POST", body: JSON.stringify({ ...body, project_id: projectName }) });
+  }
+  static async startCreationPlan(planId: string): Promise<Record<string, unknown>> {
+    return this.request("/creation-plans/" + encodeURIComponent(planId) + "/start", { method: "POST", body: JSON.stringify({ mode: "hybrid" }) });
+  }
+  static async cancelCreationPlan(planId: string): Promise<Record<string, unknown>> {
+    return this.request("/creation-plans/" + encodeURIComponent(planId) + "/cancel", { method: "POST" });
+  }
+  static async invalidateCreationPlan(planId: string): Promise<Record<string, unknown>> {
+    return this.request("/creation-plans/" + encodeURIComponent(planId) + "/invalidate", { method: "POST" });
+  }
+  static async restartCreationPlan(planId: string): Promise<Record<string, unknown>> {
+    return this.request("/creation-plans/" + encodeURIComponent(planId) + "/restart", { method: "POST", body: JSON.stringify({ mode: "hybrid" }) });
+  }
+  static async recompileCreationPlan(planId: string): Promise<Record<string, unknown>> {
+    return this.request("/creation-plans/" + encodeURIComponent(planId) + "/recompile", { method: "POST" });
+  }
+  static async listMediaAssets(
+    projectName: string,
+    options?: {
+      kind?: "image" | "video" | "audio";
+      origin?: "upload" | "generated" | "edited" | "extracted" | "imported";
+      workflow_run_id?: string;
+      binding_kind?: string;
+      target_id?: string;
+      purpose?: string;
+      archived?: boolean;
+    },
+  ): Promise<{ items: Array<Record<string, unknown>> }> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(options ?? {})) {
+      if (value !== undefined && value !== "") params.set(key, String(value));
+    }
+    const query = params.toString();
+    return this.request("/projects/" + encodeURIComponent(projectName) + "/media-assets" + (query ? "?" + query : ""));
+  }
+  static getMediaAssetContentUrl(projectName: string, mediaAssetId: string): string {
+    return API_BASE + "/projects/" + encodeURIComponent(projectName) + "/media-assets/content/" + encodeURIComponent(mediaAssetId);
+  }
+  static async getMediaAsset(projectName: string, mediaAssetId: string): Promise<Record<string, unknown>> {
+    return this.request("/projects/" + encodeURIComponent(projectName) + "/media-assets/" + encodeURIComponent(mediaAssetId));
+  }
+  static async uploadMediaAsset(projectName: string, file: File): Promise<Record<string, unknown>> {
+    const body = new FormData();
+    body.append("file", file);
+    return this.request("/projects/" + encodeURIComponent(projectName) + "/media-assets/upload", { method: "POST", body });
+  }
+  static async bindMediaAsset(projectName: string, mediaAssetId: string, body: { binding_kind: string; target_id?: string | null; purpose: string }): Promise<Record<string, unknown>> {
+    return this.request("/projects/" + encodeURIComponent(projectName) + "/media-assets/" + encodeURIComponent(mediaAssetId) + "/bindings", { method: "POST", body: JSON.stringify(body) });
+  }
+  static async archiveMediaAsset(projectName: string, mediaAssetId: string, archived: boolean): Promise<Record<string, unknown>> {
+    return this.request("/projects/" + encodeURIComponent(projectName) + "/media-assets/" + encodeURIComponent(mediaAssetId) + "/archive", { method: "PATCH", body: JSON.stringify({ archived }) });
+  }
+  static async listCreativeBoards(projectName: string): Promise<{ items: Array<Record<string, unknown>> }> {
+    return this.request("/projects/" + encodeURIComponent(projectName) + "/creative-boards");
+  }
+  static async createCreativeBoard(projectName: string, body: { name: string; viewport?: Record<string, unknown> }): Promise<Record<string, unknown>> {
+    return this.request("/projects/" + encodeURIComponent(projectName) + "/creative-boards", { method: "POST", body: JSON.stringify(body) });
+  }
+  static async getCreativeBoard(boardId: string): Promise<Record<string, unknown>> {
+    return this.request("/creative-boards/" + encodeURIComponent(boardId));
+  }
+  static async updateCreativeBoard(boardId: string, body: { name?: string; viewport?: Record<string, unknown> }): Promise<Record<string, unknown>> {
+    return this.request("/creative-boards/" + encodeURIComponent(boardId), { method: "PATCH", body: JSON.stringify(body) });
+  }
+  static async addCreativeBoardItem(boardId: string, body: { item_type: string; resource_type: string; resource_id: string; position?: { x: number; y: number }; size?: { width: number; height: number } }): Promise<Record<string, unknown>> {
+    return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/items", { method: "POST", body: JSON.stringify(body) });
+  }
+  static async updateCreativeBoardItem(boardId: string, itemId: string, body: { item_type: string; resource_type: string; resource_id: string; position?: { x: number; y: number }; size?: { width: number; height: number } }): Promise<Record<string, unknown>> {
+    return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/items/" + encodeURIComponent(itemId), { method: "PATCH", body: JSON.stringify(body) });
+  }
+  static async deleteCreativeBoardItem(boardId: string, itemId: string): Promise<Record<string, unknown>> {
+    return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/items/" + encodeURIComponent(itemId), { method: "DELETE" });
+  }
+  static async addCreativeBoardEdge(boardId: string, body: { source_item_id: string; target_item_id: string; relation: string }): Promise<Record<string, unknown>> {
+    return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/edges", { method: "POST", body: JSON.stringify(body) });
+  }
+  static async deleteCreativeBoardEdge(boardId: string, edgeId: string): Promise<Record<string, unknown>> {
+    return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/edges/" + encodeURIComponent(edgeId), { method: "DELETE" });
+  }
   // ---- canvas workflow management ----
 
   static async listWorkflowDefinitions(
@@ -2925,6 +3022,23 @@ class API {
     );
   }
 
+  static async getWorkflowTemplateUpgrade(definitionId: string): Promise<WorkflowTemplateUpgrade> {
+    return this.request(
+      "/workflows/" + encodeURIComponent(definitionId) + "/template-upgrade",
+    );
+  }
+
+  static async applyWorkflowTemplateUpgrade(
+    definitionId: string,
+  ): Promise<{ upgrade: WorkflowTemplateUpgrade; revision: { id: string; status: string } }> {
+    return this.request(
+      "/workflows/" + encodeURIComponent(definitionId) + "/template-upgrade",
+      {
+        method: "POST",
+        body: JSON.stringify({ confirmed: true }),
+      },
+    );
+  }
   static async listWorkflowTemplates(): Promise<{ items: WorkflowTemplateCatalogItem[] }> {
     return this.request("/workflow-templates");
   }
@@ -2943,43 +3057,65 @@ class API {
     return this.request("/workflow-templates", { method: "POST", body: JSON.stringify(body) });
   }
 
-  static async submitWorkflowTemplate(templateId: string): Promise<{ id: string; status: string }> {
-    return this.request(`/workflow-templates/${encodeURIComponent(templateId)}/submit`, { method: "POST" });
+  static async listWorkflowCreatorTemplates(): Promise<{ items: WorkflowTemplateCatalogItem[] }> {
+    return this.request("/workflow-templates/mine");
   }
+
+  static async updateWorkflowTemplateDraft(
+    templateId: string,
+    body: {
+      name: string;
+      description: string;
+      template_type: "manga" | "short_drama";
+      contract: Record<string, unknown>;
+      nodes: Array<Record<string, unknown>>;
+      edges: Array<Record<string, unknown>>;
+      content_mode: string;
+      generation_mode: string;
+      cover_ref?: string;
+    },
+  ): Promise<WorkflowTemplateCatalogItem> {
+    return this.request("/workflow-templates/" + encodeURIComponent(templateId), { method: "PUT", body: JSON.stringify(body) });
+  }
+
+  static async submitWorkflowTemplate(templateId: string): Promise<{ id: string; status: string }> {
+    return this.request("/workflow-templates/" + encodeURIComponent(templateId) + "/submit", { method: "POST" });
+  }
+
+  static async withdrawWorkflowTemplate(templateId: string): Promise<{ id: string; status: string }> {
+    return this.request("/workflow-templates/" + encodeURIComponent(templateId) + "/withdraw", { method: "POST" });
+  }
+
 
   static async deriveWorkflowTemplate(
     templateId: string,
     body: { workspace_id: string; project_id: string; name: string },
   ): Promise<{ definition_id: string; revision_id: string; template_id: string }> {
-    return this.request(`/workflow-templates/${encodeURIComponent(templateId)}/derive`, {
+    return this.request("/workflow-templates/" + encodeURIComponent(templateId) + "/derive", {
       method: "POST",
       body: JSON.stringify(body),
     });
   }
 
-  static async validateWorkflowPatch(runId: string, patch: WorkflowPatch): Promise<{
-    valid: boolean;
-    affected_nodes: string[];
-    estimated_cost_delta: number;
-    requires_confirmation: boolean;
-  }> {
-    return this.request(`/workflow-runs/${encodeURIComponent(runId)}/patch/validate`, {
+  static async validateWorkflowPatch(
+    runId: string,
+    body: { patch: Record<string, unknown> },
+  ): Promise<Record<string, unknown>> {
+    return this.request("/workflow-runs/" + encodeURIComponent(runId) + "/patch/validate", {
       method: "POST",
-      body: JSON.stringify({ patch }),
+      body: JSON.stringify(body),
     });
   }
 
   static async applyWorkflowPatch(
     runId: string,
-    patch: WorkflowPatch,
-    options?: { confirmed?: boolean; start?: boolean },
-  ): Promise<WorkflowPatchApplyResult> {
-    return this.request(`/workflow-runs/${encodeURIComponent(runId)}/patch/apply`, {
+    body: { patch: Record<string, unknown>; confirmed: boolean; start?: boolean },
+  ): Promise<Record<string, unknown>> {
+    return this.request("/workflow-runs/" + encodeURIComponent(runId) + "/patch/apply", {
       method: "POST",
-      body: JSON.stringify({ patch, confirmed: options?.confirmed ?? false, start: options?.start ?? false }),
+      body: JSON.stringify(body),
     });
   }
-
   static async listWorkflowReviewQueue(options?: {
     template_type?: "manga" | "short_drama";
     risk_tag?: string;
@@ -2991,6 +3127,19 @@ class API {
     return this.request(`/admin/workflow-templates/reviews${suffix}`);
   }
 
+
+  static async reviewWorkflowTemplate(
+    templateId: string,
+    body: {
+      decision: "start" | "approve" | "reject" | "changes_requested";
+      comment: string;
+    },
+  ): Promise<{ id: string; status: string }> {
+    return this.request("/admin/workflow-templates/" + encodeURIComponent(templateId) + "/review", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
   static async rateWorkflowTemplate(templateId: string, rating: number): Promise<{
     template_id: string;
     rating: number;

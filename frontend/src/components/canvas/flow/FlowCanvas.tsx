@@ -52,12 +52,16 @@ interface FlowCanvasProps {
   runStatus: Record<string, WorkflowNodeRun> | null;
   running: boolean;
   defaultName: string;
-  onSave: (nodes: WorkflowNodeInput[], edges: WorkflowEdgeInput[], groups: GroupMeta[]) => Promise<void>;
+  onSave: (nodes: WorkflowNodeInput[], edges: WorkflowEdgeInput[], groups: GroupMeta[]) => Promise<boolean>;
+  onSaveReady?: (save: (() => Promise<boolean>) | null) => void;
+  onGraphChange?: (nodes: WorkflowNodeInput[], edges: WorkflowEdgeInput[], groups: GroupMeta[]) => void;
   onImportWorkflow: (nodes: WorkflowNodeInput[], edges: WorkflowEdgeInput[], groups: GroupMeta[]) => Promise<void>;
   onRun: (nodes: WorkflowNodeInput[], edges: WorkflowEdgeInput[], groups: GroupMeta[]) => Promise<void>;
   onViewNodeLogs?: (nodeKey: string) => void;
   onRetryFromNode?: (nodeKey: string) => void;
   onPreviewOutputs?: (nodeKey: string) => void;
+  canRun?: boolean;
+  runDisabledReason?: string;
 }
 
 interface ContextMenuState {
@@ -80,11 +84,15 @@ function FlowCanvasInner({
   running,
   defaultName,
   onSave,
+  onSaveReady,
+  onGraphChange,
   onImportWorkflow,
   onRun,
   onViewNodeLogs,
   onRetryFromNode,
   onPreviewOutputs,
+  canRun = true,
+  runDisabledReason,
 }: FlowCanvasProps) {
   const { t } = useTranslation("dashboard");
   const { screenToFlowPosition } = useReactFlow();
@@ -92,6 +100,7 @@ function FlowCanvasInner({
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [groups, setGroups] = useState<GroupMeta[]>([]);
+  const [graphHydrated, setGraphHydrated] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -199,8 +208,16 @@ function FlowCanvasInner({
     setNodes(rfNodes);
     setEdges(rfEdges);
     setGroups(initialGroups);
+    setGraphHydrated(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- hydrate once per graph identity
   }, [initialNodes, initialEdges, initialGroups]);
+
+  // Keep the host page's production check in sync with the live canvas graph.
+  useEffect(() => {
+    if (!graphHydrated) return;
+    const { nodes: workflowNodes, edges: workflowEdges } = fromReactFlow(nodes, edges, groups);
+    onGraphChange?.(workflowNodes, workflowEdges, groups);
+  }, [edges, graphHydrated, groups, nodes, onGraphChange]);
 
   // Live status badges while a run is executing (polled by the page).
   useEffect(() => {
@@ -447,11 +464,16 @@ function FlowCanvasInner({
     setSaving(true);
     try {
       const { nodes: wNodes, edges: wEdges } = fromReactFlow(nodes, edges, groups);
-      await onSave(wNodes, wEdges, groups);
+      return await onSave(wNodes, wEdges, groups);
     } finally {
       setSaving(false);
     }
   }, [edges, groups, nodes, onSave]);
+
+  useEffect(() => {
+    onSaveReady?.(save);
+    return () => onSaveReady?.(null);
+  }, [onSaveReady, save]);
 
   useEffect(() => {
     window.localStorage.setItem("shotwise-flow-favorites", JSON.stringify(favoriteNodes));
@@ -862,8 +884,10 @@ function FlowCanvasInner({
               const { nodes: wNodes, edges: wEdges } = fromReactFlow(nodes, edges, groups);
               void onRun(wNodes, wEdges, groups);
             }}
-            disabled={running}
+            disabled={running || !canRun}
             className="inline-flex h-7 items-center gap-1 rounded bg-accent px-2 text-[10px] font-semibold text-black focus-ring disabled:opacity-40"
+            title={!canRun ? runDisabledReason : t("flow_start")}
+            aria-label={!canRun ? runDisabledReason : t("flow_start")}
           >
             <Play aria-hidden className="h-3 w-3" />
             {t("flow_start")}

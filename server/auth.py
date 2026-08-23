@@ -547,3 +547,19 @@ async def ensure_default_user() -> None:
         logger.info("已同步默认用户到 users 表: %s", username)
     except Exception:
         logger.exception("同步默认用户到 users 表失败（非致命）")
+
+
+async def ensure_system_user() -> None:
+    """启动时确保代码拥有的系统记录有合法的 users 外键。"""
+    from lib.db import async_session_factory
+    from lib.db.models.user import User
+
+    try:
+        async with async_session_factory() as session:
+            async with session.begin():
+                user = await session.get(User, "system")
+                if user is None:
+                    session.add(User(id="system", username="system", role="admin"))
+        logger.info("已同步系统用户到 users 表")
+    except Exception:
+        logger.exception("同步系统用户到 users 表失败（非致命）")

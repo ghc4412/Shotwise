@@ -428,6 +428,36 @@ _Avoid_: 按"哪个端点"给这类请求分类——分类依据是**谁发起�
 不走 router 级 Bearer 依赖、在端点内部自行校验凭证的端点，成因一律是浏览器直发请求。注册时挂在 `self_auth_router` 上，与匿名可达的公开端点写法相同但性质不同。
 _Avoid_: 与公开端点混为一谈——自带认证端点拦得住匿名请求，公开端点拦不住。
 
+## 创作规划与媒体
+
+**创作 Skill**：
+用户选择的一项面向创作的产品能力，例如把文稿编排成视频；它与智能体运行时使用的 Agent Skill 是两个不同层次的概念。首期创作 Skill 由官方维护。
+_Avoid_: Agent Skill、工作流插件、用户 Skill。
+
+**Agent Skill**：
+内嵌智能体使用的指令与工具包，服务于智能体运行时，不是用户在产品中选择的创作能力。
+_Avoid_: 创作 Skill、工作流模板。
+
+**Workflow Template**：
+实现一项创作 Skill 的可复用工作流定义，描述该能力所需的执行步骤与关系。
+_Avoid_: Creation Plan、FlowCanvas。
+
+**Creation Plan**：
+一次创作的不可变执行计划，由创作 Skill、Project 上下文与用户选择确定；它保存 Project 相关字段的只读快照、Skill 输入、Workflow Revision 和兼容性检查结果，但不拥有或修改 Project 的生成模式。
+_Avoid_: 工作流草稿、项目生成模式。
+
+**MediaAsset**：
+现有或新生成媒体的统一身份，用于引用图片、视频和音频；MediaAsset 是媒体索引，不等同于媒体文件本身。
+_Avoid_: 媒体文件、附件。
+
+**Creative Board**：
+用于展示和操作文稿、实体、MediaAsset 及其关系的创作空间；它是可删除的组织视图，不拥有这些业务对象或 WorkflowRun。
+_Avoid_: FlowCanvas、媒体文件夹。
+
+**FlowCanvas**：
+面向高级用户的执行流程编排器，用于表达和调整工作流结构；它不是 Creative Board 的替代名称。
+_Avoid_: Creative Board、画布编辑器。
+
 ## 示例对话
 
 > **Dev**：worker 认领一个图片任务时，怎么知道用哪个 provider 限流？

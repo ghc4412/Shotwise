@@ -10,6 +10,9 @@ import {
   WORKSPACE_ROUTE_PROPS,
   WORKSPACE_ROUTE_PRODUCTS,
   WORKSPACE_ROUTE_FLOW,
+  WORKSPACE_ROUTE_SKILLS,
+  WORKSPACE_ROUTE_MEDIA,
+  WORKSPACE_ROUTE_CREATIVE_BOARD,
 } from "@/app-routes";
 import { useTranslation } from "react-i18next";
 import { useProjectsStore } from "@/stores/projects-store";
@@ -25,6 +28,9 @@ import { TimelineCanvas } from "./timeline/TimelineCanvas";
 import { OverviewCanvas } from "./OverviewCanvas";
 import { SourceFileViewer } from "./SourceFileViewer";
 import { SourceFilesPage } from "./SourceFilesPage";
+import { CreationSkillsPage } from "./CreationSkillsPage";
+import { MediaLibraryPage } from "./MediaLibraryPage";
+import { CreativeBoardPage } from "./CreativeBoardPage";
 import { CharactersPage } from "./lorebook/CharactersPage";
 import { ScenesPage } from "./lorebook/ScenesPage";
 import { PropsPage } from "./lorebook/PropsPage";
@@ -596,7 +602,16 @@ export function StudioCanvasRouter() {
       </Route>
 
       <Route path={`/${WORKSPACE_ROUTE_FLOW}`}>
-        {demoMode ? <Redirect to="/" /> : <FlowCanvasPage projectName={currentProjectName} />}
+{demoMode ? <Redirect to="/" /> : typeof window !== "undefined" && (new URLSearchParams(window.location.search).get("advanced") === "1" || new URLSearchParams(window.location.search).get("view") === "flow" || window.location.pathname.includes("/flow")) ? <FlowCanvasPage projectName={currentProjectName} /> : <CreationSkillsPage projectName={currentProjectName} />}
+      </Route>
+      <Route path={`/${WORKSPACE_ROUTE_SKILLS}`}>
+        {demoMode ? <Redirect to="/" /> : <CreationSkillsPage projectName={currentProjectName} />}
+      </Route>
+      <Route path={`/${WORKSPACE_ROUTE_MEDIA}`}>
+        {demoMode ? <Redirect to="/" /> : <MediaLibraryPage projectName={currentProjectName} />}
+      </Route>
+      <Route path={`/${WORKSPACE_ROUTE_CREATIVE_BOARD}`}>
+        {demoMode ? <Redirect to="/" /> : <CreativeBoardPage projectName={currentProjectName} />}
       </Route>
 
       <Route path={`/${WORKSPACE_ROUTE_CHARACTERS}`}>

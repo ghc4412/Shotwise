@@ -193,6 +193,7 @@ async def _shot_image_generate(ctx: NodeContext) -> NodeExecutionResult:
             kind="image",
             path=(result.get("file_path") or f"storyboards/scene_{br.resource_id}.png"),
             label=br.resource_id,
+            legacy_field="storyboard_image",
         )
         for br in successes
         if (result := br.result or {})
@@ -230,6 +231,7 @@ async def _shot_video_generate(ctx: NodeContext) -> NodeExecutionResult:
             kind="video",
             path=(result.get("file_path") or f"videos/scene_{br.resource_id}.mp4"),
             label=br.resource_id,
+            legacy_field="video_clip",
         )
         for br in successes
         if (result := br.result or {})
@@ -240,6 +242,68 @@ async def _shot_video_generate(ctx: NodeContext) -> NodeExecutionResult:
     return NodeExecutionResult(
         outputs={"video": refs},
         summary=f"图生视频 {len(refs)} 段" + (f"（{len(failures)} 段失败）" if failures else ""),
+    )
+
+
+def _reference_video_items(script: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
+    for key in ("video_units", "reference_video_units", "segments", "shots"):
+        value = script.get(key)
+        if not isinstance(value, list):
+            continue
+        items = [item for item in value if isinstance(item, dict)]
+        if items:
+            return items, next(
+                (candidate for candidate in ("unit_id", "segment_id", "shot_id", "id") if candidate in items[0]),
+                "id",
+            )
+    return [], "id"
+
+
+@_register("reference_video_generate")
+async def _reference_video_generate(ctx: NodeContext) -> NodeExecutionResult:
+    if ctx.generation_mode != "reference_video":
+        raise NodeFailedError("reference_video_generate 只适用于 reference_video 项目")
+    script_path = _script_path(ctx)
+    script = _load_json(script_path)
+    items, id_field = _reference_video_items(script)
+    targets = [
+        item
+        for item in items
+        if not ctx.config.get("only_missing") or not (item.get("generated_assets") or {}).get("video_clip")
+    ]
+    if not targets:
+        raise NodeFailedError("没有需要生成的参考视频单元")
+    script_filename = Path(script_path).name
+    specs = [
+        TaskSpec.from_request(
+            task_type="reference_video",
+            media_type="video",
+            resource_id=str(item.get(id_field)),
+            prompt=str(ctx.config.get("prompt") or _item_prompt(item)),
+            script_file=script_filename,
+            source="workflow",
+        )
+        for item in targets
+    ]
+    successes, failures = await batch_enqueue_and_wait(project_name=ctx.project_name, specs=specs)
+    if failures and not successes:
+        raise NodeFailedError(f"参考视频生成失败：{failures[0].error}")
+    refs = [
+        AssetRef(
+            kind="video",
+            path=(result.get("file_path") or f"reference_videos/{br.resource_id}.mp4"),
+            label=br.resource_id,
+            legacy_field="video_clip",
+        )
+        for br in successes
+        if (result := br.result or {})
+    ]
+    ctx.log("info", f"参考视频生成完成：{len(refs)} 成功 / {len(failures)} 失败")
+    for failure in failures:
+        ctx.log("error", f"{failure.resource_id}: {failure.error}")
+    return NodeExecutionResult(
+        outputs={"video": refs},
+        summary=f"参考视频生成 {len(refs)} 段" + (f"（{len(failures)} 段失败）" if failures else ""),
     )
 
 

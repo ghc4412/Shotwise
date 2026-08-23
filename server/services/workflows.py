@@ -41,6 +41,7 @@ from lib.workflow import (
     validate_node_contracts,
     validate_patch,
 )
+from server.services.workflow_contracts import WorkflowContractValidationError, validate_workflow_template_contract
 
 ACTIVE_RUN_STATUSES = ("planned", "running", "paused", "waiting_review")
 PASSED_NODE_STATUSES = frozenset({"succeeded", "skipped"})
@@ -66,6 +67,32 @@ def _loads(value: str | None, default: Any) -> Any:
     if not value:
         return default
     return json.loads(value)
+
+
+def _snapshot_generation_mode(input_snapshot: dict[str, Any]) -> str | None:
+    def find(value: Any) -> str | None:
+        if isinstance(value, dict):
+            explicit = value.get("project_generation_mode")
+            if isinstance(explicit, str) and explicit:
+                return explicit
+            for key in ("project_context", "project_snapshot"):
+                nested = value.get(key)
+                if isinstance(nested, dict):
+                    mode = nested.get("generation_mode")
+                    if isinstance(mode, str) and mode:
+                        return mode
+            for child in value.values():
+                mode = find(child)
+                if mode:
+                    return mode
+        elif isinstance(value, list):
+            for child in value:
+                mode = find(child)
+                if mode:
+                    return mode
+        return None
+
+    return find(input_snapshot)
 
 
 async def _append_event(
@@ -409,9 +436,37 @@ async def get_workflow(session: AsyncSession, definition_id: str, *, actor_id: s
         "scope": definition.scope,
         "active_revision_id": definition.active_revision_id,
     }
+    active_revision_no: int | None = None
     if definition.active_revision_id:
         revision, nodes, edges = await _revision_graph(session, definition.active_revision_id, actor_id=actor_id)
+        active_revision_no = revision.revision_no
         result["active_revision"] = {
+            "id": revision.id,
+            "revision_no": revision.revision_no,
+            "status": revision.status,
+            "graph_hash": revision.graph_hash,
+            "execution_hash": revision.execution_hash,
+            "content_mode": revision.content_mode,
+            "generation_mode": revision.generation_mode,
+            "input_schema": _loads(revision.input_schema_json, {}),
+            "template_lock": _loads(revision.template_lock_json, None),
+            "nodes": nodes,
+            "edges": edges,
+        }
+
+    draft_result = await session.execute(
+        select(WorkflowRevision)
+        .where(
+            WorkflowRevision.definition_id == definition_id,
+            WorkflowRevision.status == "draft",
+        )
+        .order_by(WorkflowRevision.revision_no.desc())
+        .limit(1)
+    )
+    draft = draft_result.scalar_one_or_none()
+    if draft is not None and (active_revision_no is None or draft.revision_no > active_revision_no):
+        revision, nodes, edges = await _revision_graph(session, draft.id, actor_id=actor_id)
+        result["draft_revision"] = {
             "id": revision.id,
             "revision_no": revision.revision_no,
             "status": revision.status,
@@ -450,6 +505,13 @@ async def plan_run(
     definition = await session.get(WorkflowDefinition, revision.definition_id)
     if definition is None or definition.workspace_id != workspace_id or definition.project_id != project_id:
         raise NotFoundError("workflow_revision_not_found", id=revision_id)
+    project_generation_mode = _snapshot_generation_mode(input_snapshot)
+    if project_generation_mode is not None and project_generation_mode != revision.generation_mode:
+        raise WorkflowValidationError(
+            "workflow_generation_mode_mismatch",
+            project_generation_mode=project_generation_mode,
+            workflow_generation_mode=revision.generation_mode,
+        )
     fingerprint = input_fingerprint(
         {
             "schema_version": 1,
@@ -548,6 +610,96 @@ async def plan_run(
         "budget_limit": budget_limit,
         "event_cursor": event.seq,
         "deduped": False,
+    }
+
+
+async def find_workflow_run_for_creation_plan(
+    session: AsyncSession,
+    *,
+    creation_plan_id: str,
+    project_id: str,
+    actor_id: str,
+) -> dict[str, Any] | None:
+    """Find a run previously created for an immutable Creation Plan."""
+
+    rows = (
+        (
+            await session.execute(
+                select(WorkflowRun)
+                .where(
+                    WorkflowRun.user_id == actor_id,
+                    WorkflowRun.project_id == project_id,
+                )
+                .order_by(WorkflowRun.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for run in rows:
+        try:
+            snapshot = _loads(run.input_snapshot_json, {})
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if isinstance(snapshot, dict) and str(snapshot.get("creation_plan_id", "")) == creation_plan_id:
+            return {"id": run.id, "status": run.status, "version": run.version, "deduped": True}
+    return None
+
+
+async def request_workflow_run_execution(
+    session: AsyncSession,
+    *,
+    run_id: str,
+    actor_id: str,
+) -> dict[str, Any]:
+    """Durably hand a running run to the existing polling executor.
+
+    The executor consumes running rows from process_workflow_runs. The event is
+    an idempotent audit marker; the running row remains the durable work item,
+    so a process restart can recover it without a second execution request.
+    """
+
+    run = await session.get(WorkflowRun, run_id)
+    if run is None or run.user_id != actor_id:
+        raise NotFoundError("workflow_run_not_found", id=run_id)
+    if run.status != "running":
+        return {
+            "id": run.id,
+            "status": run.status,
+            "dispatch_status": "not_running",
+            "executor": "workflow_executor_loop",
+        }
+
+    existing = (
+        await session.execute(
+            select(ProjectEventLog)
+            .where(
+                ProjectEventLog.aggregate_type == "workflow_run",
+                ProjectEventLog.aggregate_id == run.id,
+                ProjectEventLog.event_type == "workflow.run.dispatch_requested",
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        await _append_event(
+            session,
+            workspace_id=run.workspace_id,
+            project_id=run.project_id,
+            aggregate_type="workflow_run",
+            aggregate_id=run.id,
+            aggregate_version=run.version,
+            event_type="workflow.run.dispatch_requested",
+            payload={"status": run.status, "executor": "workflow_executor_loop"},
+            actor_id=actor_id,
+            trace_id=run.trace_id,
+        )
+    await session.commit()
+    return {
+        "id": run.id,
+        "status": run.status,
+        "dispatch_status": "queued" if existing is None else "already_queued",
+        "executor": "workflow_executor_loop",
     }
 
 
@@ -974,7 +1126,7 @@ def list_templates() -> dict[str, Any]:
             "reference-to-video",
             "flow_template_reference",
             "flow_template_reference_desc",
-            ["image_input", "character_reference", "quality_check", "shot_video_generate", "param_adjust", "export"],
+            ["source_import", "script_review", "reference_video_generate", "quality_check", "export"],
         ),
     )
     items = []
@@ -987,6 +1139,7 @@ def list_templates() -> dict[str, Any]:
                 "name_key": name_key,
                 "description_key": description_key,
                 "template_lock": {"template_schema_version": 1, "template_id": template_id},
+                "generation_mode": "reference_video" if template_id == "reference-to-video" else "storyboard",
                 "nodes": nodes,
                 "edges": edges,
             }
@@ -1225,6 +1378,31 @@ def _template_payload(template: WorkflowTemplate, stats: WorkflowUsageStats | No
     }
 
 
+def _validate_template_contract(
+    contract: dict[str, Any], *, nodes: list[dict[str, Any]] | None = None, edges: list[dict[str, Any]] | None = None
+) -> None:
+    """Validate marketplace metadata, node schemas, references, and graph safety."""
+    payload = dict(contract)
+    if nodes is not None:
+        payload["nodes"] = nodes
+    if edges is not None:
+        payload["edges"] = edges
+    try:
+        validate_workflow_template_contract(payload)
+    except WorkflowContractValidationError as exc:
+        raise WorkflowValidationError("workflow_template_invalid", reason="contract", issues=list(exc.issues)) from exc
+    aspect_ratios = contract.get("aspect_ratios")
+    if aspect_ratios is not None and (
+        not isinstance(aspect_ratios, list)
+        or not all(isinstance(item, str) and item in {"16:9", "9:16", "1:1"} for item in aspect_ratios)
+    ):
+        raise WorkflowValidationError("workflow_template_invalid", reason="aspect_ratios")
+    for field in ("copyright_declaration", "author", "license", "example_project", "cover_ref"):
+        value = contract.get(field)
+        if value is not None and not isinstance(value, str):
+            raise WorkflowValidationError("workflow_template_invalid", reason=field)
+
+
 async def create_template_draft(
     session: AsyncSession,
     *,
@@ -1241,6 +1419,7 @@ async def create_template_draft(
 ) -> dict[str, Any]:
     if template_type not in TEMPLATE_TYPES:
         raise WorkflowValidationError("workflow_template_invalid", reason="template_type")
+    _validate_template_contract(contract, nodes=nodes, edges=edges)
     validate_graph(nodes, edges)
     now = utc_now()
     template_id = uuid.uuid4().hex
@@ -1287,6 +1466,104 @@ async def create_template_draft(
     return _template_payload(template, stats)
 
 
+async def list_creator_templates(session: AsyncSession, *, actor_id: str) -> dict[str, Any]:
+    rows = (
+        (
+            await session.execute(
+                select(WorkflowTemplate)
+                .where(WorkflowTemplate.user_id == actor_id)
+                .order_by(WorkflowTemplate.updated_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    items: list[dict[str, Any]] = []
+    for template in rows:
+        payload = await get_template(session, template.id, actor_id=actor_id, public=False)
+        reviews = (
+            (
+                await session.execute(
+                    select(WorkflowMarketplaceReview)
+                    .where(WorkflowMarketplaceReview.template_id == template.id)
+                    .order_by(WorkflowMarketplaceReview.created_at.desc())
+                    .limit(20)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        history = [
+            {
+                "id": review.id,
+                "revision_id": review.revision_id,
+                "status": review.status,
+                "decision": review.decision,
+                "comment": review.comment,
+                "reviewer_id": review.reviewer_id,
+                "created_at": review.created_at.isoformat(),
+            }
+            for review in reviews
+        ]
+        payload["review_history"] = history
+        payload["reviews"] = history
+        items.append(payload)
+    return {"items": items}
+
+
+async def update_template_draft(
+    session: AsyncSession,
+    template_id: str,
+    *,
+    name: str,
+    description: str,
+    template_type: str,
+    contract: dict[str, Any],
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+    actor_id: str,
+    content_mode: str = "drama",
+    generation_mode: str = "storyboard",
+    cover_ref: str | None = None,
+) -> dict[str, Any]:
+    template = await session.get(WorkflowTemplate, template_id)
+    if template is None or template.user_id != actor_id:
+        raise NotFoundError("workflow_template_not_found", id=template_id)
+    if template.status not in {"draft", "rejected"}:
+        raise WorkflowValidationError("workflow_template_not_editable", status=template.status)
+    if template_type not in TEMPLATE_TYPES:
+        raise WorkflowValidationError("workflow_template_invalid", reason="template_type")
+    _validate_template_contract(contract, nodes=nodes, edges=edges)
+    validate_graph(nodes, edges)
+    if not template.draft_revision_id:
+        raise WorkflowValidationError("workflow_template_invalid", reason="missing_revision")
+    current_revision = await session.get(WorkflowRevision, template.draft_revision_id)
+    if current_revision is None:
+        raise NotFoundError("workflow_revision_not_found", id=template.draft_revision_id)
+    revision = await create_revision(
+        session,
+        definition_id=current_revision.definition_id,
+        nodes=nodes,
+        edges=edges,
+        template_lock={"template_id": template.id, "template_schema_version": 1},
+        actor_id=actor_id,
+        content_mode=content_mode,
+        generation_mode=generation_mode,
+        input_schema=contract.get("input_schema"),
+    )
+    template.name = name
+    template.description = description
+    template.cover_ref = cover_ref
+    template.template_type = template_type
+    template.contract_json = canonical_json(contract)
+    template.draft_revision_id = revision["id"]
+    template.status = "draft"
+    template.submitted_at = None
+    template.updated_at = utc_now()
+    await session.commit()
+    return _template_payload(template, await session.get(WorkflowUsageStats, template.id))
+
+
 async def get_template(
     session: AsyncSession, template_id: str, *, actor_id: str, public: bool = False
 ) -> dict[str, Any]:
@@ -1321,6 +1598,7 @@ async def submit_template(session: AsyncSession, template_id: str, *, actor_id: 
     if not template.draft_revision_id:
         raise WorkflowValidationError("workflow_template_invalid", reason="missing_revision")
     revision, nodes, edges = await _revision_graph(session, template.draft_revision_id, actor_id=actor_id)
+    _validate_template_contract(_loads(template.contract_json, {}), nodes=nodes, edges=edges)
     validate_graph(nodes, edges)
     template.status = "submitted"
     template.submitted_at = utc_now()
@@ -1401,6 +1679,7 @@ async def review_template(
         if revision is None or definition is None:
             raise NotFoundError("workflow_revision_not_found", id=revision_id)
         _source_revision, nodes, edges = await _revision_graph(session, revision_id, actor_id=None)
+        _validate_template_contract(_loads(template.contract_json, {}), nodes=nodes, edges=edges)
         validate_graph(nodes, edges)
         revision.status = "published"
         definition.active_revision_id = revision.id
@@ -1489,6 +1768,130 @@ async def rate_template(session: AsyncSession, template_id: str, *, rating: floa
     }
 
 
+async def get_template_upgrade(session: AsyncSession, definition_id: str, *, actor_id: str) -> dict[str, Any]:
+    definition = await session.get(WorkflowDefinition, definition_id)
+    if definition is None or definition.user_id != actor_id:
+        raise NotFoundError("workflow_not_found", id=definition_id)
+    if not definition.active_revision_id:
+        return {"available": False, "reason": "no_active_revision"}
+
+    current, current_nodes, current_edges = await _revision_graph(
+        session, definition.active_revision_id, actor_id=actor_id
+    )
+    template_lock = _loads(current.template_lock_json, {})
+    template_id = template_lock.get("template_id") if isinstance(template_lock, dict) else None
+    source_revision_id = template_lock.get("source_revision_id") if isinstance(template_lock, dict) else None
+    if not template_id or not source_revision_id:
+        return {"available": False, "reason": "not_template_derived"}
+
+    template = await session.get(WorkflowTemplate, str(template_id))
+    latest_id = template.published_revision_id if template is not None else None
+    latest = await session.get(WorkflowRevision, latest_id) if latest_id else None
+    if template is None or latest is None or template.status != "published":
+        return {
+            "available": False,
+            "reason": "template_unavailable",
+            "template_id": str(template_id),
+            "current_revision_id": current.id,
+            "current_source_revision_id": str(source_revision_id),
+        }
+    if latest.id == source_revision_id:
+        return {
+            "available": False,
+            "reason": "up_to_date",
+            "template_id": template.id,
+            "current_revision_id": current.id,
+            "current_source_revision_id": source_revision_id,
+            "latest_revision_id": latest.id,
+            "latest_revision_no": latest.revision_no,
+        }
+
+    _, latest_nodes, latest_edges = await _revision_graph(session, latest.id, actor_id=None)
+    current_by_key = {str(node["node_key"]): node for node in current_nodes}
+    latest_by_key = {str(node["node_key"]): node for node in latest_nodes}
+    current_edges_by_key = {str(edge["edge_key"]): edge for edge in current_edges}
+    latest_edges_by_key = {str(edge["edge_key"]): edge for edge in latest_edges}
+    changed_nodes = sorted(
+        key
+        for key in current_by_key.keys() & latest_by_key.keys()
+        if canonical_json(current_by_key[key]) != canonical_json(latest_by_key[key])
+    )
+    added_nodes = sorted(latest_by_key.keys() - current_by_key.keys())
+    removed_nodes = sorted(current_by_key.keys() - latest_by_key.keys())
+    added_edges = sorted(latest_edges_by_key.keys() - current_edges_by_key.keys())
+    removed_edges = sorted(current_edges_by_key.keys() - latest_edges_by_key.keys())
+    compatibility_reasons: list[str] = []
+    if current.content_mode != latest.content_mode:
+        compatibility_reasons.append("content_mode_changed")
+    if current.generation_mode != latest.generation_mode:
+        compatibility_reasons.append("generation_mode_changed")
+    try:
+        validate_graph(latest_nodes, latest_edges)
+        validate_node_contracts(latest_nodes)
+    except WorkflowValidationError:
+        compatibility_reasons.append("latest_revision_invalid")
+    current_cost = sum(float(node.get("estimated_cost", 0) or 0) for node in current_nodes)
+    latest_cost = sum(float(node.get("estimated_cost", 0) or 0) for node in latest_nodes)
+    return {
+        "available": True,
+        "template_id": template.id,
+        "current_revision_id": current.id,
+        "current_source_revision_id": source_revision_id,
+        "latest_revision_id": latest.id,
+        "latest_revision_no": latest.revision_no,
+        "compatible": not compatibility_reasons,
+        "compatibility_reasons": compatibility_reasons,
+        "estimated_cost_delta": latest_cost - current_cost,
+        "changes": {
+            "added_nodes": added_nodes,
+            "removed_nodes": removed_nodes,
+            "changed_nodes": changed_nodes,
+            "added_edges": added_edges,
+            "removed_edges": removed_edges,
+        },
+    }
+
+
+async def upgrade_workflow_template(
+    session: AsyncSession, definition_id: str, *, actor_id: str, confirmed: bool
+) -> dict[str, Any]:
+    if not confirmed:
+        raise WorkflowValidationError("workflow_template_upgrade_confirmation_required")
+    upgrade = await get_template_upgrade(session, definition_id, actor_id=actor_id)
+    if not upgrade.get("available"):
+        raise ConflictError("workflow_template_upgrade_unavailable", reason=upgrade.get("reason"))
+    if not upgrade.get("compatible"):
+        raise ConflictError(
+            "workflow_template_upgrade_incompatible",
+            reasons=upgrade.get("compatibility_reasons", []),
+        )
+    current, _, _ = await _revision_graph(session, str(upgrade["current_revision_id"]), actor_id=actor_id)
+    latest, nodes, edges = await _revision_graph(session, str(upgrade["latest_revision_id"]), actor_id=None)
+    template_lock = _loads(current.template_lock_json, {})
+    if not isinstance(template_lock, dict):
+        template_lock = {}
+    template_lock.update(
+        {
+            "source_revision_id": latest.id,
+            "upgraded_from_revision_id": current.id,
+            "upgraded_at": utc_now().isoformat(),
+        }
+    )
+    revision = await create_revision(
+        session,
+        definition_id=current.definition_id,
+        nodes=nodes,
+        edges=edges,
+        template_lock=template_lock,
+        actor_id=actor_id,
+        content_mode=latest.content_mode,
+        generation_mode=latest.generation_mode,
+        input_schema=_loads(latest.input_schema_json, {}),
+    )
+    published = await publish_revision(session, revision["id"], actor_id=actor_id)
+    return {"upgrade": upgrade, "revision": published}
+
+
 async def derive_template(
     session: AsyncSession,
     template_id: str,
@@ -1528,6 +1931,15 @@ async def derive_template(
     return {"definition_id": definition["id"], "revision_id": revision["id"], "template_id": template.id}
 
 
+async def _completed_patch_nodes(session: AsyncSession, run_id: str) -> set[str]:
+    rows = (
+        (await session.execute(select(WorkflowNodeRun).where(WorkflowNodeRun.workflow_run_id == run_id)))
+        .scalars()
+        .all()
+    )
+    return {row.node_key for row in rows if row.status in PASSED_NODE_STATUSES}
+
+
 async def validate_patch_for_run(
     session: AsyncSession, run_id: str, patch: WorkflowPatch, *, actor_id: str
 ) -> dict[str, Any]:
@@ -1538,7 +1950,18 @@ async def validate_patch_for_run(
     if patch.base_revision_id != revision.id:
         raise ConflictError("workflow_patch_stale_revision", expected=revision.id, actual=patch.base_revision_id)
     remaining = None if run.budget_limit is None else run.budget_limit - run.spent_amount - run.reserved_amount
-    return validate_patch(nodes, edges, patch, remaining_budget=remaining)
+    completed_nodes = await _completed_patch_nodes(session, run_id)
+    preview = validate_patch(
+        nodes,
+        edges,
+        patch,
+        remaining_budget=remaining,
+        allow_destructive=True,
+        completed_nodes=completed_nodes,
+    )
+    if not auto_optimization_enabled():
+        preview["requires_confirmation"] = True
+    return preview
 
 
 async def apply_patch_for_run(
@@ -1558,7 +1981,10 @@ async def apply_patch_for_run(
     if patch.base_revision_id != revision.id:
         raise ConflictError("workflow_patch_stale_revision", expected=revision.id, actual=patch.base_revision_id)
     remaining = None if run.budget_limit is None else run.budget_limit - run.spent_amount - run.reserved_amount
-    preview = validate_patch(nodes, edges, patch, remaining_budget=remaining, allow_destructive=confirmed)
+    completed_nodes = await _completed_patch_nodes(session, run_id)
+    preview = validate_patch(
+        nodes, edges, patch, remaining_budget=remaining, completed_nodes=completed_nodes, allow_destructive=confirmed
+    )
     if preview["requires_confirmation"] and not confirmed:
         raise WorkflowValidationError("workflow_patch_confirmation_required", operation="patch")
     next_nodes, next_edges = apply_patch_to_graph(nodes, edges, patch)
@@ -1603,6 +2029,28 @@ async def apply_patch_for_run(
     return response
 
 
+def _static_template_validation(payload: dict[str, Any]) -> dict[str, Any]:
+    revision = payload.get("active_revision") or payload.get("revision") or payload
+    graph = revision
+    raw_nodes = graph.get("nodes", [])
+    raw_edges = graph.get("edges", [])
+    nodes = [node for node in raw_nodes if isinstance(node, dict)] if isinstance(raw_nodes, list) else []
+    edges = [edge for edge in raw_edges if isinstance(edge, dict)] if isinstance(raw_edges, list) else []
+    node_keys = {str(node.get("node_key") or node.get("key") or node.get("id")) for node in nodes}
+    missing_endpoints = [
+        edge
+        for edge in edges
+        if str(edge.get("source_node_key") or edge.get("source") or edge.get("source_id")) not in node_keys
+        or str(edge.get("target_node_key") or edge.get("target") or edge.get("target_id")) not in node_keys
+    ]
+    return {
+        "valid": bool(nodes) and not missing_endpoints,
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+        "missing_endpoints": missing_endpoints,
+    }
+
+
 async def list_pending_template_reviews(
     session: AsyncSession,
     *,
@@ -1637,6 +2085,7 @@ async def list_pending_template_reviews(
             {
                 **detail,
                 "risk_tags": tags,
+                "static_validation": _static_template_validation(detail),
                 "reviews": [
                     {
                         "id": review.id,

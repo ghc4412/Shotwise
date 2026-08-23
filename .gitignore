@@ -59,6 +59,9 @@ CLAUDE.local.md
 .reasonix/
 reasonix.toml
 
+# Local Codebase-Memory indexing excludes (personal, not shared)
+.cbmignore
+
 # Frontend build artifacts
 node_modules/
 frontend/dist/

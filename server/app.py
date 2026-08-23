@@ -55,12 +55,17 @@ from server.routers import (
     character_relations,
     characters,
     cost_estimation,
+    creation_plans,
     creative,
+    creative_boards,
+    creative_context,
     custom_providers,
     end_frames,
+    features,
     files,
     generate,
     grids,
+    media_assets,
     onboarding,
     products,
     project_events,
@@ -79,6 +84,7 @@ from server.routers import (
     workflows,
 )
 from server.routers import auth as auth_router
+from server.services.creation_skill_catalog import sync_official_creation_skills
 from server.services.project_events import ProjectEventService
 from server.services.workflow_execution import workflow_executor_loop
 
@@ -352,8 +358,26 @@ async def lifespan(app: FastAPI):
     # Run Alembic migrations (auto-creates tables on first start)
     await init_db()
 
-    # 把 env 登录用户同步到 users 表（幂等；失败不阻塞启动）
+    # Seed the actor used by code-owned official workflow and Skill records before
+    # synchronization, because workflow event rows reference users by foreign key.
     await ensure_default_user()
+    from server.auth import ensure_system_user
+
+    await ensure_system_user()
+    from server.auth import ensure_system_user
+
+    await ensure_system_user()
+
+    # Materialize the code-owned official Skill manifest after schema migrations.
+    # A stale or unavailable database must not prevent the rest of the app from starting;
+    # the next startup retries the idempotent sync.
+    try:
+        async with async_session_factory() as session:
+            synced = await sync_official_creation_skills(session)
+        if synced:
+            logger.info("official Creation Skill catalog synchronized: %s changes", synced)
+    except Exception:
+        logger.exception("official Creation Skill catalog synchronization failed (non-fatal)")
 
     projects_root = app_data_dir()
 
@@ -536,7 +560,7 @@ def _resolve_listen_addr() -> tuple[str, int]:
 
     truthy 默认（``or``）兜底，覆盖 ``.env`` 误写空值（如 ``LISTEN_PORT=``）的场景。
     """
-    host = os.environ.get("LISTEN_HOST") or "0.0.0.0"
+    host = os.environ.get("LISTEN_HOST") or "127.0.0.1"
     port = int(os.environ.get("LISTEN_PORT") or "1241")
     return host, port
 
@@ -618,7 +642,32 @@ app.include_router(
     tags=["助手会话"],
 )
 app.include_router(tasks.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["任务队列"])
+app.include_router(features.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["Feature Flags"])
 app.include_router(workflows.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["Shotwise Flow"])
+app.include_router(
+    creation_plans.router,
+    prefix="/api/v1",
+    dependencies=[Depends(get_current_user)],
+    tags=["Creation Plans"],
+)
+app.include_router(
+    media_assets.router,
+    prefix="/api/v1",
+    dependencies=[Depends(get_current_user)],
+    tags=["Media Library"],
+)
+app.include_router(
+    creative_boards.router,
+    prefix="/api/v1",
+    dependencies=[Depends(get_current_user)],
+    tags=["Creative Board"],
+)
+app.include_router(
+    creative_context.router,
+    prefix="/api/v1",
+    dependencies=[Depends(get_current_user)],
+    tags=["Creative Context"],
+)
 app.include_router(providers.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["供应商管理"])
 app.include_router(system_config.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["系统配置"])
 app.include_router(system.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["系统"])
