@@ -61,6 +61,45 @@ def test_patch_validation_returns_downstream_closure_and_rejects_budget_overrun(
         validate_patch(nodes, edges, patch, remaining_budget=1)
 
 
+async def test_template_contract_rejects_invalid_metadata(async_session) -> None:
+    nodes, edges = _graph()
+    with pytest.raises(WorkflowValidationError, match="workflow_template_invalid"):
+        await workflows.create_template_draft(
+            async_session,
+            name="Invalid contract",
+            description="",
+            template_type="manga",
+            contract={"risk_tags": "copyright"},
+            nodes=nodes,
+            edges=edges,
+            actor_id="creator",
+        )
+
+    with pytest.raises(WorkflowValidationError, match="workflow_template_invalid"):
+        await workflows.create_template_draft(
+            async_session,
+            name="Invalid schema",
+            description="",
+            template_type="manga",
+            contract={"input_schema": []},
+            nodes=nodes,
+            edges=edges,
+            actor_id="creator",
+        )
+
+    with pytest.raises(WorkflowValidationError, match="workflow_template_invalid"):
+        await workflows.create_template_draft(
+            async_session,
+            name="Invalid ratio",
+            description="",
+            template_type="manga",
+            contract={"aspect_ratios": ["4:3"]},
+            nodes=nodes,
+            edges=edges,
+            actor_id="creator",
+        )
+
+
 async def test_template_submission_review_publish_and_derivation(async_session) -> None:
     nodes, edges = _graph()
     draft = await workflows.create_template_draft(
@@ -95,6 +134,31 @@ async def test_template_submission_review_publish_and_derivation(async_session) 
     )
     graph = await workflows.get_workflow(async_session, derived["definition_id"], actor_id="creator")
     assert graph["active_revision"]["template_lock"]["template_id"] == draft["id"]
+
+
+async def test_pending_review_queue_exposes_static_graph_validation(async_session) -> None:
+    nodes, edges = _graph()
+    draft = await workflows.create_template_draft(
+        async_session,
+        name="Static validation template",
+        description="Queue contract",
+        template_type="manga",
+        contract={"risk_tags": ["copyright"]},
+        nodes=nodes,
+        edges=edges,
+        actor_id="creator",
+    )
+    await workflows.submit_template(async_session, draft["id"], actor_id="creator")
+
+    queue = await workflows.list_pending_template_reviews(async_session)
+
+    item = queue["items"][0]
+    assert item["static_validation"] == {
+        "valid": True,
+        "node_count": len(nodes),
+        "edge_count": len(edges),
+        "missing_endpoints": [],
+    }
 
 
 async def test_template_cannot_be_derived_after_suspension(async_session) -> None:

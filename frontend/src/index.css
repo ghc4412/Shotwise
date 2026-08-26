@@ -655,3 +655,282 @@ body {
     cursor: not-allowed;
     transform: none;
 }
+/* Skill cards: effective readable sizing */
+[data-testid="creation-skills-scroll"] .skills-market-card {
+  height: 7rem !important;
+  min-height: 7rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button:first-child {
+  height: 100% !important;
+  min-height: 7rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button:first-child > div:first-child {
+  height: 6rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card h3 {
+  display: block !important;
+  overflow: visible !important;
+  white-space: normal !important;
+  font-size: 0.75rem !important;
+  line-height: 1rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card p {
+  display: block !important;
+  overflow: visible !important;
+  font-size: 0.75rem !important;
+  line-height: 1.125rem !important;
+}
+/* Skill cards: final vertical sizing */
+[data-testid="creation-skills-scroll"] .skills-market-card {
+  height: 9rem !important;
+  min-height: 9rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button:first-child {
+  height: 100% !important;
+  min-height: 9rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button:first-child > div:first-child {
+  height: 7.5rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card h3 {
+  font-size: 0.8125rem !important;
+  line-height: 1.125rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card p {
+  font-size: 0.75rem !important;
+  line-height: 1.25rem !important;
+}
+/* Final readable Skill card sizing. */
+[data-testid="creation-skills-scroll"] .skills-market-card {
+  height: 11rem;
+  min-height: 11rem;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button:first-child {
+  height: 100%;
+  min-height: 11rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button:first-child > div:first-child {
+  height: 10rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card h3 {
+  font-size: 0.8125rem !important;
+  line-height: 1.125rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card p {
+  font-size: 0.75rem !important;
+  line-height: 1.25rem !important;
+}
+
+.skills-page-scrollbar {
+    min-height: 0;
+    min-width: 0;
+    scrollbar-color: #94a3b8 #e2e8f0;
+    scrollbar-gutter: stable;
+    scrollbar-width: auto;
+    overscroll-behavior: contain;
+}
+
+.skills-page-scrollbar::-webkit-scrollbar {
+    width: 14px;
+}
+
+.skills-page-scrollbar::-webkit-scrollbar-track {
+    background: #d7dee9;
+    border-left: 1px solid #c4cedb;
+}
+
+.skills-page-scrollbar::-webkit-scrollbar-thumb {
+    border: 3px solid #d7dee9;
+    border-radius: 999px;
+    background-clip: padding-box;
+    background-color: #64748b;
+}
+
+.skills-page-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: #4f46e5;
+}
+
+
+/* Skill catalog typography stays readable at the reference card density. */
+[data-testid="creation-skills-scroll"] > div.mt-6 button,
+[data-testid="creation-skills-scroll"] > div.mt-6 input,
+[data-testid="creation-skills-scroll"] > nav button {
+  font-size: 0.875rem !important;
+  line-height: 1.25rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card h3 {
+  font-size: 0.75rem !important;
+  line-height: 1rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card p,
+[data-testid="creation-skills-scroll"] .skills-market-card > button > div:last-child > div:last-child {
+  font-size: 0.6875rem !important;
+  line-height: 0.875rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button > div:first-child > div {
+  font-size: 0.625rem !important;
+  line-height: 0.75rem !important;
+}
+
+[data-testid="creation-skills-scroll"] > .skills-market-section > section > div:first-child > h2 {
+  font-size: 1rem !important;
+  line-height: 1.5rem !important;
+}
+
+/* Reference layout: spacious horizontal preview cards with a clear media-to-copy split. */
+[data-testid="creation-skills-scroll"] .skills-market-grid {
+  column-gap: 0.875rem;
+  row-gap: 0.875rem;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card {
+  border-radius: 0.875rem;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button:first-child {
+  min-height: 9rem !important;
+  gap: 0.75rem !important;
+  padding: 0.5rem 2.25rem 0.5rem 0.5rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button:first-child > div:first-child {
+  width: 7.375rem !important;
+  height: 8rem !important;
+  border-radius: 0.5rem;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card h3 {
+  display: -webkit-box !important;
+  overflow: hidden !important;
+  white-space: normal !important;
+  -webkit-line-clamp: 2 !important;
+  line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important;
+  font-size: 0.8125rem !important;
+  line-height: 1.125rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card p {
+  display: -webkit-box !important;
+  overflow: hidden !important;
+  white-space: normal !important;
+  -webkit-line-clamp: 3 !important;
+  line-clamp: 3 !important;
+  -webkit-box-orient: vertical !important;
+  font-size: 0.75rem !important;
+  line-height: 1.125rem !important;
+}
+
+/* Reference catalog geometry: three calm rows of readable horizontal cards on desktop. */
+[data-testid="creation-skills-scroll"] .skills-market-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card {
+  min-width: 0;
+  height: 8rem !important;
+  min-height: 8rem !important;
+  border-radius: 0.625rem;
+  background: #ffffff;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button:first-child {
+  height: 100%;
+  min-height: 8rem !important;
+  align-items: center;
+  gap: 0.75rem !important;
+  padding: 0.625rem 2.25rem 0.625rem 0.625rem !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button:first-child > div:first-child {
+  flex: 0 0 7.375rem;
+  width: 7.375rem !important;
+  height: 7rem !important;
+  border-radius: 0.5rem;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button:first-child > div:last-child {
+  min-width: 0;
+  align-self: stretch;
+  justify-content: center;
+  padding-right: 0.25rem;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button:last-child {
+  top: 0.375rem;
+  right: 0.375rem;
+}
+
+@media (min-width: 640px) {
+  [data-testid="creation-skills-scroll"] .skills-market-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  [data-testid="creation-skills-scroll"] .skills-market-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+/* Skill cards: actual final sizing */
+[data-testid="creation-skills-scroll"] .skills-market-card {
+  height: auto !important;
+  min-height: 160px !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button:first-child {
+  height: auto !important;
+  min-height: 160px !important;
+  align-items: flex-start !important;
+  padding: 12px 36px 12px 12px !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button:first-child > div:first-child {
+  flex: 0 0 118px !important;
+  width: 118px !important;
+  height: 136px !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card > button:first-child > div:last-child {
+  align-self: stretch !important;
+  justify-content: flex-start !important;
+  padding-top: 2px;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card h3 {
+  display: -webkit-box !important;
+  overflow: hidden !important;
+  white-space: normal !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+  line-clamp: 2 !important;
+  font-size: 13px !important;
+  line-height: 20px !important;
+}
+
+[data-testid="creation-skills-scroll"] .skills-market-card p {
+  display: block !important;
+  overflow: visible !important;
+  white-space: normal !important;
+  -webkit-line-clamp: unset !important;
+  line-clamp: unset !important;
+  font-size: 12px !important;
+  line-height: 18px !important;
+}

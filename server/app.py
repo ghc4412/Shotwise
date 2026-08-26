@@ -561,7 +561,9 @@ def _resolve_listen_addr() -> tuple[str, int]:
     truthy 默认（``or``）兜底，覆盖 ``.env`` 误写空值（如 ``LISTEN_PORT=``）的场景。
     """
     host = os.environ.get("LISTEN_HOST") or "127.0.0.1"
-    port = int(os.environ.get("LISTEN_PORT") or "1241")
+    configured_port = os.environ.get("LISTEN_PORT")
+    # 1241 is reserved by Windows on this machine; ignore stale shell settings.
+    port = int(configured_port) if configured_port and configured_port != "1241" else 18080
     return host, port
 
 

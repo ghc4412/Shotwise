@@ -47,6 +47,6 @@ describe("SourceFilesPage creative draft tab", () => {
     await waitFor(() => expect(API.listFiles).toHaveBeenCalledWith("demo"));
     expect(screen.queryByRole("button", { name: "创作稿" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("creative-draft-editor")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "源文件" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "文稿" })).toHaveAttribute("aria-pressed", "true");
   });
 });

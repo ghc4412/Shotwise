@@ -1,3 +1,5 @@
+import { FlowCanvasPage } from "./flow/FlowCanvasPage";
+import { ProductsPage } from "./lorebook/ProductsPage";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { errMsg, voidPromise } from "@/utils/async";
 import { Route, Switch, Redirect } from "wouter";
@@ -30,16 +32,14 @@ import { SourceFileViewer } from "./SourceFileViewer";
 import { SourceFilesPage } from "./SourceFilesPage";
 import { CreationSkillsPage } from "./CreationSkillsPage";
 import { MediaLibraryPage } from "./MediaLibraryPage";
-import { CreativeBoardPage } from "./CreativeBoardPage";
+import { CreativeBoardWorkspace } from "./CreativeBoardWorkspace";
 import { CharactersPage } from "./lorebook/CharactersPage";
 import { ScenesPage } from "./lorebook/ScenesPage";
 import { PropsPage } from "./lorebook/PropsPage";
-import { ProductsPage } from "./lorebook/ProductsPage";
 import { ReferenceVideoCanvas } from "./reference/ReferenceVideoCanvas";
 import { AdReferenceVideoCanvas } from "./reference/AdReferenceVideoCanvas";
 import { GridImageToVideoCanvas } from "./grid/GridImageToVideoCanvas";
 import { EpisodeSourceReview } from "./EpisodeSourceReview";
-import { FlowCanvasPage } from "./flow/FlowCanvasPage";
 import { API } from "@/api";
 import {
   enqueueCharacter,
@@ -496,6 +496,35 @@ export function StudioCanvasRouter() {
     }
   }, [currentProjectName, refreshProject]);
 
+  const handleGenerateGrid = useCallback(async (episode: number, scriptFile: string, sceneIds?: string[]) => {
+    if (!currentProjectName) return;
+    try {
+      await enqueueGrid(currentProjectName, episode, scriptFile, sceneIds);
+    } catch (err) {
+      useAppStore.getState().pushToast(tRef.current("grid_generation_failed", { message: errMsg(err) }), "error");
+    }
+  }, [currentProjectName]);
+
+  const handleRestoreAsset = useCallback(async () => {
+    await refreshProject();
+  }, [refreshProject]);
+
+  const handleGenerateCharacterVoid = useCallback((...args: Parameters<typeof handleGenerateCharacter>) => {
+    void handleGenerateCharacter(...args).catch(console.error);
+  }, [handleGenerateCharacter]);
+  const handleUpdateSceneVoid = useCallback((...args: Parameters<typeof handleUpdateScene>) => {
+    void handleUpdateScene(...args).catch(console.error);
+  }, [handleUpdateScene]);
+  const handleGenerateSceneVoid = useCallback((...args: Parameters<typeof handleGenerateScene>) => {
+    void handleGenerateScene(...args).catch(console.error);
+  }, [handleGenerateScene]);
+  const handleUpdatePropVoid = useCallback((...args: Parameters<typeof handleUpdateProp>) => {
+    void handleUpdateProp(...args).catch(console.error);
+  }, [handleUpdateProp]);
+  const handleGeneratePropVoid = useCallback((...args: Parameters<typeof handleGenerateProp>) => {
+    void handleGenerateProp(...args).catch(console.error);
+  }, [handleGenerateProp]);
+
   // ---- Product CRUD callbacks ----
   const handleUpdateProduct = useCallback(async (name: string, updates: Partial<Product>) => {
     if (!currentProjectName) return;
@@ -532,34 +561,6 @@ export function StudioCanvasRouter() {
     }
   }, [currentProjectName, refreshProject]);
 
-  const handleGenerateGrid = useCallback(async (episode: number, scriptFile: string, sceneIds?: string[]) => {
-    if (!currentProjectName) return;
-    try {
-      await enqueueGrid(currentProjectName, episode, scriptFile, sceneIds);
-    } catch (err) {
-      useAppStore.getState().pushToast(tRef.current("grid_generation_failed", { message: errMsg(err) }), "error");
-    }
-  }, [currentProjectName]);
-
-  const handleRestoreAsset = useCallback(async () => {
-    await refreshProject();
-  }, [refreshProject]);
-
-  const handleGenerateCharacterVoid = useCallback((...args: Parameters<typeof handleGenerateCharacter>) => {
-    void handleGenerateCharacter(...args).catch(console.error);
-  }, [handleGenerateCharacter]);
-  const handleUpdateSceneVoid = useCallback((...args: Parameters<typeof handleUpdateScene>) => {
-    void handleUpdateScene(...args).catch(console.error);
-  }, [handleUpdateScene]);
-  const handleGenerateSceneVoid = useCallback((...args: Parameters<typeof handleGenerateScene>) => {
-    void handleGenerateScene(...args).catch(console.error);
-  }, [handleGenerateScene]);
-  const handleUpdatePropVoid = useCallback((...args: Parameters<typeof handleUpdateProp>) => {
-    void handleUpdateProp(...args).catch(console.error);
-  }, [handleUpdateProp]);
-  const handleGeneratePropVoid = useCallback((...args: Parameters<typeof handleGenerateProp>) => {
-    void handleGenerateProp(...args).catch(console.error);
-  }, [handleGenerateProp]);
   const handleUpdateProductVoid = useCallback((...args: Parameters<typeof handleUpdateProduct>) => {
     void handleUpdateProduct(...args).catch(console.error);
   }, [handleUpdateProduct]);
@@ -577,6 +578,7 @@ export function StudioCanvasRouter() {
       </div>
     );
   }
+
 
   return (
     <Switch>
@@ -601,7 +603,7 @@ export function StudioCanvasRouter() {
         {demoMode ? <Redirect to="/" /> : <SourceFilesPage projectName={currentProjectName} />}
       </Route>
 
-      <Route path={`/${WORKSPACE_ROUTE_FLOW}`}>
+     <Route path={`/${WORKSPACE_ROUTE_FLOW}`}>
 {demoMode ? <Redirect to="/" /> : typeof window !== "undefined" && (new URLSearchParams(window.location.search).get("advanced") === "1" || new URLSearchParams(window.location.search).get("view") === "flow" || window.location.pathname.includes("/flow")) ? <FlowCanvasPage projectName={currentProjectName} /> : <CreationSkillsPage projectName={currentProjectName} />}
       </Route>
       <Route path={`/${WORKSPACE_ROUTE_SKILLS}`}>
@@ -611,7 +613,7 @@ export function StudioCanvasRouter() {
         {demoMode ? <Redirect to="/" /> : <MediaLibraryPage projectName={currentProjectName} />}
       </Route>
       <Route path={`/${WORKSPACE_ROUTE_CREATIVE_BOARD}`}>
-        {demoMode ? <Redirect to="/" /> : <CreativeBoardPage projectName={currentProjectName} />}
+        {demoMode ? <Redirect to="/" /> : <CreativeBoardWorkspace projectName={currentProjectName} />}
       </Route>
 
       <Route path={`/${WORKSPACE_ROUTE_CHARACTERS}`}>
@@ -659,7 +661,7 @@ export function StudioCanvasRouter() {
         />
       </Route>
 
-      <Route path={`/${WORKSPACE_ROUTE_PRODUCTS}`}>
+     <Route path={`/${WORKSPACE_ROUTE_PRODUCTS}`}>
         <ProductsPage
           key={currentProjectName}
           projectName={currentProjectName}
@@ -729,8 +731,8 @@ export function StudioCanvasRouter() {
             Boolean(episode) && !script && !hasDraft && !isAd && !demoMode;
 
           return (
-            <div className="flex h-full flex-col">
-              <div className="min-h-0 flex-1">
+            <div className="flex h-full min-w-0 w-full flex-col">
+              <div className="min-h-0 min-w-0 w-full flex-1 overflow-hidden">
                 {demoMode && !script ? (
                   <DemoEpisodePlaceholder />
                 ) : showSourceReview && episode ? (

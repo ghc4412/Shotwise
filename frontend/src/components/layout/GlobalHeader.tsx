@@ -74,7 +74,7 @@ interface GlobalHeaderProps {
  * 工作台顶栏（48px，玻璃面板）。三段式 grid：
  * - 左：返回按钮 + ProjectMenu（项目切换菜单）
  * - 中：PhaseStepper（5 阶段胶囊）
- * - 右：通知 / 费用 / 任务雷达 / 导出 / 资产库 / 设置
+ * - 右：费用 / 通知 / 任务雷达 / 导出 / 资产库 / 设置
  */
 export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
   const { t } = useTranslation();
@@ -272,7 +272,11 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
 
         {/* ---- Right: actions ---- */}
         <div className="flex items-center gap-1">
-          <div className="relative" ref={notificationAnchorRef}>
+          <div
+            className="flex flex-row-reverse items-center gap-1"
+            data-testid="workspace-billing-notification-actions"
+          >
+            <div className="relative" ref={notificationAnchorRef}>
             <button
               type="button"
               onClick={() => setNotificationDrawerOpen(!notificationDrawerOpen)}
@@ -314,10 +318,10 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
               anchorRef={notificationAnchorRef}
               onNavigate={handleNotificationNavigate}
             />
-          </div>
+            </div>
 
-          {/* Cost badge + UsageDrawer */}
-          <div className="relative" ref={usageAnchorRef}>
+            {/* Cost badge + UsageDrawer */}
+            <div className="relative" ref={usageAnchorRef}>
             <button
               type="button"
               onClick={() => setUsageDrawerOpen(!usageDrawerOpen)}
@@ -374,6 +378,7 @@ export function GlobalHeader({ onNavigateBack }: GlobalHeaderProps) {
               projectName={usageProjectName}
               anchorRef={usageAnchorRef}
             />
+            </div>
           </div>
 
           {/* Task radar + TaskHud popover */}

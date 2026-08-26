@@ -215,7 +215,7 @@ def rewrite_entry_paths(entry: dict, spec: AssetSpec, old_name: str, new_name: s
         return renamed if renamed != value else None
 
     count = 0
-    for field in (spec.sheet_field, "reference_image", "reference_audio"):
+    for field in (spec.sheet_field, "character_avatar", "reference_image", "reference_audio"):
         value = entry.get(field)
         if isinstance(value, str) and value:
             renamed = rewrite(value)

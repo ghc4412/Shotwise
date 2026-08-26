@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from lib.db.base import Base, TimestampMixin, UserOwnedMixin
@@ -23,7 +23,20 @@ class WorkflowDefinition(UserOwnedMixin, TimestampMixin, Base):
 
 class WorkflowRevision(Base):
     __tablename__ = "workflow_revisions"
-    __table_args__ = (UniqueConstraint("definition_id", "revision_no", name="uq_workflow_revision_number"),)
+    __table_args__ = (
+        UniqueConstraint("definition_id", "revision_no", name="uq_workflow_revision_number"),
+        CheckConstraint("revision_no > 0", name="ck_workflow_revision_number_positive"),
+        CheckConstraint(
+            "content_mode IN ('drama', 'narration', 'ad', 'manga')",
+            name="ck_workflow_revision_content_mode",
+        ),
+        CheckConstraint(
+            "generation_mode IN ('storyboard', 'reference_video')",
+            name="ck_workflow_revision_generation_mode",
+        ),
+        CheckConstraint("length(graph_hash) > 0", name="ck_workflow_revision_graph_hash_nonempty"),
+        CheckConstraint("length(execution_hash) > 0", name="ck_workflow_revision_execution_hash_nonempty"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     definition_id: Mapped[str] = mapped_column(
@@ -43,7 +56,11 @@ class WorkflowRevision(Base):
 
 class WorkflowNode(Base):
     __tablename__ = "workflow_nodes"
-    __table_args__ = (UniqueConstraint("revision_id", "node_key", name="uq_workflow_node_key"),)
+    __table_args__ = (
+        UniqueConstraint("revision_id", "node_key", name="uq_workflow_node_key"),
+        CheckConstraint("weight >= 0", name="ck_workflow_node_weight_nonnegative"),
+        CheckConstraint("estimated_cost >= 0", name="ck_workflow_node_estimated_cost_nonnegative"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     revision_id: Mapped[str] = mapped_column(
@@ -84,7 +101,16 @@ class WorkflowEdge(Base):
 
 class WorkflowRun(UserOwnedMixin, Base):
     __tablename__ = "workflow_runs"
-    __table_args__ = (Index("ix_workflow_runs_project_status", "project_id", "status"),)
+    __table_args__ = (
+        Index("ix_workflow_runs_project_status", "project_id", "status"),
+        CheckConstraint("budget_limit IS NULL OR budget_limit >= 0", name="ck_workflow_run_budget_limit_nonnegative"),
+        CheckConstraint("spent_amount >= 0", name="ck_workflow_run_spent_nonnegative"),
+        CheckConstraint("reserved_amount >= 0", name="ck_workflow_run_reserved_nonnegative"),
+        CheckConstraint(
+            "budget_limit IS NULL OR spent_amount + reserved_amount <= budget_limit",
+            name="ck_workflow_run_budget_not_exceeded",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     workflow_revision_id: Mapped[str] = mapped_column(

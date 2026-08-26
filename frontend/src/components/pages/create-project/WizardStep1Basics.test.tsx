@@ -96,7 +96,7 @@ describe("WizardStep1Basics", () => {
         onCancel={() => {}}
       />,
     );
-    expect(screen.queryByRole("radiogroup", { name: /源文件性质|Source type|Loại tệp nguồn/ })).toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: /文稿性质|Source type|Loại bản thảo/ })).toBeNull();
   });
 
   it("shows only upload and writing starts outside drama mode", () => {
@@ -124,7 +124,7 @@ describe("WizardStep1Basics", () => {
         onCancel={() => {}}
       />,
     );
-    const group = screen.getByRole("radiogroup", { name: /源文件性质|Source type|Loại tệp nguồn/ });
+    const group = screen.getByRole("radiogroup", { name: /文稿性质|Source type|Loại bản thảo/ });
     fireEvent.click(within(group).getByText(/剧本|Screenplay|Kịch bản/));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ sourceKind: "screenplay" }),

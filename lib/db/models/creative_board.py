@@ -24,6 +24,7 @@ class CreativeBoard(Base):
     display_settings_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
 
 
 class CreativeBoardItem(Base):
@@ -71,4 +72,23 @@ class CreativeBoardEdge(Base):
     relation: Mapped[str] = mapped_column(String(32), nullable=False)
     ordinal: Mapped[int | None] = mapped_column(Integer)
     metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class CreativeBoardVersion(Base):
+    """An immutable, complete snapshot of a Creative Board."""
+
+    __tablename__ = "creative_board_versions"
+    __table_args__ = (
+        UniqueConstraint("board_id", "version_number", name="uq_creative_board_version_number"),
+        Index("ix_creative_board_versions_board", "board_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    board_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("creative_boards.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    version_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

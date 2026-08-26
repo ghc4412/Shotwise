@@ -6,7 +6,6 @@ import { useAppStore } from "@/stores/app-store";
 import { useAssistantStore } from "@/stores/assistant-store";
 import { useProjectsStore } from "@/stores/projects-store";
 import { CreativeDraftEditor } from "./CreativeDraftEditor";
-
 describe("CreativeDraftEditor", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -28,10 +27,10 @@ describe("CreativeDraftEditor", () => {
 
     const editor = await screen.findByDisplayValue("已有原稿");
     fireEvent.change(editor, { target: { value: "修改后的原稿" } });
-    fireEvent.click(screen.getByRole("button", { name: "保存创作稿" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存草稿" }));
 
     await waitFor(() => {
-      expect(API.saveSourceFile).toHaveBeenCalledWith("demo", "creative_draft.md", "修改后的原稿");
+      expect(API.saveSourceFile).toHaveBeenCalledWith("demo", "demo.txt", "修改后的原稿");
     });
   });
 
@@ -43,7 +42,7 @@ describe("CreativeDraftEditor", () => {
     fireEvent.keyDown(editor, { key: "s", ctrlKey: true });
 
     await waitFor(() => {
-      expect(API.saveSourceFile).toHaveBeenCalledWith("demo", "creative_draft.md", "快捷保存后的原稿");
+      expect(API.saveSourceFile).toHaveBeenCalledWith("demo", "demo.txt", "快捷保存后的原稿");
     });
   });
 
@@ -148,9 +147,9 @@ describe("CreativeDraftEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "提取角色、场景、道具" }));
 
     await waitFor(() => {
-      expect(API.saveSourceFile).toHaveBeenCalledWith("demo", "creative_draft.md", "更新后的剧本原稿");
+      expect(API.saveSourceFile).toHaveBeenCalledWith("demo", "demo.txt", "更新后的剧本原稿");
     });
-    expect(useAssistantStore.getState().input).toContain("source/creative_draft.md");
+    expect(useAssistantStore.getState().input).toContain("source/demo.txt");
     expect(useAppStore.getState().assistantPanelOpen).toBe(true);
   });
 
@@ -171,6 +170,8 @@ describe("CreativeDraftEditor", () => {
 
     await screen.findByDisplayValue("已有原稿");
     fireEvent.click(screen.getByRole("button", { name: "确认作为制作原稿" }));
+    const confirmationSaveButtons = await screen.findAllByRole("button", { name: "保存草稿" });
+    fireEvent.click(confirmationSaveButtons[confirmationSaveButtons.length - 1]);
 
     await waitFor(() => {
       expect(API.generateOverview).toHaveBeenCalledWith("demo");

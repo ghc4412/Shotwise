@@ -645,6 +645,156 @@ class TestGenerationWorker:
 
     @pytest.mark.unit
     @pytest.mark.asyncio
+    async def test_process_task_registers_successful_media_with_fake_generator(self, monkeypatch, tmp_path):
+        from lib.media_catalog import project_media_catalog
+
+        output = tmp_path / "videos" / "worker-result.mp4"
+        output.parent.mkdir()
+        output.write_bytes(b"fake-video")
+        monkeypatch.setenv("SHOTWISE_MEDIA_ASSET_INDEX", "1")
+        monkeypatch.setattr("lib.generation_worker._extract_provider", lambda _task: _fake_provider())
+
+        class FakeGenerator:
+            async def generate(self, _task):
+                return {"output_path": "videos/worker-result.mp4"}
+
+        async def _fake_provider():
+            return "fake"
+
+        fake_generator = FakeGenerator()
+        monkeypatch.setattr(
+            "server.services.generation_tasks.execute_generation_task",
+            fake_generator.generate,
+        )
+        queue = _FakeQueue()
+        await GenerationWorker(queue=queue)._process_task(
+            {
+                "task_id": "worker-success",
+                "task_type": "video",
+                "media_type": "video",
+                "project_name": "project-1",
+                "project_root": str(tmp_path),
+            }
+        )
+
+        result = queue.succeeded[0][1]
+        assert result["media_asset_id"]
+        assert project_media_catalog(tmp_path).get(result["media_asset_id"]) is not None
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_process_task_registration_failure_is_reconciled(self, monkeypatch, tmp_path):
+        from lib.media_catalog import project_media_catalog
+
+        output = tmp_path / "videos" / "worker-result.mp4"
+        output.parent.mkdir()
+        output.write_bytes(b"fake-video")
+        monkeypatch.setenv("SHOTWISE_MEDIA_ASSET_INDEX", "1")
+        monkeypatch.setattr("lib.generation_worker._extract_provider", lambda _task: _fake_provider())
+
+        async def _fake_provider():
+            return "fake"
+
+        async def _fake_generate(_task):
+            return {"output_path": "videos/worker-result.mp4"}
+
+        def fail_registration(**_kwargs):
+            raise OSError("index unavailable")
+
+        monkeypatch.setattr("server.services.generation_tasks.execute_generation_task", _fake_generate)
+        monkeypatch.setattr("server.services.media_assets.register_media_asset", fail_registration)
+        queue = _FakeQueue()
+        await GenerationWorker(queue=queue)._process_task(
+            {
+                "task_id": "worker-registration-failure",
+                "task_type": "video",
+                "media_type": "video",
+                "project_name": "project-1",
+                "project_root": str(tmp_path),
+            }
+        )
+
+        assert queue.succeeded
+        assert output.exists()
+        assert len(project_media_catalog(tmp_path).reconciliation_items()) == 1
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_process_task_registration_reconciliation_retries(self, monkeypatch, tmp_path):
+        from lib.media_catalog import project_media_catalog
+
+        output = tmp_path / "videos" / "worker-result.mp4"
+        output.parent.mkdir()
+        output.write_bytes(b"fake-video")
+        monkeypatch.setenv("SHOTWISE_MEDIA_ASSET_INDEX", "1")
+        monkeypatch.setattr("lib.generation_worker._extract_provider", lambda _task: _fake_provider())
+
+        async def _fake_provider():
+            return "fake"
+
+        async def _fake_generate(_task):
+            return {"output_path": "videos/worker-result.mp4"}
+
+        catalog = project_media_catalog(tmp_path)
+        original_bind = type(catalog).bind
+        calls = 0
+
+        def fail_once(self, *args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise OSError("binding unavailable")
+            return original_bind(self, *args, **kwargs)
+
+        monkeypatch.setattr("server.services.generation_tasks.execute_generation_task", _fake_generate)
+        monkeypatch.setattr("lib.media_catalog.MediaCatalog.bind", fail_once)
+        queue = _FakeQueue()
+        await GenerationWorker(queue=queue)._process_task(
+            {
+                "task_id": "worker-registration-retry",
+                "task_type": "video",
+                "media_type": "video",
+                "project_name": "project-1",
+                "project_root": str(tmp_path),
+            }
+        )
+        assert queue.succeeded[0][1]["media_asset_id"]
+        assert catalog.reconciliation_items()
+
+        monkeypatch.setattr("lib.media_catalog.MediaCatalog.bind", original_bind)
+        assert catalog.retry_reconciliation(project_root=tmp_path)
+        assert catalog.reconciliation_items() == []
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_process_task_flag_off_preserves_legacy_result(self, monkeypatch, tmp_path):
+        output = tmp_path / "videos" / "worker-result.mp4"
+        output.parent.mkdir()
+        output.write_bytes(b"fake-video")
+        monkeypatch.setenv("SHOTWISE_MEDIA_ASSET_INDEX", "0")
+        monkeypatch.setattr("lib.generation_worker._extract_provider", lambda _task: _fake_provider())
+
+        async def _fake_provider():
+            return "fake"
+
+        async def _fake_generate(_task):
+            return {"output_path": "videos/worker-result.mp4"}
+
+        monkeypatch.setattr("server.services.generation_tasks.execute_generation_task", _fake_generate)
+        queue = _FakeQueue()
+        await GenerationWorker(queue=queue)._process_task(
+            {
+                "task_id": "worker-flag-off",
+                "task_type": "video",
+                "media_type": "video",
+                "project_name": "project-1",
+                "project_root": str(tmp_path),
+            }
+        )
+        assert queue.succeeded[0][1] == {"output_path": "videos/worker-result.mp4"}
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
     async def test_process_task_script_edit_error_encodes_key_and_params(self, monkeypatch):
         """apply_unit_video_assets 经异步任务队列（非 upload_unit_video 同步路由）抛出时，
         error_message 落成可翻译的 [key] {params} 结构而非 str(exc) 的固定中文，任务状态

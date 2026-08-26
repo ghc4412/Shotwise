@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -27,6 +28,7 @@ EXPECTED_NODE_TYPES = {
     "storyboard_review",
     "shot_image_generate",
     "shot_video_generate",
+    "reference_video_generate",
     "voice_generate",
     # generic nodes
     "image_input",
@@ -37,7 +39,13 @@ EXPECTED_NODE_TYPES = {
 }
 
 
-def _ctx(tmp_path: Path, node_type: str, config: dict[str, Any], upstream: dict | None = None) -> NodeContext:
+def _ctx(
+    tmp_path: Path,
+    node_type: str,
+    config: dict[str, Any],
+    upstream: dict | None = None,
+    generation_mode: str = "storyboard",
+) -> NodeContext:
     logs: list[tuple[str, str]] = []
 
     def log(level: str, line: str) -> None:
@@ -53,13 +61,20 @@ def _ctx(tmp_path: Path, node_type: str, config: dict[str, Any], upstream: dict 
         log=log,
         progress=lambda _value: None,
         cancelled=lambda: _never(),
+        generation_mode=generation_mode,
     )
 
 
-async def _run(tmp_path: Path, node_type: str, config: dict[str, Any], upstream: dict | None = None):
+async def _run(
+    tmp_path: Path,
+    node_type: str,
+    config: dict[str, Any],
+    upstream: dict | None = None,
+    generation_mode: str = "storyboard",
+):
     adapter = workflow_adapters.get_adapter(node_type)
     assert adapter is not None
-    return await adapter(_ctx(tmp_path, node_type, config, upstream))
+    return await adapter(_ctx(tmp_path, node_type, config, upstream, generation_mode))
 
 
 async def _never() -> bool:
@@ -138,3 +153,39 @@ async def test_quality_check_reports_missing_artifacts(tmp_path: Path) -> None:
     upstream = {"shot": {"video": [AssetRef(kind="video", path="videos/missing.mp4")]}}
     with pytest.raises(NodeFailedError, match="产物缺失"):
         await _run(tmp_path, "quality_check", {}, upstream)
+
+
+async def test_reference_video_adapter_uses_fake_queue_and_emits_legacy_path(tmp_path: Path, monkeypatch) -> None:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (tmp_path / "project.json").write_text(
+        '{"generation_mode":"reference_video","episodes":[{"script_file":"episode_1.json"}]}',
+        encoding="utf-8",
+    )
+    (scripts / "episode_1.json").write_text(
+        '{"video_units":[{"unit_id":"E1U1","description":"walks"}]}',
+        encoding="utf-8",
+    )
+    calls: list[list[Any]] = []
+
+    async def fake_queue(*, project_name: str, specs: list[Any]):
+        calls.append(specs)
+        return [SimpleNamespace(resource_id="E1U1", result={"file_path": "reference_videos/E1U1.mp4"})], []
+
+    monkeypatch.setattr(workflow_adapters, "batch_enqueue_and_wait", fake_queue)
+    result = await _run(
+        tmp_path,
+        "reference_video_generate",
+        {},
+        generation_mode="reference_video",
+    )
+
+    assert len(calls) == 1
+    assert calls[0][0].task_type == "reference_video"
+    assert result.outputs["video"][0].path == "reference_videos/E1U1.mp4"
+    assert result.outputs["video"][0].legacy_field == "video_clip"
+
+
+async def test_reference_video_adapter_rejects_storyboard_mode(tmp_path: Path) -> None:
+    with pytest.raises(NodeFailedError, match="只适用于 reference_video"):
+        await _run(tmp_path, "reference_video_generate", {}, generation_mode="storyboard")

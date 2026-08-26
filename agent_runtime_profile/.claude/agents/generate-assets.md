@@ -35,6 +35,8 @@ description: "统一资产生成 subagent。接收任务清单（资产类型、
 
 按主 agent 指定的验证方式检查生成结果（通常是重新读取 project.json 或剧本 JSON 检查字段更新）。
 
+当任务类型为 character 时，必须逐个确认目标角色的 character_sheet 已写入非空项目相对路径，并确认对应文件存在；仅任务成功返回但没有 character_sheet 的结果不得报告为完成。设计图由服务端生成任务回写，禁止直接编辑 project.json 补字段。
+
 ### Step 4: 返回结构化状态
 
 返回以下状态之一：

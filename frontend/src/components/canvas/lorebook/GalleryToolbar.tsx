@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Network, Plus, Package } from "lucide-react";
+import { ImagePlus, Network, Plus, Package } from "lucide-react";
 
 interface Props {
   title: string;
@@ -8,13 +8,16 @@ interface Props {
   onAdd?: () => void;
   /** 未提供时隐藏「从资产库选择」入口（如不入全局库的资产类型）。 */
   onPickFromLibrary?: () => void;
+  /** 一键提交当前集合的设计图生成任务。 */
+  onGenerateDesigns?: () => void;
+  generateDesignsDisabled?: boolean;
   onViewRelations?: () => void;
 }
 
 /**
  * GalleryToolbar — v3 视觉：玻璃栏 + display-serif 标题 + accent CTA。
  */
-export function GalleryToolbar({ title, count, onAdd, onPickFromLibrary, onViewRelations }: Props) {
+export function GalleryToolbar({ title, count, onAdd, onPickFromLibrary, onGenerateDesigns, generateDesignsDisabled = false, onViewRelations }: Props) {
   const { t } = useTranslation(["dashboard", "assets"]);
   return (
     <div
@@ -55,6 +58,20 @@ export function GalleryToolbar({ title, count, onAdd, onPickFromLibrary, onViewR
         {String(count).padStart(2, "0")}
       </span>
       <div className="flex-1" />
+      {onGenerateDesigns && (
+        <button
+          type="button"
+          onClick={onGenerateDesigns}
+          disabled={generateDesignsDisabled}
+          className="focus-ring inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ color: "var(--color-text-2)", border: "1px solid var(--color-accent-soft)", background: "var(--color-accent-dim)" }}
+          title={t("dashboard:generate_design_image")}
+          aria-label={t("dashboard:generate_design_image")}
+        >
+          <ImagePlus className="h-3.5 w-3.5" />
+          {t("dashboard:generate_design_image")}
+        </button>
+      )}
       {onViewRelations && (
         <button
           type="button"

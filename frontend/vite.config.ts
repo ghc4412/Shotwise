@@ -10,17 +10,18 @@ export default defineConfig({
         extensions: [".mjs", ".mts", ".ts", ".tsx", ".js", ".jsx", ".json"],
     },
     server: {
-        host: "0.0.0.0",
+        host: "127.0.0.1",
         port: 5173,
+        strictPort: true,
         proxy: {
             "/api": {
-                target: "http://127.0.0.1:1241",
+                target: "http://127.0.0.1:18080",
                 changeOrigin: true,
             },
             // skill.md 由后端动态渲染（替换 {{BASE_URL}}），代理时保留原始 Host，
             // 让文档中的 API 地址与当前访问来源一致（如 localhost:5173）。
             "/skill.md": {
-                target: "http://127.0.0.1:1241",
+                target: "http://127.0.0.1:18080",
                 changeOrigin: false,
             },
         },

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Any
 
@@ -135,6 +136,57 @@ async def test_failed_node_fails_run_and_blocks_downstream(async_session, monkey
     assert statuses["build"]["status"] == "failed"
     assert statuses["export"]["status"] == "blocked"
     assert statuses["build"]["error_code"] == "RuntimeError"
+
+
+async def test_quality_gate_failure_persists_repair_suggestions(async_session, monkeypatch: pytest.MonkeyPatch) -> None:
+    revision_id = await _published_revision(async_session, _chain_nodes(), _chain_edges())
+    run_id = await _running_run(async_session, revision_id)
+
+    async def adapter(ctx: workflow_execution.NodeContext) -> workflow_execution.NodeExecutionResult:
+        if ctx.node_key == "build":
+            raise RuntimeError(
+                "quality_gate_failed:"
+                + json.dumps(
+                    {
+                        "message": "字幕越界",
+                        "failures": [
+                            {
+                                "gate": "subtitle_bounds",
+                                "message": "字幕超出画面",
+                                "suggestion": "缩短字幕或调整安全区",
+                            }
+                        ],
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        return workflow_execution.NodeExecutionResult(
+            outputs={"out": [workflow_execution.AssetRef(kind="file", path="ok.txt")]},
+            summary="done",
+        )
+
+    import server.services.workflow_adapters as adapters
+
+    monkeypatch.setattr(adapters, "get_adapter", lambda _node_type: adapter)
+
+    result = await workflow_execution.run_workflow_run(async_session, run_id)
+
+    assert result["status"] == "waiting_review"
+    run = await workflows.get_run(async_session, run_id, actor_id="default")
+    failed = next(node for node in run["nodes"] if node["node_key"] == "build")
+    assert failed["error_code"] == "quality_gate_failed"
+    assert failed["error_params"] == {
+        "message": "字幕越界",
+        "passed": False,
+        "failures": [
+            {
+                "gate": "subtitle_bounds",
+                "message": "字幕超出画面",
+                "suggestion": "缩短字幕或调整安全区",
+            }
+        ],
+        "repair_suggestions": ["缩短字幕或调整安全区"],
+    }
 
 
 async def test_disabled_node_is_skipped_with_pass_through(async_session, monkeypatch: pytest.MonkeyPatch) -> None:

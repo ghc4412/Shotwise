@@ -132,7 +132,7 @@ def list_pending_assets_tool(ctx: ToolContext):
 def generate_assets_tool(ctx: ToolContext):
     @tool(
         "generate_assets",
-        "批量生成角色/场景/道具/产品设计图。"
+        "批量生成角色/场景/道具/产品设计图；character 类型会生成并回写 character_sheet。"
         "type 省略则按 character→scene→prop→product 顺序每类独立 batch；"
         "names 指定具体名称（必须同时给 type）；all=true 表示该 type 的全部 pending。",
         {

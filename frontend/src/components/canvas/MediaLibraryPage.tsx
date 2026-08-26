@@ -59,7 +59,7 @@ function parseResource(value: Record<string, unknown>): Resource | null {
 
 export function MediaLibraryPage({ projectName }: { projectName: string }) {
   const { t } = useTranslation("dashboard");
-  const [, navigate] = useLocation();
+  const [location] = useLocation();
   const fileInput = useRef<HTMLInputElement>(null);
   const [assets, setAssets] = useState<MediaAsset[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
@@ -75,6 +75,7 @@ export function MediaLibraryPage({ projectName }: { projectName: string }) {
   const [bindingKind, setBindingKind] = useState<BindingKind>("project");
   const [targetId, setTargetId] = useState("");
   const [purpose, setPurpose] = useState("reference");
+  const requestedAssetId = useMemo(() => new URLSearchParams(location.split("?")[1] ?? "").get("asset"), [location]);
 
   const requestFilter = useMemo(() => ({
     kind: ["image", "video", "audio"].includes(filter) ? filter as MediaKind : undefined,
@@ -105,6 +106,14 @@ export function MediaLibraryPage({ projectName }: { projectName: string }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- load the project media index when the page mounts or filters change
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!loading && requestedAssetId) {
+      const requestedAsset = assets.find((asset) => asset.id === requestedAssetId);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- open a media asset requested by the deep-link URL after the index loads
+      if (requestedAsset) setSelected(requestedAsset);
+    }
+  }, [assets, loading, requestedAssetId]);
 
   const targetOptions = useMemo(() => resources.filter((resource) => resource.type === bindingKind || resource.selectionKey.startsWith(bindingKind + ":")), [bindingKind, resources]);
   const resourceLabels = useMemo(() => new Map(resources.map((resource) => [resource.id, resource.label])), [resources]);
@@ -172,7 +181,7 @@ export function MediaLibraryPage({ projectName }: { projectName: string }) {
           <div className="flex gap-2">
             <input ref={fileInput} type="file" accept="image/*,video/*,audio/*" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); }} />
             <button type="button" disabled={uploading} onClick={() => fileInput.current?.click()} className="focus-ring inline-flex items-center gap-1.5 rounded-md bg-[var(--color-accent)] px-3 py-2 text-[12px] text-white disabled:opacity-60"><Upload className="h-3.5 w-3.5" aria-hidden />{uploading ? t("media_library_uploading") : t("media_library_upload")}</button>
-            <button type="button" onClick={() => navigate("/creative-board")} className="focus-ring rounded-md border border-[var(--color-hairline)] px-3 py-2 text-[12px]">{t("media_library_open_board")}</button>
+            <a href="/creative-board" target="_blank" rel="noreferrer" className="focus-ring rounded-md border border-[var(--color-hairline)] px-3 py-2 text-[12px]">{t("media_library_open_board")}</a>
           </div>
         </div>
       </header>

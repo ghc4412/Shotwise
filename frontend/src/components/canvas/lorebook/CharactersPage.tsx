@@ -36,6 +36,13 @@ export function CharactersPage({ projectName, characters, onSaveCharacter, onGen
   useScrollTarget("character");
 
   const entries = Object.entries(characters);
+  const hasGeneratingCharacter = entries.some(([name]) => generatingCharacterNames?.has(name));
+
+  const handleGenerateAll = () => {
+    for (const [name] of entries) {
+      onGenerateCharacter(name);
+    }
+  };
 
   const handleImport = async (ids: string[]) => {
     try {
@@ -60,6 +67,8 @@ export function CharactersPage({ projectName, characters, onSaveCharacter, onGen
         count={entries.length}
         onAdd={readOnly ? undefined : () => setAdding(true)}
         onPickFromLibrary={readOnly ? undefined : () => setPicking(true)}
+        onGenerateDesigns={readOnly || entries.length === 0 ? undefined : handleGenerateAll}
+        generateDesignsDisabled={hasGeneratingCharacter}
         onViewRelations={() => setRelationsOpen(true)}
       />
       <div className="px-5 py-5" data-onboarding={ONBOARDING_ANCHORS.workbenchLorebook}>

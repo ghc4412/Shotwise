@@ -97,6 +97,70 @@ import i18n from "./i18n";
 /** 项目内四类资产（与后端 ASSET_SPECS 的 asset_type 对齐）。 */
 export type ProjectAssetType = "character" | "scene" | "prop" | "product";
 
+export interface CreativeBoardViewport {
+  x?: number;
+  y?: number;
+  zoom?: number;
+}
+
+export interface CreativeBoardItemRecord {
+  id: string;
+  item_type: string;
+  resource_type: string;
+  resource_id: string;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  group_id?: string | null;
+}
+
+export interface CreativeBoardEdgeRecord {
+  id: string;
+  source_item_id: string;
+  target_item_id: string;
+  relation: string;
+}
+
+export interface CreativeBoardRecord {
+  id: string;
+  project_id: string;
+  name: string;
+  viewport: CreativeBoardViewport;
+  items: CreativeBoardItemRecord[];
+  edges: CreativeBoardEdgeRecord[];
+  revision: number;
+}
+
+export interface CreativeBoardMutationResponse {
+  revision: number;
+  board?: CreativeBoardRecord;
+  item?: CreativeBoardItemRecord;
+  edge?: CreativeBoardEdgeRecord;
+  [key: string]: unknown;
+}
+
+export function isCreativeBoardRevisionConflict(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const value = error as { status?: unknown; status_code?: unknown; response?: { status?: unknown }; detail?: unknown };
+  const status = value.status ?? value.status_code ?? value.response?.status;
+  if (status === 409) return true;
+  const detail = typeof value.detail === "string" ? value.detail : JSON.stringify(value.detail ?? "");
+  const message = error instanceof Error ? error.message : "";
+  return detail.includes("creative_board_revision_conflict") || detail.includes("revision_conflict") || message.includes("creative_board_revision_conflict") || message.includes("revision conflict");
+}
+
+export function getCreativeBoardConflictRevision(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const value = error as { current_revision?: unknown; currentRevision?: unknown; revision?: unknown; detail?: unknown; response?: unknown; data?: unknown };
+  for (const candidate of [value.current_revision, value.currentRevision, value.revision]) {
+    if (typeof candidate === "number") return candidate;
+  }
+  for (const nested of [value.detail, value.response, value.data]) {
+    const revision = getCreativeBoardConflictRevision(nested);
+    if (revision !== undefined) return revision;
+  }
+  return undefined;
+}
+
 /** asset_type → REST 路径段（与后端 spec.subdir 对齐）。 */
 const ASSET_TYPE_PATH: Record<ProjectAssetType, string> = {
   character: "characters",
@@ -352,6 +416,44 @@ function localizeWorkflowError(message: string): string {
   const normalized = message.toLowerCase().replace(/[^a-z0-9]/g, "");
   if (!normalized.includes("workflowtemplatenotpublished")) return message;
   return i18n.t("flow_template_not_published", { ns: "dashboard" });
+}
+
+export interface CreativeBoardVersionRecord {
+  id: string;
+  board_id: string;
+  version_number: number;
+  version_name: string;
+  created_at: string;
+  items_count?: number;
+  edges_count?: number;
+}
+
+export interface CreativeBoardSnapshotPayload {
+  board_id: string;
+  name: string;
+  viewport: { x: number; y: number; zoom: number };
+  items: Array<Record<string, unknown>>;
+  edges: Array<Record<string, unknown>>;
+  revision: number;
+}
+
+export interface CreativeBoardVersionResponse {
+  id: string;
+  board_id: string;
+  version_number: number;
+  version_name: string;
+  created_at: string;
+  snapshot?: CreativeBoardSnapshotPayload;
+}
+
+export interface CreativeBoardRestoreResponse {
+  board: Record<string, unknown>;
+  revision: number;
+}
+
+export interface CreativeBoardDuplicateResponse {
+  id: string;
+  board?: Record<string, unknown>;
 }
 
 function handleUnauthorized(response: Response): void {
@@ -2938,32 +3040,71 @@ class API {
   static async archiveMediaAsset(projectName: string, mediaAssetId: string, archived: boolean): Promise<Record<string, unknown>> {
     return this.request("/projects/" + encodeURIComponent(projectName) + "/media-assets/" + encodeURIComponent(mediaAssetId) + "/archive", { method: "PATCH", body: JSON.stringify({ archived }) });
   }
-  static async listCreativeBoards(projectName: string): Promise<{ items: Array<Record<string, unknown>> }> {
+  static async listCreativeBoards(projectName: string): Promise<{ items: CreativeBoardRecord[] }> {
     return this.request("/projects/" + encodeURIComponent(projectName) + "/creative-boards");
   }
-  static async createCreativeBoard(projectName: string, body: { name: string; viewport?: Record<string, unknown> }): Promise<Record<string, unknown>> {
+  static async listCreativeBoardVersions(boardId: string): Promise<{ items: CreativeBoardVersionRecord[] }> {
+    return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/versions");
+  }
+  static async getCreativeBoardVersion(boardId: string, versionId: string): Promise<CreativeBoardVersionResponse> {
+    return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/versions/" + encodeURIComponent(versionId));
+  }
+  static async createCreativeBoardVersion(
+    boardId: string,
+    body: { version_name: string; expected_revision?: number },
+  ): Promise<CreativeBoardVersionResponse> {
+    return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/versions", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+  static async restoreCreativeBoardVersion(
+    boardId: string,
+    versionId: string,
+    expectedRevision: number,
+  ): Promise<CreativeBoardRestoreResponse> {
+    return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/versions/" + encodeURIComponent(versionId) + "/restore", {
+      method: "POST",
+      body: JSON.stringify({ expected_revision: expectedRevision }),
+    });
+  }
+  static async duplicateCreativeBoard(
+    boardId: string,
+    body: { name: string },
+  ): Promise<CreativeBoardDuplicateResponse> {
+    return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/copy", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+  static async createCreativeBoard(projectName: string, body: { name: string; viewport?: CreativeBoardViewport }): Promise<CreativeBoardRecord> {
     return this.request("/projects/" + encodeURIComponent(projectName) + "/creative-boards", { method: "POST", body: JSON.stringify(body) });
   }
-  static async getCreativeBoard(boardId: string): Promise<Record<string, unknown>> {
+  static async getCreativeBoard(boardId: string): Promise<CreativeBoardRecord> {
     return this.request("/creative-boards/" + encodeURIComponent(boardId));
   }
-  static async updateCreativeBoard(boardId: string, body: { name?: string; viewport?: Record<string, unknown> }): Promise<Record<string, unknown>> {
+  static async updateCreativeBoard(boardId: string, body: { name?: string; viewport?: CreativeBoardViewport; expected_revision?: number }): Promise<CreativeBoardMutationResponse> {
     return this.request("/creative-boards/" + encodeURIComponent(boardId), { method: "PATCH", body: JSON.stringify(body) });
   }
-  static async addCreativeBoardItem(boardId: string, body: { item_type: string; resource_type: string; resource_id: string; position?: { x: number; y: number }; size?: { width: number; height: number } }): Promise<Record<string, unknown>> {
+  static async deleteCreativeBoard(boardId: string): Promise<Record<string, unknown>> {
+    return this.request("/creative-boards/" + encodeURIComponent(boardId), { method: "DELETE" });
+  }
+  static async addCreativeBoardItem(boardId: string, body: { item_type: string; resource_type: string; resource_id: string; position?: { x: number; y: number }; size?: { width: number; height: number }; group_id?: string | null; expected_revision?: number }): Promise<CreativeBoardMutationResponse> {
     return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/items", { method: "POST", body: JSON.stringify(body) });
   }
-  static async updateCreativeBoardItem(boardId: string, itemId: string, body: { item_type: string; resource_type: string; resource_id: string; position?: { x: number; y: number }; size?: { width: number; height: number } }): Promise<Record<string, unknown>> {
+  static async updateCreativeBoardItem(boardId: string, itemId: string, body: { item_type: string; resource_type: string; resource_id: string; position?: { x: number; y: number }; size?: { width: number; height: number }; group_id?: string | null; expected_revision?: number }): Promise<CreativeBoardMutationResponse> {
     return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/items/" + encodeURIComponent(itemId), { method: "PATCH", body: JSON.stringify(body) });
   }
-  static async deleteCreativeBoardItem(boardId: string, itemId: string): Promise<Record<string, unknown>> {
-    return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/items/" + encodeURIComponent(itemId), { method: "DELETE" });
+  static async deleteCreativeBoardItem(boardId: string, itemId: string, expectedRevision?: number): Promise<CreativeBoardMutationResponse> {
+    const query = expectedRevision === undefined ? "" : "?expected_revision=" + encodeURIComponent(String(expectedRevision));
+    return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/items/" + encodeURIComponent(itemId) + query, { method: "DELETE" });
   }
-  static async addCreativeBoardEdge(boardId: string, body: { source_item_id: string; target_item_id: string; relation: string }): Promise<Record<string, unknown>> {
+  static async addCreativeBoardEdge(boardId: string, body: { source_item_id: string; target_item_id: string; relation: string; expected_revision?: number }): Promise<CreativeBoardMutationResponse> {
     return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/edges", { method: "POST", body: JSON.stringify(body) });
   }
-  static async deleteCreativeBoardEdge(boardId: string, edgeId: string): Promise<Record<string, unknown>> {
-    return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/edges/" + encodeURIComponent(edgeId), { method: "DELETE" });
+  static async deleteCreativeBoardEdge(boardId: string, edgeId: string, expectedRevision?: number): Promise<CreativeBoardMutationResponse> {
+    const query = expectedRevision === undefined ? "" : "?expected_revision=" + encodeURIComponent(String(expectedRevision));
+    return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/edges/" + encodeURIComponent(edgeId) + query, { method: "DELETE" });
   }
   // ---- canvas workflow management ----
 

@@ -95,6 +95,21 @@ def build_character_prompt(name: str, description: str, style: str = "", style_d
     )
 
 
+def build_character_avatar_prompt(name: str, description: str, style: str = "", style_description: str = "") -> str:
+    """独立角色头像 prompt，生成后可直接用于角色卡片。"""
+    style_block = _style_prefix(style, style_description)
+    return (
+        f"{style_block}"
+        f"角色「{name}」的可直接使用的标准角色头像。\n\n"
+        f"{description}\n\n"
+        "这是独立生成的头像成片，不是从角色设计图、四格图或任何已有图片裁剪。只生成一个角色的紧凑头肩近景肖像。"
+        "1:1 方形构图，头顶完整，人物正面或轻微三分之二正面，脸部清晰居中并占画面主要区域。"
+        "取景范围严格限制在头顶、脸、颈部、双肩和少量上胸；肩部以下不得出现，人物身体不得延伸到画面边缘。"
+        "画面边缘绝对不得出现手臂、手、腿、腰部、全身、衣摆、武器、旁边人物或设计图中的其他姿态。"
+        "不得出现四格设计图、多视图、角色立绘拼图、第二个人物、分栏或任何拼贴；背景干净，避免水印、多余文字和 Logo。"
+    )
+
+
 def build_scene_prompt(name: str, description: str, style: str = "", style_description: str = "") -> str:
     """场景设计图 prompt（主+细节）。"""
     style_block = _style_prefix(style, style_description)

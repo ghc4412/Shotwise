@@ -12,6 +12,64 @@ vi.mock("@/components/canvas/timeline/VersionTimeMachine", () => ({
 
 
 describe("CharacterCard", () => {
+  it("renders the independent character avatar in the card header", () => {
+    render(
+      <CharacterCard
+        name="Hero"
+        character={{
+          description: "hero desc",
+          character_avatar: "characters/Hero_avatar_abc123.png",
+        }}
+        projectName="demo"
+        onSave={vi.fn()}
+        onGenerate={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("img", { name: "Hero" })).toHaveAttribute(
+      "src",
+      "/api/v1/files/demo/characters/Hero_avatar_abc123.png",
+    );
+  });
+
+  it("falls back to the User icon when the avatar cannot be loaded", () => {
+    const view = render(
+      <CharacterCard
+        name="Hero"
+        character={{
+          description: "hero desc",
+          character_avatar: "characters/Hero_avatar_abc123.png",
+        }}
+        projectName="demo"
+        onSave={vi.fn()}
+        onGenerate={vi.fn()}
+      />,
+    );
+
+    fireEvent.error(screen.getByRole("img", { name: "Hero" }));
+
+    expect(screen.queryByRole("img", { name: "Hero" })).toBeNull();
+    expect(view.container.querySelector("svg")).not.toBeNull();
+  });
+
+  it("does not render the legacy cropped avatar path", () => {
+    const view = render(
+      <CharacterCard
+        name="Hero"
+        character={{
+          description: "hero desc",
+          character_avatar: "characters/Hero_avatar.png",
+        }}
+        projectName="demo"
+        onSave={vi.fn()}
+        onGenerate={vi.fn()}
+      />,
+    );
+
+    expect(view.container.querySelector("img[alt='Hero']")).toBeNull();
+    expect(view.container.querySelector("svg")).not.toBeNull();
+  });
+
   beforeEach(() => {
     useAppStore.setState(useAppStore.getInitialState(), true);
     Object.defineProperty(globalThis.URL, "createObjectURL", {

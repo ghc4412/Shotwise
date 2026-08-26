@@ -155,16 +155,16 @@ export function StudioLayout({ children }: StudioLayoutProps) {
 
   return (
     <div
-      className="flex h-screen flex-col"
+      className="flex h-screen min-h-0 w-full flex-col"
       style={{ color: "var(--color-text)" }}
     >
       <TaskFailureListener projectName={sseProjectName} />
       <ScriptGenerationNoticeListener />
       <GlobalHeader onNavigateBack={() => setLocation("~/app/projects")} />
       {demoMode ? <DemoReadOnlyBanner /> : null}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 min-w-0 w-full flex-1 overflow-hidden">
         <AssetSidebar />
-        <main className="flex-1 overflow-hidden">
+        <main className="flex h-full min-h-0 min-w-0 w-0 basis-0 flex-1 flex-col overflow-hidden">
           {children}
         </main>
         {/* 真实助手是写路径（建会话、跑工具），演示态下换成静态演示对话的面板：
@@ -183,16 +183,22 @@ export function StudioLayout({ children }: StudioLayoutProps) {
           >
             <DemoAssistantPanel />
           </div>
-        ) : (
+        ) : assistantPanelOpen ? (
           <div
-            className={`relative shrink-0 overflow-hidden ${
+            className={`relative min-w-0 shrink-0 overflow-hidden ${
+              assistantPanelOpen ? "" : "hidden"
+            } ${
               isResizing
                 ? "transition-[min-width,border-color]"
                 : "transition-[width,min-width,border-color] duration-300 ease-in-out"
             }`}
-            style={{
-              width: assistantPanelOpen ? displayedPanelWidth : 0,
-              background: "var(--color-shell-side-a)",
+           style={{
+             display: assistantPanelOpen ? "block" : "none",
+              flex: assistantPanelOpen ? "0 0 auto" : "none",
+             width: assistantPanelOpen ? displayedPanelWidth : 0,
+             minWidth: assistantPanelOpen ? displayedPanelWidth : 0,
+              maxWidth: assistantPanelOpen ? displayedPanelWidth : 0,
+             background: "var(--color-shell-side-a)",
               borderLeft: assistantPanelOpen
                 ? "1px solid var(--color-hairline)"
                 : "1px solid transparent",
@@ -219,7 +225,7 @@ export function StudioLayout({ children }: StudioLayoutProps) {
               <AgentCopilot />
             </div>
           </div>
-        )}
+        ) : null}
       </div>
       {/* 收起后的缩角角标：可拖到任意边缘隐藏一角 */}
       {demoMode ? null : <AssistantPeekTab />}

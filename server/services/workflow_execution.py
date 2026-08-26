@@ -439,6 +439,12 @@ async def run_workflow_run(session: AsyncSession, run_id: str) -> dict[str, Any]
     """Drive one workflow run to a terminal state (or until paused/cancelled)."""
 
     run = await session.get(WorkflowRun, run_id)
+    if run is not None and run.status == "cancelled":
+        from server.services import workflows as workflow_service
+
+        await workflow_service.release_run_budgets(session, run.id, actor_id=run.user_id)
+        await session.refresh(run)
+        return {"id": run.id, "status": run.status, "nodes": 0}
     if run is None:
         return {"id": run_id, "status": "missing"}
     if run.status != "running":
@@ -541,6 +547,11 @@ async def run_workflow_run(session: AsyncSession, run_id: str) -> dict[str, Any]
         run.version += 1
         run.progress = 1.0 if target == "succeeded" else run.progress
         run.finished_at = utc_now()
+        if target == "failed":
+            from server.services import workflows as workflow_service
+
+            await workflow_service.release_run_budgets(session, run.id, actor_id=run.user_id)
+            await session.refresh(run)
         template_lock = _loads(revision.template_lock_json, {})
         template_id = template_lock.get("template_id") if isinstance(template_lock, dict) else None
         if template_id:
@@ -561,6 +572,12 @@ async def run_workflow_run(session: AsyncSession, run_id: str) -> dict[str, Any]
         await session.commit()
         return {"id": run.id, "status": run.status, "nodes": len(statuses)}
 
+    terminal_status = str(run.status)
+    if terminal_status == "cancelled":
+        from server.services import workflows as workflow_service
+
+        await workflow_service.release_run_budgets(session, run.id, actor_id=run.user_id)
+        await session.refresh(run)
     await session.commit()
     return {"id": run.id, "status": run.status, "nodes": len(statuses)}
 

@@ -21,6 +21,8 @@ export interface ProjectOverview {
 export interface Character {
   description: string;
   character_sheet?: string;
+  /** 独立角色头像文件；不直接复用 character_sheet。 */
+  character_avatar?: string;
   voice_style?: string;
   reference_image?: string;
   reference_audio?: string;

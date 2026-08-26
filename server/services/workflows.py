@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import uuid
 from collections import deque
@@ -2102,7 +2103,7 @@ async def list_pending_template_reviews(
 
 
 async def reserve_run_budget(session: AsyncSession, run_id: str, *, amount: float, actor_id: str) -> dict[str, Any]:
-    if amount <= 0:
+    if not math.isfinite(amount) or amount <= 0:
         raise WorkflowValidationError("workflow_input_invalid", reason="budget_reservation")
     run = await session.get(WorkflowRun, run_id)
     if run is None or run.user_id != actor_id:
@@ -2136,21 +2137,40 @@ async def reserve_run_budget(session: AsyncSession, run_id: str, *, amount: floa
 async def settle_run_budget(
     session: AsyncSession, reservation_id: str, *, amount: float, actor_id: str
 ) -> dict[str, Any]:
+    if not math.isfinite(amount) or amount < 0:
+        raise WorkflowValidationError("workflow_input_invalid", reason="settled_amount")
     reservation = await session.get(BudgetReservation, reservation_id)
     if reservation is None:
         raise NotFoundError("workflow_budget_reservation_not_found", id=reservation_id)
     run = await session.get(WorkflowRun, reservation.workflow_run_id)
     if run is None or run.user_id != actor_id:
         raise NotFoundError("workflow_run_not_found", id=reservation.workflow_run_id)
-    if amount < 0 or amount > reservation.reserved_amount:
+    if reservation.status in {"released", "settled"}:
+        if amount == 0:
+            return {
+                "reservation_id": reservation.id,
+                "spent_amount": run.spent_amount,
+                "reserved_amount": run.reserved_amount,
+                "remaining_amount": None
+                if run.budget_limit is None
+                else max(0.0, run.budget_limit - run.spent_amount - run.reserved_amount),
+            }
+        raise WorkflowValidationError("workflow_budget_reservation_closed", id=reservation.id)
+    if amount > reservation.reserved_amount:
         raise WorkflowValidationError("workflow_input_invalid", reason="settled_amount")
+    if run.budget_limit is not None and run.spent_amount + amount > run.budget_limit + 1e-9:
+        raise WorkflowValidationError(
+            "workflow_budget_exceeded", spent=run.spent_amount + amount, limit=run.budget_limit
+        )
     reservation.reserved_amount -= amount
     reservation.settled_amount += amount
-    reservation.status = "settled" if reservation.reserved_amount == 0 else "reserved"
+    if reservation.reserved_amount <= 1e-9:
+        reservation.reserved_amount = 0
+        reservation.status = "settled"
+    else:
+        reservation.status = "reserved"
     run.reserved_amount = max(0.0, run.reserved_amount - amount)
     run.spent_amount += amount
-    if run.budget_limit is not None and run.spent_amount > run.budget_limit:
-        raise WorkflowValidationError("workflow_budget_exceeded", spent=run.spent_amount, limit=run.budget_limit)
     await session.commit()
     return {
         "reservation_id": reservation.id,
@@ -2159,4 +2179,89 @@ async def settle_run_budget(
         "remaining_amount": None
         if run.budget_limit is None
         else run.budget_limit - run.spent_amount - run.reserved_amount,
+    }
+
+
+async def release_run_budget(
+    session: AsyncSession,
+    reservation_id: str,
+    *,
+    actor_id: str,
+    amount: float | None = None,
+) -> dict[str, Any]:
+    """Release an outstanding reservation without changing settled spend.
+
+    Releasing an already closed reservation is idempotent when no amount is
+    requested.  This lets terminal run cleanup safely retry after a worker
+    crash without creating negative reservations.
+    """
+
+    if amount is not None and (not math.isfinite(amount) or amount < 0):
+        raise WorkflowValidationError("workflow_input_invalid", reason="released_amount")
+    reservation = await session.get(BudgetReservation, reservation_id)
+    if reservation is None:
+        raise NotFoundError("workflow_budget_reservation_not_found", id=reservation_id)
+    run = await session.get(WorkflowRun, reservation.workflow_run_id)
+    if run is None or run.user_id != actor_id:
+        raise NotFoundError("workflow_run_not_found", id=reservation.workflow_run_id)
+    outstanding = max(0.0, reservation.reserved_amount)
+    if outstanding == 0:
+        if amount not in (None, 0):
+            raise WorkflowValidationError("workflow_budget_reservation_closed", id=reservation.id)
+        return {
+            "reservation_id": reservation.id,
+            "spent_amount": run.spent_amount,
+            "reserved_amount": run.reserved_amount,
+            "remaining_amount": None
+            if run.budget_limit is None
+            else max(0.0, run.budget_limit - run.spent_amount - run.reserved_amount),
+        }
+    release_amount = outstanding if amount is None else amount
+    if release_amount > outstanding:
+        raise WorkflowValidationError("workflow_input_invalid", reason="released_amount")
+    reservation.reserved_amount = max(0.0, outstanding - release_amount)
+    if reservation.reserved_amount <= 1e-9:
+        reservation.reserved_amount = 0
+        reservation.status = "released"
+    run.reserved_amount = max(0.0, run.reserved_amount - release_amount)
+    await session.commit()
+    return {
+        "reservation_id": reservation.id,
+        "spent_amount": run.spent_amount,
+        "reserved_amount": run.reserved_amount,
+        "remaining_amount": None
+        if run.budget_limit is None
+        else max(0.0, run.budget_limit - run.spent_amount - run.reserved_amount),
+    }
+
+
+async def release_run_budgets(session: AsyncSession, run_id: str, *, actor_id: str) -> dict[str, Any]:
+    """Release every unsettled reservation belonging to a terminal run."""
+
+    run = await session.get(WorkflowRun, run_id)
+    if run is None or run.user_id != actor_id:
+        raise NotFoundError("workflow_run_not_found", id=run_id)
+    reservations = (
+        (await session.execute(select(BudgetReservation).where(BudgetReservation.workflow_run_id == run_id)))
+        .scalars()
+        .all()
+    )
+    released = 0.0
+    for reservation in reservations:
+        outstanding = max(0.0, reservation.reserved_amount)
+        if outstanding == 0:
+            continue
+        reservation.reserved_amount = 0
+        reservation.status = "released"
+        released += outstanding
+    run.reserved_amount = max(0.0, run.reserved_amount - released)
+    await session.commit()
+    return {
+        "run_id": run.id,
+        "released_amount": released,
+        "spent_amount": run.spent_amount,
+        "reserved_amount": run.reserved_amount,
+        "remaining_amount": None
+        if run.budget_limit is None
+        else max(0.0, run.budget_limit - run.spent_amount - run.reserved_amount),
     }

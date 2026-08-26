@@ -271,12 +271,17 @@ class AgentAccessPolicy:
             return False, "访问被拒绝：无效的文件路径"
 
         # 规则 0: 敏感文件强制拒绝
-        if self.is_sensitive_path(resolved):
+        if self.is_sensitive_path(resolved) or self.is_sensitive_path(logical_norm):
             return False, f"访问被拒绝：敏感文件不可访问 ({resolved})"
 
         if tool_name in self._WRITE_TOOLS:
             return self._check_write_access(resolved, project_cwd, logical_norm=logical_norm)
-        return self._check_read_access(resolved, project_cwd)
+        # Existing paths must use the resolved target so symlinks cannot escape the
+        # project boundary. For a not-yet-created path, retain the logical spelling:
+        # Path.resolve() may add the current drive to a drive-less Windows root,
+        # making pure policy checks with synthetic roots compare unlike paths.
+        read_target = resolved if resolved.exists() else logical_norm
+        return self._check_read_access(read_target, project_cwd)
 
     def build_sandbox_settings(self, project_cwd: Path) -> dict[str, Any]:
         """构造 SandboxSettings dict（SDK Python TypedDict 未声明 filesystem

@@ -14,7 +14,7 @@ claude.exe 时 NotImplementedError。本入口在 uvicorn.run() 之前应用
     $env:LISTEN_PORT = "18080"; uv run python server/run_dev.py
 
 等价命令：
-    uv run uvicorn server.app:app --reload --reload-dir server --reload-dir lib --port 1241
+    uv run uvicorn server.app:app --reload --reload-dir server --reload-dir lib --port 18080
 """
 
 from __future__ import annotations
@@ -30,10 +30,13 @@ patch_windows_uvicorn_event_loop()
 if __name__ == "__main__":
     import uvicorn
 
+    configured_port = os.environ.get("LISTEN_PORT")
+    # 1241 is reserved by Windows on this machine; ignore stale shell settings.
+    listen_port = int(configured_port) if configured_port and configured_port != "1241" else 18080
     uvicorn.run(
         "server.app:app",
         host=os.environ.get("LISTEN_HOST") or "127.0.0.1",
-        port=int(os.environ.get("LISTEN_PORT") or "1241"),
+        port=listen_port,
         reload=True,
         reload_dirs=["server", "lib"],
     )

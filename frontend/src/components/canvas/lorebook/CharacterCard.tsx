@@ -69,6 +69,9 @@ export function CharacterCard({
   const sheetFp = useProjectsStore(
     (s) => character.character_sheet ? s.getAssetFingerprint(character.character_sheet) : null,
   );
+  const avatarFp = useProjectsStore(
+    (s) => character.character_avatar ? s.getAssetFingerprint(character.character_avatar) : null,
+  );
   const referenceFp = useProjectsStore(
     (s) => character.reference_image ? s.getAssetFingerprint(character.reference_image) : null,
   );
@@ -78,6 +81,7 @@ export function CharacterCard({
   const [description, setDescription] = useState(character.description);
   const [voiceStyle, setVoiceStyle] = useState(character.voice_style ?? "");
   const [imgError, setImgError] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
   const [referencePreview, setReferencePreview] = useState<string | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -126,6 +130,12 @@ export function CharacterCard({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setImgError(false);
   }, [character.character_sheet, sheetFp]);
+
+  useEffect(() => {
+    // 头像路径或版本变化后重新尝试加载，加载失败时回退到 User 图标。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAvatarError(false);
+  }, [character.character_avatar, avatarFp]);
 
   useEffect(() => {
     // 上游参考图变化时清空本地未提交的上传文件 + 释放 blob URL
@@ -274,6 +284,13 @@ export function CharacterCard({
     ? API.getFileUrl(projectName, character.character_sheet, sheetFp)
     : null;
 
+  const legacyAvatarPath = "characters/" + name + "_avatar.png";
+  const avatarPath = character.character_avatar;
+  const hasUsableAvatar = Boolean(avatarPath && avatarPath !== legacyAvatarPath);
+  const avatarUrl = !generating && hasUsableAvatar && avatarPath
+    ? API.getFileUrl(projectName, avatarPath, avatarFp)
+    : null;
+
   const savedReferenceUrl = character.reference_image
     ? API.getFileUrl(projectName, character.reference_image, referenceFp)
     : null;
@@ -326,18 +343,26 @@ export function CharacterCard({
         }}
       />
 
-      {/* ---- Header: 单排 icon + name + icon-only 工具栏 ---- */}
+      {/* ---- Header: 单排 avatar + name + icon-only 工具栏 ---- */}
       <div className="mb-4 flex items-center gap-2.5">
         <span
-          aria-hidden
-          className="grid h-7 w-7 shrink-0 place-items-center rounded-md"
+          className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full"
           style={{
             background: "var(--color-accent-dim)",
             border: "1px solid var(--color-accent-soft)",
             color: "var(--color-accent-2)",
           }}
         >
-          <User className="h-3.5 w-3.5" />
+          {avatarUrl && !avatarError ? (
+            <img
+              src={avatarUrl}
+              alt={name}
+              className="h-full w-full object-cover"
+              onError={() => setAvatarError(true)}
+            />
+          ) : (
+            <User className="h-6 w-6" aria-hidden="true" />
+          )}
         </span>
         <EditableAssetName
           projectName={projectName}
@@ -706,7 +731,7 @@ export function CharacterCard({
         <GenerateButton
           onClick={() => onGenerate(name)}
           loading={generating}
-          label={character.character_sheet ? t("regenerate_design") : t("generate_design")}
+          label={t("generate_design")}
           className="w-full justify-center"
         />
       </div>

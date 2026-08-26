@@ -1435,7 +1435,17 @@ class ProjectManager:
             # 更新后，迁移写回又把更新覆盖掉。
             with open(project_file, encoding="utf-8") as f:
                 project = json.load(f)
-            if self._migrate_legacy_style(project):
+            migrated_avatar = False
+            characters = project.get("characters")
+            if isinstance(characters, dict):
+                for name, character in characters.items():
+                    if not isinstance(character, dict):
+                        continue
+                    legacy_path = f"characters/{name}_avatar.png"
+                    if character.get("character_avatar") == legacy_path:
+                        character["character_avatar"] = ""
+                        migrated_avatar = True
+            if self._migrate_legacy_style(project) or migrated_avatar:
                 # 不走 save_project 以避免触发 _touch_metadata 污染 updated_at。
                 atomic_write_json(project_file, project)
                 migrated = True
@@ -2201,6 +2211,7 @@ class ProjectManager:
                 "description": description,
                 "voice_style": voice_style or "",
                 "character_sheet": character_sheet or "",
+                "character_avatar": "",
             }
 
         return self.update_project(project_name, _mutate)
@@ -2208,6 +2219,18 @@ class ProjectManager:
     def update_project_character_sheet(self, project_name: str, name: str, sheet_path: str) -> dict:
         """更新项目级角色设计图路径"""
         return self._update_asset_sheet("character", project_name, name, sheet_path)
+
+    def update_project_character_avatar(self, project_name: str, name: str, avatar_path: str) -> dict:
+        """更新项目级角色头像路径。头像是设计图之外的独立资源。"""
+
+        def _mutate(project: dict) -> None:
+            bucket = project.get("characters")
+            key = resolve_asset_key(bucket, name)
+            if not isinstance(bucket, dict) or key is None:
+                raise KeyError(f"角色 '{name}' 不存在")
+            bucket[key]["character_avatar"] = avatar_path
+
+        return self.update_project(project_name, _mutate)
 
     def update_character_reference_image(self, project_name: str, char_name: str, ref_path: str) -> dict:
         """

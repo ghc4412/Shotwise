@@ -9,6 +9,7 @@ import logging
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from lib.asset_types import (
     ASSET_SPECS,
@@ -31,6 +32,7 @@ from lib.project_change_hints import emit_project_change_batch, project_change_s
 from lib.project_manager import get_project_manager
 from lib.prompt_builders import (
     append_product_fidelity_tail,
+    build_character_avatar_prompt,
     build_character_prompt,
     build_product_prompt,
     build_prop_prompt,
@@ -422,6 +424,20 @@ def compute_affected_fingerprints(project_name: str, task_type: str, resource_id
                 project_path / "characters" / f"{resource_id}.png",
             )
         )
+        project = get_project_manager().load_project(project_name)
+        character_key = resolve_asset_key(project.get("characters"), resource_id)
+        current_avatar = ""
+        if character_key is not None:
+            current_avatar = str(project["characters"][character_key].get("character_avatar") or "")
+        if current_avatar:
+            paths.append((current_avatar, project_path / current_avatar))
+        else:
+            paths.append(
+                (
+                    f"characters/{resource_id}_avatar.png",
+                    project_path / "characters" / f"{resource_id}_avatar.png",
+                )
+            )
     elif task_type == "scene":
         paths.append(
             (
@@ -1147,15 +1163,16 @@ async def execute_character_task(
         _style = _project.get("style", "")
         _style_desc = _project.get("style_description", "")
         _full_prompt = build_character_prompt(resource_id, prompt, _style, _style_desc)
+        _avatar_prompt = build_character_avatar_prompt(resource_id, prompt, _style, _style_desc)
         _ref_images = None
         _ref_path = _char_data.get("reference_image")
         if _ref_path:
             _full_ref = _project_path / _ref_path
             if _full_ref.exists():
                 _ref_images = [_full_ref]
-        return _project, _full_prompt, _ref_images
+        return _project, _full_prompt, _avatar_prompt, _ref_images
 
-    project, full_prompt, reference_images = await asyncio.to_thread(_prepare_char)
+    project, full_prompt, avatar_prompt, reference_images = await asyncio.to_thread(_prepare_char)
     _needs_i2i = bool(reference_images)
 
     ctx = await resolve_generation_context(
@@ -1169,6 +1186,29 @@ async def execute_character_task(
     aspect_ratio = get_aspect_ratio(project, "characters")
     image_size = ctx.image.resolution
 
+    sheet_path = f"characters/{resource_id}.png"
+    avatar_suffix = (task_id or uuid4().hex).replace("-", "")[:12]
+    avatar_resource_id = f"{resource_id}_avatar_{avatar_suffix}"
+    avatar_path = f"characters/{avatar_resource_id}.png"
+
+    def _clear_existing_avatar() -> None:
+        project_manager = get_project_manager()
+        avatar_dir = project_manager.get_project_path(project_name) / "characters"
+        prefix = f"{resource_id}_avatar"
+        avatar_files = avatar_dir.glob(f"{prefix}*.png") if avatar_dir.exists() else ()
+        for avatar_file in avatar_files:
+            avatar_file.unlink(missing_ok=True)
+
+        def _clear_character_avatar(p: dict) -> None:
+            key = resolve_asset_key(p.get("characters"), resource_id)
+            if key is not None:
+                p["characters"][key]["character_avatar"] = ""
+
+        project_manager.update_project(project_name, _clear_character_avatar)
+
+    # 清除历史裁剪头像后再开始新任务，避免头像请求失败时页面继续显示旧文件。
+    await asyncio.to_thread(_clear_existing_avatar)
+
     _, version = await generator.generate_image_async(
         prompt=full_prompt,
         resource_type="characters",
@@ -1177,17 +1217,36 @@ async def execute_character_task(
         aspect_ratio=aspect_ratio,
         image_size=image_size,
     )
-
-    sheet_path = f"characters/{resource_id}.png"
+    avatar_context = await resolve_generation_context(
+        project_name,
+        payload,
+        project=project,
+        user_id=user_id,
+        image=ImageLaneRequest(capability="i2i" if reference_images else "t2i"),
+    )
+    avatar_generator = avatar_context.generator
+    try:
+        await avatar_generator.generate_image_async(
+            prompt=avatar_prompt,
+            resource_type="characters",
+            resource_id=avatar_resource_id,
+            reference_images=reference_images,
+            aspect_ratio="1:1",
+            image_size="1K",
+        )
+    except Exception:
+        await asyncio.to_thread(_clear_existing_avatar)
+        raise
 
     def _finalize_char():
-        def _set_character_sheet(p: dict) -> None:
+        def _set_character_assets(p: dict) -> None:
             key = resolve_asset_key(p.get("characters"), resource_id)
             if key is None:
                 raise KeyError(f"角色 '{resource_id}' 不存在")
             p["characters"][key]["character_sheet"] = sheet_path
+            p["characters"][key]["character_avatar"] = avatar_path
 
-        get_project_manager().update_project(project_name, _set_character_sheet)
+        get_project_manager().update_project(project_name, _set_character_assets)
         return generator.versions.get_versions("characters", resource_id)["versions"][-1]["created_at"]
 
     created_at = await asyncio.to_thread(_finalize_char)

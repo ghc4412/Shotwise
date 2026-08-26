@@ -365,7 +365,7 @@ export function WorkflowTemplateLauncher({ projectName, onDerived, onOpenCanvas 
                     <p className="mt-0.5 text-[10px] uppercase tracking-wide text-text-4">{template.template_type || template.scope}</p>
                   </div>
                 </div>
-                <p className="mt-2 line-clamp-2 min-h-8 text-xs leading-4 text-text-3">
+                <p className="mt-2 line-clamp-3 min-h-8 text-xs leading-4 text-text-3">
                   {template.description || (template.description_key ? t(template.description_key) : t("creation_skill_no_description"))}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-text-4">
