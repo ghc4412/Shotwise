@@ -10,6 +10,15 @@ vi.mock("@/components/canvas/timeline/VersionTimeMachine", () => ({
   VersionTimeMachine: () => <div data-testid="version-time-machine">versions</div>,
 }));
 
+vi.mock("./AvatarCropDialog", () => ({
+  AvatarCropDialog: ({ onSave }: { onSave: (file: File) => Promise<boolean> }) => (
+    <div role="dialog" aria-label="调整头像">
+      <button type="button" onClick={() => void onSave(new File(["avatar"], "avatar.png", { type: "image/png" }))}>
+        保存头像
+      </button>
+    </div>
+  ),
+}));
 
 describe("CharacterCard", () => {
   it("renders the independent character avatar in the card header", () => {
@@ -32,6 +41,25 @@ describe("CharacterCard", () => {
     );
   });
 
+  it("opens the avatar crop dialog from the character avatar", () => {
+    render(
+      <CharacterCard
+        name="Hero"
+        character={{
+          description: "hero desc",
+          character_sheet: "characters/Hero.png",
+          character_avatar: "characters/Hero_avatar_abc123.png",
+        }}
+        projectName="demo"
+        onSave={vi.fn()}
+        onGenerate={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "调整头像" }));
+    expect(screen.getByRole("dialog", { name: "调整头像" })).toBeInTheDocument();
+  });
+
   it("falls back to the User icon when the avatar cannot be loaded", () => {
     const view = render(
       <CharacterCard
@@ -52,8 +80,8 @@ describe("CharacterCard", () => {
     expect(view.container.querySelector("svg")).not.toBeNull();
   });
 
-  it("does not render the legacy cropped avatar path", () => {
-    const view = render(
+  it("renders a legacy avatar while the project is migrated", () => {
+    render(
       <CharacterCard
         name="Hero"
         character={{
@@ -66,8 +94,10 @@ describe("CharacterCard", () => {
       />,
     );
 
-    expect(view.container.querySelector("img[alt='Hero']")).toBeNull();
-    expect(view.container.querySelector("svg")).not.toBeNull();
+    expect(screen.getByRole("img", { name: "Hero" })).toHaveAttribute(
+      "src",
+      "/api/v1/files/demo/characters/Hero_avatar.png",
+    );
   });
 
   beforeEach(() => {
@@ -105,6 +135,38 @@ describe("CharacterCard", () => {
       "src",
       "/api/v1/files/demo/characters/refs/Hero.png",
     );
+  });
+
+  it("shows the generate label when the character has no design sheet", () => {
+    render(
+      <CharacterCard
+        name="Hero"
+        character={{ description: "hero desc", voice_style: "warm" }}
+        projectName="demo"
+        onSave={vi.fn()}
+        onGenerate={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "生成设计图" })).toBeInTheDocument();
+  });
+
+  it("shows the regenerate label when the character already has a design sheet", () => {
+    render(
+      <CharacterCard
+        name="Hero"
+        character={{
+          description: "hero desc",
+          voice_style: "warm",
+          character_sheet: "characters/Hero.png",
+        }}
+        projectName="demo"
+        onSave={vi.fn()}
+        onGenerate={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "重新生成设计图" })).toBeInTheDocument();
   });
 
   it("keeps the voice style field addressable under the grouped 声音 heading", () => {
@@ -206,6 +268,44 @@ describe("CharacterCard", () => {
     });
     expect(uploadFile).not.toHaveBeenCalled();
   });
+
+  it("rejects avatar save submitted after the resource became busy post-open", async () => {
+    const uploadAvatar = vi.spyOn(API, "uploadCharacterAvatar").mockResolvedValue({ success: true } as never);
+    const pushToast = vi.spyOn(useAppStore.getState(), "pushToast");
+    render(
+      <CharacterCard
+        name="Hero"
+        character={{
+          description: "hero desc",
+          character_sheet: "characters/Hero.png",
+        }}
+        projectName="demo"
+        onSave={vi.fn()}
+        onGenerate={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "调整头像" }));
+    useTasksStore.setState({
+      tasks: [
+        makeTask({
+          project_name: "demo",
+          task_type: "character",
+          media_type: "image",
+          resource_id: "Hero",
+          status: "running",
+        }),
+      ],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "保存头像" }));
+
+    await waitFor(() => {
+      expect(pushToast).toHaveBeenCalledWith("生成或编辑进行中，暂无法上传设计图", "info");
+    });
+    expect(uploadAvatar).not.toHaveBeenCalled();
+  });
+
 
   it("auto-resizes the description textarea as content grows", async () => {
     render(

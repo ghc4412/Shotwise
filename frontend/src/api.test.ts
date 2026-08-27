@@ -1085,6 +1085,49 @@ describe("API.referenceVideos", () => {
   });
 });
 
+describe("uploadCharacterAvatar", () => {
+  it("uses the canonical project-scoped route", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ success: true, path: "characters/Hero_avatar_manual.png" }), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await API.uploadCharacterAvatar(
+      "demo project",
+      "Hero",
+      new File(["png"], "avatar.png", { type: "image/png" }),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]![0]).toBe(
+      "/api/v1/projects/demo%20project/characters/Hero/avatar",
+    );
+  });
+
+  it("retries the legacy route for a generic 404 from an old worker", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: "Not Found" }), { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: true, path: "characters/Hero_avatar_manual.png" }), {
+          status: 200,
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await API.uploadCharacterAvatar(
+      "demo",
+      "Hero",
+      new File(["png"], "avatar.png", { type: "image/png" }),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]![0]).toBe("/api/v1/demo/characters/Hero/avatar");
+  });
+});
+
 describe("uploadFile (source) onConflict", () => {
   beforeEach(() => {
     globalThis.fetch = vi.fn();

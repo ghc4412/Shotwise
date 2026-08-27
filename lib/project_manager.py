@@ -2232,6 +2232,54 @@ class ProjectManager:
 
         return self.update_project(project_name, _mutate)
 
+    def replace_project_character_avatar(
+        self,
+        project_name: str,
+        name: str,
+        avatar_path: str,
+        staged_file: Path,
+    ) -> dict:
+        """在项目锁内替换角色头像文件及其 project.json 指针。
+
+        ``staged_file`` 必须位于头像目标目录，便于 ``os.replace`` 保持原子性。
+        旧文件先复制到同目录备份；若元数据写入或替换失败，恢复旧内容，避免
+        上传失败留下文件与 project.json 不一致。
+        """
+        project_file = self._get_project_file_path(project_name)
+        with self._project_lock(project_name):
+            with open(project_file, encoding="utf-8") as f:
+                project = json.load(f)
+            original_project = copy.deepcopy(project)
+            avatar_file = safe_join(self.get_project_path(project_name), avatar_path)
+            backup_file = avatar_file.with_name(f".{avatar_file.name}.{secrets.token_hex(8)}.bak")
+            had_old_file = avatar_file.is_file()
+            if had_old_file:
+                shutil.copy2(avatar_file, backup_file)
+            bucket = project.get("characters")
+            key = resolve_asset_key(bucket, name)
+            if not isinstance(bucket, dict) or key is None:
+                backup_file.unlink(missing_ok=True)
+                raise KeyError(f"角色 '{name}' 不存在")
+            bucket[key]["character_avatar"] = avatar_path
+            self._touch_metadata(project)
+            try:
+                os.replace(staged_file, avatar_file)
+                atomic_write_json(project_file, project)
+            except Exception:
+                try:
+                    atomic_write_json(project_file, original_project)
+                finally:
+                    if had_old_file:
+                        os.replace(backup_file, avatar_file)
+                    else:
+                        avatar_file.unlink(missing_ok=True)
+                raise
+            else:
+                backup_file.unlink(missing_ok=True)
+
+        emit_project_change_hint(project_name, changed_paths=[self.PROJECT_FILE, avatar_path])
+        return project
+
     def update_character_reference_image(self, project_name: str, char_name: str, ref_path: str) -> dict:
         """
         更新角色的参考图路径

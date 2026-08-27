@@ -396,6 +396,16 @@ function normalizeExportDiagnostics(value: unknown): ExportDiagnostics {
 
 const API_BASE = "/api/v1";
 
+class ApiHttpError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiHttpError";
+    this.status = status;
+  }
+}
+
 /**
  * 检查 fetch 响应状态，抛出包含后端错误信息的 Error。
  * 用于不经过 API.request() 的自定义 fetch 调用。
@@ -408,7 +418,7 @@ async function throwIfNotOk(response: Response, fallbackMsg: string): Promise<vo
       .catch(() => ({ detail: response.statusText })) as ErrorResponse;
     const detail = error.detail;
     const message = typeof detail === "string" ? detail || fallbackMsg : fallbackMsg;
-    throw new Error(localizeWorkflowError(message));
+    throw new ApiHttpError(response.status, localizeWorkflowError(message));
   }
 }
 
@@ -1256,6 +1266,34 @@ class API {
     const response = await fetch(`${API_BASE}${url}`, withAuth(url, { method: "POST", body: formData }));
     await throwIfNotOk(response, "上传失败");
     return (await response.json()) as T;
+  }
+
+  static async uploadCharacterAvatar(
+    projectName: string,
+    charName: string,
+    file: File,
+  ): Promise<{ success: boolean; path: string }> {
+    const url =
+      "/projects/" + encodeURIComponent(projectName) +
+      "/characters/" + encodeURIComponent(charName) + "/avatar";
+    try {
+      return await this.postFileUpload(url, file);
+    } catch (error) {
+      // Older development workers exposed this endpoint without /projects.
+      // Retry only the generic route miss; a real project/character error must
+      // continue to surface from the canonical endpoint.
+      if (
+        !(error instanceof ApiHttpError) ||
+        error.status !== 404 ||
+        error.message !== "Not Found"
+      ) {
+        throw error;
+      }
+      const legacyUrl =
+        "/" + encodeURIComponent(projectName) +
+        "/characters/" + encodeURIComponent(charName) + "/avatar";
+      return this.postFileUpload(legacyUrl, file);
+    }
   }
 
   /** 上传分镜图或镜头视频，替换该镜头的 AI 生成资产（storyboard/grid 模式）。 */

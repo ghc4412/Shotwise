@@ -1,5 +1,6 @@
 import re
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -392,6 +393,11 @@ class TestGenerationTasks:
         monkeypatch.setattr(generation_tasks, "resolve_generation_context", _fake_resolve_ctx(fake_generator))
         monkeypatch.setattr(
             generation_tasks,
+            "create_character_avatar",
+            lambda _source, destination: (destination.write_bytes(b"avatar"), destination)[1],
+        )
+        monkeypatch.setattr(
+            generation_tasks,
             "emit_project_change_batch",
             lambda project_name, changes: emitted_batches.append(
                 {
@@ -453,14 +459,13 @@ class TestGenerationTasks:
         assert character_result["resource_type"] == "characters"
         assert fake_pm.project["characters"]["Alice"]["character_sheet"] == "characters/Alice.png"
         assert fake_pm.project["characters"]["Alice"]["character_avatar"].startswith("characters/Alice_avatar_")
-        character_calls = fake_generator.image_calls[-2:]
-        assert character_calls[0]["resource_id"] == "Alice"
-        assert character_calls[0]["aspect_ratio"] == "16:9"
-        assert character_calls[1]["resource_id"].startswith("Alice_avatar_")
-        assert character_calls[1]["aspect_ratio"] == "1:1"
-        assert character_calls[1]["image_size"] == "1K"
-        assert character_calls[1]["reference_images"] == [project_path / "characters/refs/Alice-ref.png"]
-        assert "可直接使用的标准角色头像" in character_calls[1]["prompt"]
+        character_call = fake_generator.image_calls[-1]
+        assert character_call["resource_id"] == "Alice"
+        assert character_call["aspect_ratio"] == "16:9"
+        assert character_call["reference_images"] == [project_path / "characters/refs/Alice-ref.png"]
+        avatar_path = fake_pm.project["characters"]["Alice"]["character_avatar"]
+        assert avatar_path.startswith("characters/Alice_avatar_")
+        assert (project_path / avatar_path).exists()
 
         scene_result = await generation_tasks.execute_scene_task(
             "demo",
@@ -508,48 +513,52 @@ class TestGenerationTasks:
         class _FailingAvatarGenerator(_FakeGenerator):
             async def generate_image_async(self, **kwargs):
                 self.image_calls.append(kwargs)
-                if kwargs["resource_id"].startswith("Alice_avatar_"):
-                    raise RuntimeError("avatar generation failed")
-                return Path("/tmp/image.png"), 1
+                return project_path / "characters" / "Alice.png", 1
 
         fake_generator = _FailingAvatarGenerator()
         monkeypatch.setattr(generation_tasks, "get_project_manager", lambda: fake_pm)
         monkeypatch.setattr(generation_tasks, "resolve_generation_context", _fake_resolve_ctx(fake_generator))
 
+        def _fail_create_avatar(_source, _destination):
+            raise RuntimeError("avatar generation failed")
+
+        monkeypatch.setattr(generation_tasks, "create_character_avatar", _fail_create_avatar)
+
         with pytest.raises(RuntimeError, match="avatar generation failed"):
             await generation_tasks.execute_character_task("demo", "Alice", {"prompt": "角色描述"})
 
-        assert not stale_avatar.exists()
-        assert fake_pm.project["characters"]["Alice"]["character_avatar"] == ""
+        assert stale_avatar.exists()
+        assert fake_pm.project["characters"]["Alice"]["character_avatar"] == "characters/Alice_avatar.png"
 
     @pytest.mark.unit
-    async def test_character_generation_clears_stale_avatar_before_new_request(self, tmp_path, monkeypatch):
+    async def test_character_generation_preserves_stale_avatar_until_new_result_is_finalized(
+        self, tmp_path, monkeypatch
+    ):
         project_path = _prepare_files(tmp_path)
         fake_pm = _FakePM(project_path)
         stale_avatar = project_path / "characters/Alice_avatar.png"
         stale_avatar.write_bytes(b"stale avatar")
         fake_pm.project["characters"]["Alice"]["character_avatar"] = "characters/Alice_avatar.png"
+        observed = {}
         fake_generator = _FakeGenerator()
 
-        observed = {}
-        original_generate = fake_generator.generate_image_async
-
-        async def _generate_and_check(**kwargs):
-            result = await original_generate(**kwargs)
-            if kwargs["resource_id"].startswith("Alice_avatar_"):
-                observed["old_file_exists"] = stale_avatar.exists()
-                observed["character_avatar"] = fake_pm.project["characters"]["Alice"]["character_avatar"]
-            return result
-
-        fake_generator.generate_image_async = _generate_and_check
         monkeypatch.setattr(generation_tasks, "get_project_manager", lambda: fake_pm)
         monkeypatch.setattr(generation_tasks, "resolve_generation_context", _fake_resolve_ctx(fake_generator))
 
+        def _create_avatar(_source, destination):
+            observed["old_file_exists"] = stale_avatar.exists()
+            observed["character_avatar"] = fake_pm.project["characters"]["Alice"]["character_avatar"]
+            destination.write_bytes(b"avatar")
+            return destination
+
+        monkeypatch.setattr(generation_tasks, "create_character_avatar", _create_avatar)
+
         await generation_tasks.execute_character_task("demo", "Alice", {"prompt": "角色描述"})
 
-        assert fake_generator.image_calls[-1]["resource_id"].startswith("Alice_avatar_")
-        assert observed == {"old_file_exists": False, "character_avatar": ""}
+        assert fake_generator.image_calls[-1]["resource_id"] == "Alice"
+        assert observed == {"old_file_exists": True, "character_avatar": "characters/Alice_avatar.png"}
         assert fake_pm.project["characters"]["Alice"]["character_avatar"].startswith("characters/Alice_avatar_")
+        assert stale_avatar.exists()
 
     @pytest.mark.unit
     async def test_execute_product_task_injects_reference_images(self, tmp_path, monkeypatch):
@@ -1696,6 +1705,11 @@ class TestGenerationTasks:
         )
         monkeypatch.setattr(generation_tasks, "extract_video_thumbnail", _async_return(None))
         monkeypatch.setattr(generation_tasks, "emit_project_change_batch", lambda *a, **kw: None)
+        monkeypatch.setattr(
+            generation_tasks,
+            "create_character_avatar",
+            lambda _source, destination: (destination.write_bytes(b"avatar"), destination)[1],
+        )
 
         # E1S02 引用角色/场景/道具 sheet → 带参考图 → i2i；character 带 reference_image → i2i
         await generation_tasks.execute_storyboard_task(
@@ -1925,7 +1939,7 @@ class TestGenerationTasks:
         project_path = tmp_path / "demo"
         project_path.mkdir()
         fake_pm = _FakePM(project_path)
-        fake_pm.script = ["not", "a", "dict"]
+        fake_pm.script = cast(Any, ["not", "a", "dict"])
         monkeypatch.setattr(generation_tasks, "get_project_manager", lambda: fake_pm)
 
         generation_tasks.emit_generation_success_batch(

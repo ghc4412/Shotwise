@@ -24,6 +24,7 @@ from lib.audio_utils import (
     AUDIO_REFERENCE_MIN_SECONDS,
     probe_audio_duration_seconds,
 )
+from lib.character_avatar import create_character_avatar
 from lib.config.registry import PROVIDER_REGISTRY
 from lib.config.resolver import constrain_durations, video_bucket_for_generation_mode
 from lib.db.base import DEFAULT_USER_ID
@@ -32,7 +33,6 @@ from lib.project_change_hints import emit_project_change_batch, project_change_s
 from lib.project_manager import get_project_manager
 from lib.prompt_builders import (
     append_product_fidelity_tail,
-    build_character_avatar_prompt,
     build_character_prompt,
     build_product_prompt,
     build_prop_prompt,
@@ -1141,7 +1141,38 @@ async def _finalize_video_task(
     }
 
 
+_CHARACTER_GENERATION_LOCKS: dict[tuple[str, str], asyncio.Lock] = {}
+
+
+def _character_generation_lock(project_name: str, resource_id: str) -> asyncio.Lock:
+    key = (project_name, resource_id)
+    lock = _CHARACTER_GENERATION_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _CHARACTER_GENERATION_LOCKS[key] = lock
+    return lock
+
+
 async def execute_character_task(
+    project_name: str,
+    resource_id: str,
+    payload: dict[str, Any],
+    *,
+    user_id: str = DEFAULT_USER_ID,
+    task_id: str | None = None,
+) -> dict[str, Any]:
+    resource_id = validate_asset_name(resource_id)
+    async with _character_generation_lock(project_name, resource_id):
+        return await _execute_character_task_locked(
+            project_name,
+            resource_id,
+            payload,
+            user_id=user_id,
+            task_id=task_id,
+        )
+
+
+async def _execute_character_task_locked(
     project_name: str,
     resource_id: str,
     payload: dict[str, Any],
@@ -1153,6 +1184,8 @@ async def execute_character_task(
     if not prompt:
         raise ValueError("prompt is required for character task")
 
+    resource_id = validate_asset_name(resource_id)
+
     def _prepare_char():
         _project = get_project_manager().load_project(project_name)
         _project_path = get_project_manager().get_project_path(project_name)
@@ -1163,16 +1196,16 @@ async def execute_character_task(
         _style = _project.get("style", "")
         _style_desc = _project.get("style_description", "")
         _full_prompt = build_character_prompt(resource_id, prompt, _style, _style_desc)
-        _avatar_prompt = build_character_avatar_prompt(resource_id, prompt, _style, _style_desc)
         _ref_images = None
         _ref_path = _char_data.get("reference_image")
         if _ref_path:
-            _full_ref = _project_path / _ref_path
-            if _full_ref.exists():
+            _full_ref = try_safe_join(_project_path, _ref_path)
+            if _full_ref is not None and _full_ref.is_file():
                 _ref_images = [_full_ref]
-        return _project, _full_prompt, _avatar_prompt, _ref_images
+        _current_avatar = _char_data.get("character_avatar", "")
+        return _project, _project_path, _full_prompt, _ref_images, _current_avatar
 
-    project, full_prompt, avatar_prompt, reference_images = await asyncio.to_thread(_prepare_char)
+    project, project_path, full_prompt, reference_images, previous_avatar_path = await asyncio.to_thread(_prepare_char)
     _needs_i2i = bool(reference_images)
 
     ctx = await resolve_generation_context(
@@ -1190,26 +1223,9 @@ async def execute_character_task(
     avatar_suffix = (task_id or uuid4().hex).replace("-", "")[:12]
     avatar_resource_id = f"{resource_id}_avatar_{avatar_suffix}"
     avatar_path = f"characters/{avatar_resource_id}.png"
+    avatar_output_path = safe_join(project_path, avatar_path)
 
-    def _clear_existing_avatar() -> None:
-        project_manager = get_project_manager()
-        avatar_dir = project_manager.get_project_path(project_name) / "characters"
-        prefix = f"{resource_id}_avatar"
-        avatar_files = avatar_dir.glob(f"{prefix}*.png") if avatar_dir.exists() else ()
-        for avatar_file in avatar_files:
-            avatar_file.unlink(missing_ok=True)
-
-        def _clear_character_avatar(p: dict) -> None:
-            key = resolve_asset_key(p.get("characters"), resource_id)
-            if key is not None:
-                p["characters"][key]["character_avatar"] = ""
-
-        project_manager.update_project(project_name, _clear_character_avatar)
-
-    # 清除历史裁剪头像后再开始新任务，避免头像请求失败时页面继续显示旧文件。
-    await asyncio.to_thread(_clear_existing_avatar)
-
-    _, version = await generator.generate_image_async(
+    sheet_output_path, version = await generator.generate_image_async(
         prompt=full_prompt,
         resource_type="characters",
         resource_id=resource_id,
@@ -1217,39 +1233,49 @@ async def execute_character_task(
         aspect_ratio=aspect_ratio,
         image_size=image_size,
     )
-    avatar_context = await resolve_generation_context(
-        project_name,
-        payload,
-        project=project,
-        user_id=user_id,
-        image=ImageLaneRequest(capability="i2i" if reference_images else "t2i"),
-    )
-    avatar_generator = avatar_context.generator
+    # 头像优先从设计图检测头部，检测不到时由裁剪模块使用安全的左侧范围兜底。
     try:
-        await avatar_generator.generate_image_async(
-            prompt=avatar_prompt,
-            resource_type="characters",
-            resource_id=avatar_resource_id,
-            reference_images=reference_images,
-            aspect_ratio="1:1",
-            image_size="1K",
-        )
+        await asyncio.to_thread(create_character_avatar, sheet_output_path, avatar_output_path)
     except Exception:
-        await asyncio.to_thread(_clear_existing_avatar)
+        avatar_output_path.unlink(missing_ok=True)
         raise
 
-    def _finalize_char():
+    def _finalize_char() -> tuple[bool, str]:
+        finalized = False
+
         def _set_character_assets(p: dict) -> None:
+            nonlocal finalized
             key = resolve_asset_key(p.get("characters"), resource_id)
             if key is None:
                 raise KeyError(f"角色 '{resource_id}' 不存在")
-            p["characters"][key]["character_sheet"] = sheet_path
-            p["characters"][key]["character_avatar"] = avatar_path
+            entry = p["characters"][key]
+            # Do not let a stale generation overwrite a manual upload or a
+            # generation that finalized while this task was running.
+            if entry.get("character_avatar", "") != previous_avatar_path:
+                return
+            entry["character_sheet"] = sheet_path
+            entry["character_avatar"] = avatar_path
+            finalized = True
 
         get_project_manager().update_project(project_name, _set_character_assets)
-        return generator.versions.get_versions("characters", resource_id)["versions"][-1]["created_at"]
+        created_at = generator.versions.get_versions("characters", resource_id)["versions"][-1]["created_at"]
+        return finalized, created_at
 
-    created_at = await asyncio.to_thread(_finalize_char)
+    finalized, created_at = await asyncio.to_thread(_finalize_char)
+    if not finalized:
+        # The output is no longer referenced by the project; never remove the
+        # avatar that won the race.
+        avatar_output_path.unlink(missing_ok=True)
+    elif (
+        isinstance(previous_avatar_path, str)
+        and previous_avatar_path != avatar_path
+        and previous_avatar_path != f"characters/{resource_id}_avatar_manual.png"
+        and Path(previous_avatar_path).name.startswith(f"{resource_id}_avatar_")
+        and Path(previous_avatar_path).suffix == ".png"
+    ):
+        previous_avatar_file = try_safe_join(project_path, previous_avatar_path)
+        if previous_avatar_file is not None:
+            await asyncio.to_thread(previous_avatar_file.unlink, True)
 
     return {
         "version": version,

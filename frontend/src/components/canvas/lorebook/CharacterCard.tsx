@@ -15,6 +15,7 @@ import { errMsg } from "@/utils/async";
 import { rejectIfAssetBusy } from "./assetBusyGuard";
 import { EditableAssetName } from "./EditableAssetName";
 import { VoiceSampleButton } from "./VoiceSampleButton";
+import { AvatarCropDialog } from "./AvatarCropDialog";
 import type { Character } from "@/types";
 
 interface CharacterSavePayload {
@@ -69,9 +70,10 @@ export function CharacterCard({
   const sheetFp = useProjectsStore(
     (s) => character.character_sheet ? s.getAssetFingerprint(character.character_sheet) : null,
   );
-  const avatarFp = useProjectsStore(
-    (s) => character.character_avatar ? s.getAssetFingerprint(character.character_avatar) : null,
-  );
+  const avatarFp = useProjectsStore((s) => {
+    const avatarPath = character.character_avatar || `characters/${name}_avatar.png`;
+    return s.getAssetFingerprint(avatarPath);
+  });
   const referenceFp = useProjectsStore(
     (s) => character.reference_image ? s.getAssetFingerprint(character.reference_image) : null,
   );
@@ -82,6 +84,8 @@ export function CharacterCard({
   const [voiceStyle, setVoiceStyle] = useState(character.voice_style ?? "");
   const [imgError, setImgError] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
+  const [avatarCropOpen, setAvatarCropOpen] = useState(false);
+  const [savingAvatar, setSavingAvatar] = useState(false);
   const [referenceFile, setReferenceFile] = useState<File | null>(null);
   const [referencePreview, setReferencePreview] = useState<string | null>(null);
   const [audioFile, setAudioFile] = useState<File | null>(null);
@@ -284,12 +288,28 @@ export function CharacterCard({
     ? API.getFileUrl(projectName, character.character_sheet, sheetFp)
     : null;
 
+  // 兼容旧项目中的固定命名头像；新生成任务会写入带任务后缀的独立头像路径。
   const legacyAvatarPath = "characters/" + name + "_avatar.png";
-  const avatarPath = character.character_avatar;
-  const hasUsableAvatar = Boolean(avatarPath && avatarPath !== legacyAvatarPath);
-  const avatarUrl = !generating && hasUsableAvatar && avatarPath
+  const avatarPath = character.character_avatar || legacyAvatarPath;
+  const avatarUrl = !generating && avatarPath
     ? API.getFileUrl(projectName, avatarPath, avatarFp)
     : null;
+
+  const handleSaveAvatar = async (file: File): Promise<boolean> => {
+    if (rejectIfAssetBusy("character", projectName, name, t)) return false;
+    setSavingAvatar(true);
+    try {
+      await API.uploadCharacterAvatar(projectName, name, file);
+      await onReload?.();
+      useAppStore.getState().pushToast(t("assets:avatar_saved"), "success");
+      return true;
+    } catch (err) {
+      useAppStore.getState().pushToast(errMsg(err), "error");
+      return false;
+    } finally {
+      setSavingAvatar(false);
+    }
+  };
 
   const savedReferenceUrl = character.reference_image
     ? API.getFileUrl(projectName, character.reference_image, referenceFp)
@@ -343,10 +363,15 @@ export function CharacterCard({
         }}
       />
 
-      {/* ---- Header: 单排 avatar + name + icon-only 工具栏 ---- */}
+      {/* ---- Header: avatar + name + upload/library/history tools ---- */}
       <div className="mb-4 flex items-center gap-2.5">
-        <span
-          className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full"
+        <button
+          type="button"
+          onClick={() => setAvatarCropOpen(true)}
+          disabled={readOnly || !sheetUrl || generating || uploadingSheet || savingAvatar}
+          title={t("assets:edit_avatar")}
+          aria-label={t("assets:edit_avatar")}
+          className="focus-ring grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-full disabled:cursor-not-allowed disabled:opacity-60"
           style={{
             background: "var(--color-accent-dim)",
             border: "1px solid var(--color-accent-soft)",
@@ -363,7 +388,7 @@ export function CharacterCard({
           ) : (
             <User className="h-6 w-6" aria-hidden="true" />
           )}
-        </span>
+        </button>
         <EditableAssetName
           projectName={projectName}
           name={name}
@@ -394,13 +419,6 @@ export function CharacterCard({
             className="hidden"
             onChange={(e) => void handleSheetUpload(e)}
           />
-          <ImageEditButton
-            projectName={projectName}
-            resourceType="character"
-            resourceId={name}
-            hasImage={Boolean(character.character_sheet)}
-            busy={generating || uploadingSheet}
-          />
           <AddToLibraryButton
             resourceType="character"
             resourceId={name}
@@ -426,9 +444,20 @@ export function CharacterCard({
       {/* ---- Image area ---- */}
       <div className="mb-4 space-y-3">
         <div>
-          <CapsLabel>{t("character_design")}</CapsLabel>
+          <div className="mt-1.5 flex items-center justify-between gap-2">
+            <CapsLabel>{t("character_design")}</CapsLabel>
+            {readOnly ? null : (
+              <ImageEditButton
+                projectName={projectName}
+                resourceType="character"
+                resourceId={name}
+                hasImage={Boolean(character.character_sheet)}
+                busy={generating || uploadingSheet}
+              />
+            )}
+          </div>
           <div
-            className="mt-1.5 overflow-hidden rounded-lg"
+            className="overflow-hidden rounded-lg"
             style={{ border: "1px solid var(--color-hairline-soft)" }}
           >
             <PreviewableImageFrame
@@ -455,7 +484,6 @@ export function CharacterCard({
             </PreviewableImageFrame>
           </div>
         </div>
-
         {/* 只读且没有参考图时整块不渲染：留一个不能用的上传框只是噪声 */}
         {readOnly && !displayedReferenceUrl ? null : (
         <div>
@@ -731,10 +759,18 @@ export function CharacterCard({
         <GenerateButton
           onClick={() => onGenerate(name)}
           loading={generating}
-          label={t("generate_design")}
+          label={t(character.character_sheet ? "regenerate_design" : "generate_design")}
           className="w-full justify-center"
         />
       </div>
+      )}
+      {avatarCropOpen && sheetUrl && (
+        <AvatarCropDialog
+          imageUrl={sheetUrl}
+          name={name}
+          onClose={() => setAvatarCropOpen(false)}
+          onSave={handleSaveAvatar}
+        />
       )}
     </div>
   );
