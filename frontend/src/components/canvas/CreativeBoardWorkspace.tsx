@@ -2,9 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as Re
 import { createPortal } from "react-dom";
 /* eslint-disable jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions -- board nodes are pointer-driven canvas objects. */
 /* eslint-disable react-hooks/exhaustive-deps -- keyboard commands intentionally capture current board actions. */
-import { Check, ChevronDown, CircleHelp, FileText, FolderOpen, Grid3X3, History, Image as ImageIcon, Keyboard, Landmark, Layers3, Link2, Loader2, Maximize2, MessageCircle, MoreHorizontal, MousePointer2, Move, Package, PanelLeft, Plus, Search, Send, Sparkles, Trash2, Upload, UserRound, Video } from "lucide-react";
+import { Check, ChevronDown, CircleHelp, FileText, FolderOpen, Globe2, Grid3X3, History, Image as ImageIcon, Keyboard, Landmark, Layers3, Link2, Loader2, Maximize2, MessageCircle, MoreHorizontal, MousePointer2, Move, Package, PanelLeft, Plus, Search, Send, Sparkles, Trash2, Upload, UserRound, Video } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { API, getCreativeBoardConflictRevision, isCreativeBoardRevisionConflict } from "@/api";
 import { useProjectsStore } from "@/stores/projects-store";
 import { loadCanvasAssets, type CanvasAsset } from "./canvas-assets";
@@ -12,12 +12,29 @@ import { CanvasSaveStatus } from "./CanvasSaveStatus";
 import { ConflictModal, type ConflictResolution } from "./ConflictModal";
 import { handleCanvasSaveShortcut, useCanvasPersistence } from "./canvasPersistence";
 import { CreativeBoardActions } from "./CreativeBoardActions";
+import { BoardSelectionOverlay, type ResizeCorner } from "./BoardSelectionOverlay";
 
 type BoardItem = { id: string; item_type: string; resource_type: string; resource_id: string; position: { x: number; y: number }; size: { width: number; height: number }; group_id?: string | null };
 type BoardEdge = { id: string; source_item_id: string; target_item_id: string; relation: string };
 type Board = { id: string; project_id: string; name: string; viewport: { x?: number; y?: number; zoom?: number }; items: BoardItem[]; edges: BoardEdge[]; revision: number };
 type BoardHistory = { past: Board[]; future: Board[] };
+type ResizeState = {
+  id: string;
+  corner: ResizeCorner;
+  startX: number;
+  startY: number;
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+};
+type BoardDragState = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  active: boolean;
+  items: Array<{ id: string; x: number; y: number }>;
+};
 type BoardOption = { id: string; name: string };
+const BOARD_DRAG_THRESHOLD = 4;
 function BoardSwitcher({ name, boardId, boardOptions, open, creating, editingBoardId, editingBoardName, boardActionsId, labels, onToggle, onCreate, onSwitch, onEditNameChange, onSaveName, onCancelEdit, onToggleActions, onOpenNewWindow, onRename, onDuplicate, onDelete }: {
   name: string;
   boardId?: string;
@@ -138,6 +155,7 @@ function BoardSwitcher({ name, boardId, boardOptions, open, creating, editingBoa
 export type CreativeBoardSnapshot = { boardId: string; name: string; viewport: { x: number; y: number; zoom: number }; items: BoardItem[]; edges: BoardEdge[]; revision: number };
 type Media = { id: string; original_name: string; kind: string; url?: string; content_url?: string; preview_url?: string; thumbnail_url?: string; mime_type?: string };
 type AssetSource = "project" | "global" | "media";
+type AssetCategory = "personal" | "agent" | "global";
 type AssetKind = "character" | "scene" | "prop" | "product" | "media" | "video";
 type UnifiedAsset = {
   id: string;
@@ -145,16 +163,18 @@ type UnifiedAsset = {
   kind: AssetKind;
   source: AssetSource;
   resourceType: string;
+  /** Full design/reference image used inside the canvas. */
   imagePath?: string;
+  /** Compact avatar/thumbnail used by sidebar lists. */
+  sidebarImagePath?: string;
   projectName?: string;
   previewVersion?: number | null;
   media?: Media;
 };
 type BoardItemType = "document" | "character" | "scene" | "prop" | "product" | "media" | "video" | "episode" | "shot" | "skill_action" | "review" | "final";
 
-const CANVAS_SIZE = { width: 5000, height: 3500 };
 const ASSET_TYPES: Array<AssetKind | "all"> = ["all", "character", "scene", "prop", "product", "media", "video"];
-const ASSET_SOURCES: Array<AssetSource | "all"> = ["all", "project", "global", "media"];
+const ASSET_CATEGORIES: AssetCategory[] = ["personal", "agent", "global"];
 type ElementFilter = "all" | "text" | "image" | "video" | "video_edit" | "director" | "frame_extract" | "audio" | "script";
 
 const ELEMENT_FILTERS: Array<{ value: ElementFilter; labelKey: string; label: string }> = [
@@ -264,14 +284,15 @@ function canvasAssetToUnified(asset: CanvasAsset, fingerprints: Record<string, n
     kind,
     source: asset.source === "global" ? "global" : isMedia ? "media" : "project",
     resourceType: isMedia ? "media_asset" : kind,
-    imagePath: asset.previewUrl ?? undefined,
+    imagePath: (asset.canvasPreviewUrl ?? asset.previewUrl) ?? undefined,
+    sidebarImagePath: (asset.sidebarPreviewUrl ?? asset.previewUrl) ?? undefined,
     projectName: asset.projectName,
-    previewVersion: asset.previewUrl ? (fingerprints[asset.previewUrl] ?? null) : null,
+    previewVersion: asset.canvasPreviewUrl ? (fingerprints[asset.canvasPreviewUrl] ?? null) : null,
     media: isMedia ? {
       id: asset.reference.id,
       original_name: asset.name,
       kind: kind === "video" ? "video" : "image",
-      preview_url: asset.previewUrl ?? undefined,
+      preview_url: (asset.canvasPreviewUrl ?? asset.previewUrl) ?? undefined,
       mime_type: asset.mimeType,
     } : undefined,
   };
@@ -340,6 +361,15 @@ function colorFor(type: string) {
 
 function zoomClamp(value: number) { return Math.min(2.4, Math.max(0.35, Number(value.toFixed(2)))); }
 
+function getWorldBounds(items: BoardItem[]) {
+  const padding = 1000;
+  const minX = Math.min(-padding, ...items.map((item) => item.position.x - padding));
+  const minY = Math.min(-padding, ...items.map((item) => item.position.y - padding));
+  const maxX = Math.max(padding, ...items.map((item) => item.position.x + item.size.width + padding));
+  const maxY = Math.max(padding, ...items.map((item) => item.position.y + item.size.height + padding));
+  return { minX, minY, width: maxX - minX, height: maxY - minY };
+}
+
 function nodeTitle(item: BoardItem, names: Map<string, string>) { return names.get(assetKey(item.resource_type, item.resource_id)) || names.get(item.resource_id) || item.resource_id; }
 
 function mediaSource(media?: Media) { return media?.preview_url || media?.thumbnail_url || media?.content_url || media?.url; }
@@ -347,11 +377,18 @@ function mediaSource(media?: Media) { return media?.preview_url || media?.thumbn
 function assetSourceUrl(asset?: UnifiedAsset) {
   const mediaUrl = mediaSource(asset?.media);
   if (mediaUrl) return mediaUrl;
+  return assetImageSourceUrl(asset, asset?.imagePath);
+}
 
-  const imagePath = asset?.imagePath;
+function sidebarAssetSourceUrl(asset?: UnifiedAsset) {
+  const mediaUrl = mediaSource(asset?.media);
+  if (mediaUrl) return mediaUrl;
+  return assetImageSourceUrl(asset, asset?.sidebarImagePath);
+}
+
+function assetImageSourceUrl(asset: UnifiedAsset | undefined, imagePath: string | undefined) {
   if (!imagePath) return undefined;
   if (/^(data:|https?:|blob:|\/api\/)/i.test(imagePath)) return imagePath;
-
   if (asset?.source === "global") return API.getGlobalAssetUrl(imagePath) ?? imagePath;
   if (asset?.source === "project" && asset.projectName) {
     return API.getFileUrl(asset.projectName, imagePath, asset.previewVersion);
@@ -369,8 +406,8 @@ function assetIcon(type: AssetKind) {
 function previewFor(item: BoardItem, asset: UnifiedAsset | undefined) {
   const source = assetSourceUrl(asset);
   const isVideo = item.item_type === "video" || asset?.kind === "video" || asset?.media?.mime_type?.startsWith("video/");
-  if (source && isVideo) return <video src={source} muted playsInline preload="metadata" className="h-full w-full object-cover" aria-label={asset?.name || item.resource_id} />;
-  if (source) return <img src={source} alt={asset?.name || item.resource_id} className="h-full w-full object-cover" />;
+  if (source && isVideo) return <video src={source} muted playsInline preload="metadata" className="pointer-events-none h-full w-full object-cover" aria-label={asset?.name || item.resource_id} />;
+  if (source) return <img src={source} alt={asset?.name || item.resource_id} draggable={false} onDragStart={(event) => event.preventDefault()} className="pointer-events-none h-full w-full object-cover" />;
   if (!asset) return <div className="flex h-full flex-col items-center justify-center gap-2 bg-[#fff8f8] px-3 text-center text-[#b35a5a]"><CircleHelp className="h-7 w-7" aria-hidden /><span className="text-[10px]">Unavailable reference</span><span className="max-w-full truncate text-[9px] text-[#c98585]">{item.resource_id}</span></div>;
   const Icon = assetIcon(asset.kind);
   return <div className="flex h-full flex-col items-center justify-center gap-2 bg-[linear-gradient(145deg,#f8f7ff,#eef3f8)] px-3 text-center text-[#667085]"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-[#6254d9] shadow-sm"><Icon className="h-5 w-5" aria-hidden /></span><span className="max-w-full truncate text-[11px] font-semibold text-[#475569]">{asset.name}</span><span className="text-[9px] uppercase tracking-wide text-[#94a3b8]">{asset.kind}</span></div>;
@@ -431,6 +468,7 @@ function sameViewport(left: CreativeBoardSnapshot["viewport"], right: CreativeBo
 export function CreativeBoardWorkspace({ projectName }: { projectName: string }) {
   const { t } = useTranslation("dashboard");
   const [location, navigate] = useLocation();
+  const routeSearch = useSearch();
   const projectData = useProjectsStore((state) =>
     state.currentProjectName === projectName ? state.currentProjectData : null,
   );
@@ -438,13 +476,17 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
   const canvasRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef({ x: 28, y: 28, zoom: 1 });
   const revisionRef = useRef(1);
-  const dragRef = useRef<{ id: string; startX: number; startY: number; x: number; y: number } | null>(null);
+  const dragRef = useRef<BoardDragState | null>(null);
+  const resizeRef = useRef<ResizeState | null>(null);
   const panRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
   const dragHistoryRecordedRef = useRef(false);
+  const suppressNextNodeClickRef = useRef(false);
+  const [draggingItemIds, setDraggingItemIds] = useState<string[]>([]);
   const boardHistoryRef = useRef<BoardHistory>({ past: [], future: [] });
   const spacePanRef = useRef(false);
   const toolBeforeSpaceRef = useRef<"select" | "pan">("select");
   const mountedRef = useRef(true);
+  const boardLoadGenerationRef = useRef(0);
   const pendingBoardEditRef = useRef<string | null>(null);
   const serverItemIdsRef = useRef(new Map<string, string>());
   const serverEdgeIdsRef = useRef(new Map<string, string>());
@@ -462,7 +504,7 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
   const [elementFilter, setElementFilter] = useState<ElementFilter>("all");
   const [elementFilterOpen, setElementFilterOpen] = useState(false);
   const activeElementFilter = ELEMENT_FILTERS.find((filter) => filter.value === elementFilter) ?? ELEMENT_FILTERS[0];
-  const [assetSourceFilter, setAssetSourceFilter] = useState<AssetSource | "all">("all");
+  const [assetCategory, setAssetCategory] = useState<AssetCategory>("personal");
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetKind | "all">("all");
   const [leftOpen, setLeftOpen] = useState(true);
   const [gridVisible, setGridVisible] = useState(true);
@@ -494,7 +536,7 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     const value = Number(new URLSearchParams(window.location.search).get("episode"));
     return Number.isInteger(value) && value > 0 ? value : undefined;
   }, []);
-  const currentBoardId = useMemo(() => new URLSearchParams(location.split("?")[1] ?? "").get("board") ?? undefined, [location]);
+  const currentBoardId = useMemo(() => new URLSearchParams(routeSearch).get("board") ?? undefined, [routeSearch]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -548,11 +590,15 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
   }, [fetchCatalog]);
 
   const load = useCallback(async (): Promise<CreativeBoardSnapshot | undefined> => {
+    const loadGeneration = boardLoadGenerationRef.current + 1;
+    boardLoadGenerationRef.current = loadGeneration;
+    const isCurrentLoad = () => mountedRef.current && boardLoadGenerationRef.current === loadGeneration;
     setLoading(true);
     setError(null);
     setConflict(false);
     try {
       const boards = await API.listCreativeBoards(projectName);
+      if (!isCurrentLoad()) return undefined;
       const listedBoardOptions = boards.items
         .filter((item) => typeof item.id === "string")
         .map((item) => ({ id: String(item.id), name: item.name || t("creative_board_default_name") }));
@@ -562,7 +608,7 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
         : existing
         ? parseBoard(await API.getCreativeBoard(String(existing.id)))
         : parseBoard(await API.createCreativeBoard(projectName, { name: t("creative_board_default_name"), viewport: { x: 28, y: 28, zoom: 1 } }));
-      if (!mountedRef.current) return undefined;
+      if (!isCurrentLoad()) return undefined;
       serverItemIdsRef.current.clear();
       serverEdgeIdsRef.current.clear();
       for (const item of nextBoard.items) serverItemIdsRef.current.set(item.id, item.id);
@@ -586,12 +632,11 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
       setRevision(nextBoard.revision);
       viewportRef.current = nextViewport;
       setViewportState(nextViewport);
-      if (!mountedRef.current) return undefined;
       return { boardId: nextBoard.id, name: nextBoard.name, viewport: nextViewport, items: nextBoard.items, edges: nextBoard.edges, revision: nextBoard.revision };
     } catch (reason) {
-      if (mountedRef.current) setError(reason instanceof Error ? reason.message : t("creative_board_load_error"));
+      if (isCurrentLoad()) setError(reason instanceof Error ? reason.message : t("creative_board_load_error"));
     } finally {
-      if (mountedRef.current) setLoading(false);
+      if (isCurrentLoad()) setLoading(false);
     }
     return undefined;
   }, [currentBoardId, projectName, t]);
@@ -628,8 +673,25 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
   const selectedItem = selectedItems.length === 1 ? selectedItems[0] : undefined;
   const selectedAsset = selectedItem ? assetsByReference.get(assetKey(selectedItem.resource_type, selectedItem.resource_id)) ?? assetsByReference.get(selectedItem.resource_id) : undefined;
   const filteredItems = useMemo(() => { const value = search.trim().toLowerCase(); return (board?.items ?? []).filter((item) => matchesElementFilter(item, elementFilter) && (!value || nodeTitle(item, names).toLowerCase().includes(value) || item.item_type.includes(value) || item.resource_id.toLowerCase().includes(value))); }, [board?.items, elementFilter, names, search]);
-  const filteredAssets = useMemo(() => { const value = search.trim().toLowerCase(); return catalog.filter((asset) => (assetSourceFilter === "all" || asset.source === assetSourceFilter) && (assetTypeFilter === "all" || asset.kind === assetTypeFilter) && (!value || asset.name.toLowerCase().includes(value) || asset.kind.includes(value) || asset.source.includes(value) || asset.id.toLowerCase().includes(value))); }, [assetSourceFilter, assetTypeFilter, catalog, search]);
+  const filteredAssets = useMemo(() => {
+    const value = search.trim().toLowerCase();
+    return catalog.filter((asset) => {
+      const matchesCategory = assetCategory === "personal"
+        ? asset.source === "media"
+        : assetCategory === "agent"
+          ? asset.source === "project" && ["character", "scene", "prop"].includes(asset.kind)
+          : asset.source === "global";
+      const matchesType = assetTypeFilter === "all" || asset.kind === assetTypeFilter;
+      return matchesCategory && matchesType && (!value || asset.name.toLowerCase().includes(value) || asset.kind.includes(value) || asset.source.includes(value) || asset.id.toLowerCase().includes(value));
+    });
+  }, [assetCategory, assetTypeFilter, catalog, search]);
+  const activeAssetCategoryLabel = assetCategory === "personal"
+    ? t("creative_board_asset_category_personal", { defaultValue: "Personal" })
+    : assetCategory === "agent"
+      ? t("creative_board_asset_category_agent", { defaultValue: "Agent" })
+      : t("creative_board_asset_category_global", { defaultValue: "Global" });
   const gridSize = 28 * viewport.zoom;
+  const worldBounds = useMemo(() => getWorldBounds(board?.items ?? []), [board?.items]);
 
   const setViewport = (next: { x: number; y: number; zoom: number }, _immediate = false) => {
     const normalized = { x: Math.round(next.x), y: Math.round(next.y), zoom: zoomClamp(next.zoom) };
@@ -706,7 +768,7 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     rememberBoard();
     const itemType = asset.kind === "video" ? "video" : asset.kind === "media" ? "media" : asset.kind;
     const nextPosition = position ?? { x: 180 + (board.items.length % 4) * 380, y: 150 + Math.floor(board.items.length / 4) * 270 };
-    const nextItem: BoardItem = { id: clientId("item"), item_type: itemType, resource_type: asset.resourceType, resource_id: asset.id, position: { x: Math.max(0, Math.round(nextPosition.x)), y: Math.max(0, Math.round(nextPosition.y)) }, size: { width: 270, height: 246 } };
+    const nextItem: BoardItem = { id: clientId("item"), item_type: itemType, resource_type: asset.resourceType, resource_id: asset.id, position: { x: Math.round(nextPosition.x), y: Math.round(nextPosition.y) }, size: { width: 270, height: 246 } };
     setBoard((current) => current ? { ...current, items: current.items.concat(nextItem) } : current);
     setResourceId("");
   };
@@ -742,12 +804,12 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
   }, [boardOptions, t]);
 
   const navigateToBoard = useCallback((boardId: string) => {
-    const [basePath, query = ""] = location.split("?");
-    const params = new URLSearchParams(query);
+    const params = new URLSearchParams(routeSearch);
     params.set("project", projectName);
     params.set("board", boardId);
-    navigate(`${basePath}?${params.toString()}`);
-  }, [location, navigate, projectName]);
+    const pathname = location.split("?", 1)[0] || location;
+    navigate(`${pathname}?${params.toString()}`);
+  }, [location, navigate, projectName, routeSearch]);
 
   const createNewBoard = useCallback(async () => {
     if (creatingBoard) return;
@@ -803,13 +865,13 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
   }, [board, editingBoardName, t]);
 
   const openBoardInNewWindow = useCallback((boardId: string) => {
-    const [basePath, query = ""] = location.split("?");
-    const params = new URLSearchParams(query);
+    const params = new URLSearchParams(routeSearch);
     params.set("project", projectName);
     params.set("board", boardId);
-    window.open(window.location.origin + basePath + "?" + params.toString(), "_blank", "noopener,noreferrer");
+    const pathname = location.split("?", 1)[0] || location;
+    window.open(window.location.origin + pathname + "?" + params.toString(), "_blank", "noopener,noreferrer");
     setBoardActionsId(null);
-  }, [location, projectName]);
+  }, [location, projectName, routeSearch]);
 
   const duplicateBoard = useCallback(async (option: BoardOption) => {
     setBoardActionsId(null);
@@ -863,6 +925,20 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     setSelectedIds((ids) => extend ? ids.includes(item.id) ? ids.filter((id) => id !== item.id) : ids.concat(item.id) : ids.length === 1 && ids[0] === item.id ? [] : [item.id]);
   };
 
+  const startResize = (event: ReactPointerEvent<HTMLButtonElement>, item: BoardItem, corner: ResizeCorner) => {
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeRef.current = {
+      id: item.id,
+      corner,
+      startX: event.clientX,
+      startY: event.clientY,
+      position: { ...item.position },
+      size: { ...item.size },
+    };
+    setSelectedIds([item.id]);
+  };
+
   const onCanvasDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 && event.button !== 1) return;
     const onNode = (event.target as HTMLElement).closest("[data-board-node]");
@@ -875,33 +951,83 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     panRef.current = { startX: event.clientX, startY: event.clientY, originX: viewportRef.current.x, originY: viewportRef.current.y };
   };
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (drag) {
+    const resize = resizeRef.current;
+    if (resize) {
       if (!dragHistoryRecordedRef.current) {
         rememberBoard();
         dragHistoryRecordedRef.current = true;
       }
       const zoom = viewportRef.current.zoom;
-      drag.x = Math.max(0, Math.round(drag.x + (event.clientX - drag.startX) / zoom));
-      drag.y = Math.max(0, Math.round(drag.y + (event.clientY - drag.startY) / zoom));
-      drag.startX = event.clientX;
-      drag.startY = event.clientY;
-      setBoard((current) => current ? { ...current, items: current.items.map((item) => item.id === drag.id ? { ...item, position: { x: drag.x, y: drag.y } } : item) } : current);
+      const dx = (event.clientX - resize.startX) / zoom;
+      const dy = (event.clientY - resize.startY) / zoom;
+      const minWidth = 120;
+      const minHeight = 120;
+      let width = resize.size.width;
+      let height = resize.size.height;
+      let x = resize.position.x;
+      let y = resize.position.y;
+      if (resize.corner.includes("e")) width = Math.max(minWidth, resize.size.width + dx);
+      if (resize.corner.includes("s")) height = Math.max(minHeight, resize.size.height + dy);
+      if (resize.corner.includes("w")) {
+        width = Math.max(minWidth, resize.size.width - dx);
+        x = resize.position.x + resize.size.width - width;
+      }
+      if (resize.corner.includes("n")) {
+        height = Math.max(minHeight, resize.size.height - dy);
+        y = resize.position.y + resize.size.height - height;
+      }
+      setBoard((current) => current ? { ...current, items: current.items.map((item) => item.id === resize.id ? { ...item, position: { x: Math.round(x), y: Math.round(y) }, size: { width: Math.round(width), height: Math.round(height) } } : item) } : current);
+      return;
+    }
+    const drag = dragRef.current;
+    if (drag && event.pointerId === drag.pointerId) {
+      const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+      if (!drag.active) {
+        if (distance < BOARD_DRAG_THRESHOLD) return;
+        drag.active = true;
+        suppressNextNodeClickRef.current = true;
+        setDraggingItemIds(drag.items.map((item) => item.id));
+      }
+      if (!dragHistoryRecordedRef.current) {
+        rememberBoard();
+        dragHistoryRecordedRef.current = true;
+      }
+      const zoom = viewportRef.current.zoom;
+      const dx = (event.clientX - drag.startX) / zoom;
+      const dy = (event.clientY - drag.startY) / zoom;
+      setBoard((current) => current ? {
+        ...current,
+        items: current.items.map((item) => {
+          const start = drag.items.find((candidate) => candidate.id === item.id);
+          if (!start) return item;
+          return {
+            ...item,
+            position: {
+              x: Math.round(start.x + dx),
+              y: Math.round(start.y + dy),
+            },
+          };
+        }),
+      } : current);
       return;
     }
     const pan = panRef.current;
     if (pan) setViewport({ x: pan.originX + event.clientX - pan.startX, y: pan.originY + event.clientY - pan.startY, zoom: viewportRef.current.zoom });
   };
   const onPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (resizeRef.current) {
+      resizeRef.current = null;
+      dragHistoryRecordedRef.current = false;
+    }
     const drag = dragRef.current;
-    if (drag) {
+    if (drag && event.pointerId === drag.pointerId) {
       dragRef.current = null;
       dragHistoryRecordedRef.current = false;
+      setDraggingItemIds([]);
       // The persistence controller observes the updated board snapshot and saves the final position after debounce.
-    } else if (panRef.current) {
-      panRef.current = null;
     }
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (panRef.current) panRef.current = null;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId);
   };
   const onCanvasDrop = (event: ReactDragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1222,11 +1348,11 @@ if (event.key === "Escape") closeBoardMenu();
                   const Icon = iconFor(item.item_type);
                   const selected = selectedIds.includes(item.id);
                   const asset = assetsByReference.get(assetKey(item.resource_type, item.resource_id)) || assetsByReference.get(item.resource_id);
-                  const source = assetSourceUrl(asset);
+                  const source = sidebarAssetSourceUrl(asset);
                   return (
                     <button type="button" key={item.id} onClick={() => selectItem(item, false)} className={"group flex min-h-10 w-full items-center gap-2 rounded-lg border px-1.5 py-1 text-left transition-colors " + (selected ? "border-transparent bg-[#f3f3f5]" : "border-transparent hover:bg-[#f8f8fa]")}>
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-[#e4e8ef] bg-[#f5f6f8]" style={{ color: colorFor(item.item_type) }}>
-                        {source ? <img src={source} alt="" className="h-full w-full object-cover" /> : <Icon className="h-3.5 w-3.5" aria-hidden />}
+                        {source ? <img src={source} alt="" draggable={false} onDragStart={(event) => event.preventDefault()} className="h-full w-full object-cover" /> : <Icon className="h-3.5 w-3.5" aria-hidden />}
                       </span>
                       <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-[#4b5563]">{nodeTitle(item, names)}</span>
                       <MoreHorizontal className="h-3.5 w-3.5 shrink-0 text-[#a5afbd] opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />
@@ -1242,16 +1368,27 @@ if (event.key === "Escape") closeBoardMenu();
                 <span className="text-[10px] font-semibold text-[#475569]">{t("creative_board_assets", { defaultValue: "Unified assets" })}</span>
                 <button type="button" onClick={() => setSearchOpen((value) => !value)} className="focus-ring rounded p-0.5 text-[#3f4650]" aria-label={t("creative_board_search_assets", { defaultValue: "Search assets" })}><Search className="h-4 w-4" aria-hidden /></button>
               </div>
-              <div className="space-y-1.5 px-1 pb-2">
-                <select value={assetSourceFilter} onChange={(event) => setAssetSourceFilter(event.target.value as AssetSource | "all")} aria-label={t("creative_board_asset_source_filter", { defaultValue: "Asset source" })} className="w-full rounded-md border border-[#dfe5ed] bg-white px-2 py-1.5 text-[10px] text-[#64748b]">
-                  <option value="all">{t("creative_board_asset_source_all", { defaultValue: "All sources" })}</option>
-                  {ASSET_SOURCES.filter((source) => source !== "all").map((source) => (
-                    <option key={source} value={source}>{t("creative_board_asset_source_" + source, { defaultValue: source === "project" ? "Current project" : source === "global" ? "Global library" : "Media library" })}</option>
+              <div className="space-y-2 px-1 pb-2">
+                <div className="grid grid-cols-3 gap-1 rounded-lg bg-[#f4f6f9] p-1" role="tablist" aria-label={t("creative_board_asset_category", { defaultValue: "Asset category" })}>
+                  {ASSET_CATEGORIES.map((category) => (
+                    <button
+                      key={category}
+                      type="button"
+                      role="tab"
+                      aria-selected={assetCategory === category}
+                      onClick={() => {
+                        setAssetCategory(category);
+                        setAssetTypeFilter("all");
+                      }}
+                      className={"rounded-md px-1.5 py-1.5 text-[10px] font-medium transition-colors " + (assetCategory === category ? "bg-white text-[#5145b6] shadow-sm" : "text-[#7d8795] hover:text-[#475569]")}
+                    >
+                      {category === "global" ? <Globe2 className="mr-1 inline h-3 w-3" aria-hidden /> : null}{t("creative_board_asset_category_" + category, { defaultValue: category === "personal" ? "Personal" : category === "agent" ? "Agent" : "Global" })}
+                    </button>
                   ))}
-                </select>
+                </div>
                 <select value={assetTypeFilter} onChange={(event) => setAssetTypeFilter(event.target.value as AssetKind | "all")} aria-label={t("creative_board_asset_type_filter", { defaultValue: "Asset type" })} className="w-full rounded-md border border-[#dfe5ed] bg-white px-2 py-1.5 text-[10px] text-[#64748b]">
                   <option value="all">{t("creative_board_asset_type_all", { defaultValue: "All types" })}</option>
-                  {ASSET_TYPES.filter((type) => type !== "all").map((type) => (
+                  {ASSET_TYPES.filter((type) => type !== "all" && (assetCategory !== "agent" || ["character", "scene", "prop"].includes(type))).map((type) => (
                     <option key={type} value={type}>{t("creative_board_type_" + type, { defaultValue: type })}</option>
                   ))}
                 </select>
@@ -1259,15 +1396,15 @@ if (event.key === "Escape") closeBoardMenu();
               <div className="min-h-0 overflow-y-auto px-1 pb-2">
                 {filteredAssets.map((asset) => {
                   const Icon = assetIcon(asset.kind);
-                  const source = assetSourceUrl(asset);
+                  const source = sidebarAssetSourceUrl(asset);
                   return (
                     <button type="button" key={asset.source + ":" + asset.resourceType + ":" + asset.id} draggable onDragStart={(event) => event.dataTransfer.setData("text/creative-board-asset", JSON.stringify({ id: asset.id, source: asset.source }))} onClick={() => void importAndAddAsset(asset)} disabled={saving} className="group mb-1.5 flex w-full items-center gap-2 rounded-lg border border-[#edf0f4] p-1.5 text-left hover:border-[#c8c1ff] hover:bg-[#faf9ff] disabled:opacity-60">
                       <span className="h-9 w-10 shrink-0 overflow-hidden rounded bg-[#f0f2f6]">
-                        {source ? <img src={source} alt="" className="h-full w-full object-cover" /> : <span className="flex h-full items-center justify-center" style={{ color: colorFor(asset.kind) }}><Icon className="h-4 w-4" aria-hidden /></span>}
+                        {source ? <img src={source} alt="" draggable={false} onDragStart={(event) => event.preventDefault()} className="h-full w-full object-cover" /> : <span className="flex h-full items-center justify-center" style={{ color: colorFor(asset.kind) }}><Icon className="h-4 w-4" aria-hidden /></span>}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[10px] font-medium text-[#334155]">{asset.name}</span>
-                        <span className="mt-0.5 block truncate text-[9px] text-[#94a3b8]">{t("creative_board_asset_source_" + asset.source, { defaultValue: asset.source === "project" ? "Current project" : asset.source === "global" ? "Global library" : "Media library" })} · {t("creative_board_type_" + asset.kind, { defaultValue: asset.kind })}</span>
+                        <span className="mt-0.5 block truncate text-[9px] text-[#94a3b8]">{activeAssetCategoryLabel} · {t("creative_board_type_" + asset.kind, { defaultValue: asset.kind })}</span>
                       </span>
                       {asset.source === "global" ? <Upload className="h-3 w-3 shrink-0 text-[#6254d9]" aria-hidden /> : <Plus className="h-3 w-3 shrink-0 text-[#8a96a7] opacity-0 group-hover:opacity-100" aria-hidden />}
                     </button>
@@ -1286,13 +1423,13 @@ if (event.key === "Escape") closeBoardMenu();
         </button>
       )}
       <section className="relative flex min-w-0 flex-1 flex-col bg-[#f5f8fc]">
-{error ? <div className="z-20 flex items-center justify-between border-b border-[#e9c2c2] bg-[#fff8f8] px-4 py-2 text-[10px] text-[#a34a4a]"><span>{error}</span><button type="button" onClick={() => void load()} className="underline">{t("creative_board_retry")}</button></div> : null}<div ref={canvasRef} onPointerDown={onCanvasDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheel} onDoubleClick={(event) => { if ((event.target as HTMLElement).closest("[data-board-node], button, input, [role=menu]")) return; setAddMenuOpen(true); }} onDragOver={(event) => event.preventDefault()} onDrop={onCanvasDrop} className={"relative min-h-0 flex-1 overflow-hidden " + (activeTool === "pan" ? "cursor-grab" : "cursor-default")} style={gridVisible ? { backgroundImage: "linear-gradient(#dce4ee 1px, transparent 1px), linear-gradient(90deg, #dce4ee 1px, transparent 1px)", backgroundSize: gridSize + "px " + gridSize + "px", backgroundPosition: viewport.x % gridSize + "px " + viewport.y % gridSize + "px" } : undefined}>{loading ? <div className="flex h-full items-center justify-center text-[11px] text-[#8a96a7]"><Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />{t("creative_board_loading")}</div> : board ? <div className="absolute left-0 top-0" style={{ width: CANVAS_SIZE.width, height: CANVAS_SIZE.height, transform: "translate(" + viewport.x + "px, " + viewport.y + "px) scale(" + viewport.zoom + ")", transformOrigin: "0 0" }}><svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={CANVAS_SIZE.width} height={CANVAS_SIZE.height} aria-label={t("creative_board_connections", { defaultValue: "Board connections" })}><defs><marker id="creative-board-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#a8b3c3" /></marker></defs>{board.edges.map((edge) => { const source = board.items.find((item) => item.id === edge.source_item_id); const target = board.items.find((item) => item.id === edge.target_item_id); return source && target ? <path key={edge.id} d={edgePath(source, target)} fill="none" stroke="#a8b3c3" strokeWidth="2.5" markerEnd="url(#creative-board-arrow)" className="pointer-events-auto cursor-pointer hover:stroke-[#6254d9]" onClick={() => void removeEdge(edge.id)} /> : null; })}</svg>{board.items.map((item) => { const Icon = iconFor(item.item_type); const selected = selectedIds.includes(item.id); const itemAsset = assetsByReference.get(assetKey(item.resource_type, item.resource_id)) || assetsByReference.get(item.resource_id); return <article key={item.id} data-board-node className={"group absolute overflow-hidden rounded-xl border bg-white shadow-[0_8px_24px_rgba(53,68,91,0.12)] " + (selected ? "border-[#6254d9] ring-2 ring-[#6254d9]/20" : "border-[#d9e0ea] hover:shadow-[0_12px_30px_rgba(53,68,91,0.16)]")} style={{ left: item.position.x, top: item.position.y, width: item.size.width, minHeight: item.size.height }} onPointerDown={(event) => { if (event.button !== 0 || activeTool === "pan") return; event.stopPropagation(); if (connectMode) return; const draggedItem = event.altKey ? duplicateItems(event.ctrlKey || event.metaKey, [item])[0] ?? item : item; dragRef.current = { id: draggedItem.id, startX: event.clientX, startY: event.clientY, x: draggedItem.position.x, y: draggedItem.position.y }; event.currentTarget.setPointerCapture(event.pointerId); }} onClick={(event) => { if (activeTool === "pan") return; event.stopPropagation(); selectItem(item, event.shiftKey); }} onDoubleClick={() => item.resource_type === "media_asset" ? navigate("/media?asset=" + encodeURIComponent(item.resource_id)) : navigate("/timeline")}><div className="flex items-center gap-2 border-b border-[#edf0f4] px-3 py-2"><span className="flex h-5 w-5 items-center justify-center rounded" style={{ background: colorFor(item.item_type) + "20", color: colorFor(item.item_type) }}><Icon className="h-3 w-3" aria-hidden /></span><span className="min-w-0 flex-1 truncate text-[10px] font-semibold text-[#334155]">{nodeTitle(item, names)}</span><button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); void removeItem(item); }} aria-label={t("creative_board_delete_item")} className="rounded p-0.5 text-[#a5afbd] opacity-0 group-hover:opacity-100"><Trash2 className="h-3 w-3" aria-hidden /></button></div><div className="h-[154px] overflow-hidden border-b border-[#edf0f4]">{previewFor(item, itemAsset)}</div><div className="flex items-center justify-between px-3 py-2"><span className="truncate text-[9px] text-[#94a3b8]">{t("creative_board_type_" + item.item_type)}</span><span className="flex items-center gap-1 text-[9px] text-[#94a3b8]"><Link2 className="h-3 w-3" aria-hidden />{board.edges.filter((edge) => edge.source_item_id === item.id || edge.target_item_id === item.id).length}</span></div><span className="absolute -left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white bg-[#a8b3c3] shadow-sm" /><span className="absolute -right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white bg-[#a8b3c3] shadow-sm" /></article>; })}</div> : null}
+{error ? <div className="z-20 flex items-center justify-between border-b border-[#e9c2c2] bg-[#fff8f8] px-4 py-2 text-[10px] text-[#a34a4a]"><span>{error}</span><button type="button" onClick={() => void load()} className="underline">{t("creative_board_retry")}</button></div> : null}<div ref={canvasRef} onPointerDown={onCanvasDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheel} onDoubleClick={(event) => { if ((event.target as HTMLElement).closest("[data-board-node], button, input, [role=menu]")) return; setAddMenuOpen(true); }} onDragOver={(event) => event.preventDefault()} onDrop={onCanvasDrop} data-testid="creative-board-canvas" className={"relative min-h-0 flex-1 overflow-hidden " + (activeTool === "pan" ? "cursor-grab" : "cursor-default")} style={gridVisible ? { backgroundImage: "linear-gradient(#dce4ee 1px, transparent 1px), linear-gradient(90deg, #dce4ee 1px, transparent 1px)", backgroundSize: gridSize + "px " + gridSize + "px", backgroundPosition: viewport.x % gridSize + "px " + viewport.y % gridSize + "px" } : undefined}>{loading ? <div className="flex h-full items-center justify-center text-[11px] text-[#8a96a7]"><Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />{t("creative_board_loading")}</div> : board ? <div className="absolute" style={{ left: worldBounds.minX, top: worldBounds.minY, width: worldBounds.width, height: worldBounds.height, overflow: "visible", transform: "translate(" + (viewport.x - worldBounds.minX) + "px, " + (viewport.y - worldBounds.minY) + "px) scale(" + viewport.zoom + ")", transformOrigin: "0 0" }}><svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={worldBounds.width} height={worldBounds.height} aria-label={t("creative_board_connections", { defaultValue: "Board connections" })}><defs><marker id="creative-board-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#a8b3c3" /></marker></defs>{board.edges.map((edge) => { const source = board.items.find((item) => item.id === edge.source_item_id); const target = board.items.find((item) => item.id === edge.target_item_id); return source && target ? <path key={edge.id} d={edgePath(source, target)} fill="none" stroke="#a8b3c3" strokeWidth="2.5" markerEnd="url(#creative-board-arrow)" className="pointer-events-auto cursor-pointer hover:stroke-[#6254d9]" onClick={() => void removeEdge(edge.id)} /> : null; })}</svg>{board.items.map((item) => { const Icon = iconFor(item.item_type); const selected = selectedIds.includes(item.id); const dragging = draggingItemIds.includes(item.id); const itemAsset = assetsByReference.get(assetKey(item.resource_type, item.resource_id)) || assetsByReference.get(item.resource_id); return <article key={item.id} data-testid={`creative-board-item-${item.id}`} data-board-node className={"group absolute select-none overflow-hidden rounded-xl border bg-white " + (dragging ? "z-30 cursor-grabbing shadow-[0_14px_34px_rgba(53,68,91,0.2)] " : "shadow-[0_8px_24px_rgba(53,68,91,0.12)] ") + (selected ? "border-[#6254d9] ring-2 ring-[#6254d9]/20" : "border-[#d9e0ea] hover:shadow-[0_12px_30px_rgba(53,68,91,0.16)]")} style={{ left: item.position.x, top: item.position.y, width: item.size.width, minHeight: item.size.height }} onPointerDown={(event) => { if (event.button !== 0 || activeTool === "pan") return; event.preventDefault(); event.stopPropagation(); if (connectMode) return; const draggedItem = event.altKey ? duplicateItems(event.ctrlKey || event.metaKey, [item])[0] ?? item : item; const dragItems = event.altKey ? [draggedItem] : selectedIds.includes(item.id) && selectedItems.length > 0 ? selectedItems : [draggedItem]; dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, active: false, items: dragItems.map((candidate) => ({ id: candidate.id, x: candidate.position.x, y: candidate.position.y })) }; canvasRef.current?.setPointerCapture?.(event.pointerId); }} onClick={(event) => { if (activeTool === "pan") return; event.stopPropagation(); if (suppressNextNodeClickRef.current) { suppressNextNodeClickRef.current = false; return; } selectItem(item, event.shiftKey); }} onDoubleClick={() => item.resource_type === "media_asset" ? navigate("/media?asset=" + encodeURIComponent(item.resource_id)) : navigate("/timeline")}><div className="flex items-center gap-2 border-b border-[#edf0f4] px-3 py-2"><span className="flex h-5 w-5 items-center justify-center rounded" style={{ background: colorFor(item.item_type) + "20", color: colorFor(item.item_type) }}><Icon className="h-3 w-3" aria-hidden /></span><span className="min-w-0 flex-1 truncate text-[10px] font-semibold text-[#334155]">{nodeTitle(item, names)}</span><button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); void removeItem(item); }} aria-label={t("creative_board_delete_item")} className="rounded p-0.5 text-[#a5afbd] opacity-0 group-hover:opacity-100"><Trash2 className="h-3 w-3" aria-hidden /></button></div><div className="h-[154px] overflow-hidden border-b border-[#edf0f4]">{previewFor(item, itemAsset)}</div><div className="flex items-center justify-between px-3 py-2"><span className="truncate text-[9px] text-[#94a3b8]">{t("creative_board_type_" + item.item_type)}</span><span className="flex items-center gap-1 text-[9px] text-[#94a3b8]"><Link2 className="h-3 w-3" aria-hidden />{board.edges.filter((edge) => edge.source_item_id === item.id || edge.target_item_id === item.id).length}</span></div><span className="absolute -left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white bg-[#a8b3c3] shadow-sm" /><span className="absolute -right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white bg-[#a8b3c3] shadow-sm" /></article>; })}{selectedItem && draggingItemIds.length === 0 ? <BoardSelectionOverlay name={nodeTitle(selectedItem, names)} position={selectedItem.position} size={selectedItem.size} zoom={viewport.zoom} multiSelected={selectedItems.length > 1} onResizeStart={(event, corner) => startResize(event, selectedItem, corner)} onDuplicate={() => { duplicateItems(false, [selectedItem]); }} onDelete={() => removeItem(selectedItem)} onOpenSkills={() => openSkills(selectedItem)} labels={{ openTools: t("creative_board_selection_tools", { defaultValue: "Creative tools" }), duplicate: t("creative_board_duplicate_item", { defaultValue: "Duplicate element" }), delete: t("creative_board_delete_item"), resize: (corner) => t("creative_board_resize", { defaultValue: "Resize {{corner}}", corner }) }} /> : null}</div> : null}
         <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex items-end px-4 sm:px-6" onPointerDown={(event) => event.stopPropagation()}>
           <div className="pointer-events-auto flex shrink-0 items-center gap-1 rounded-xl border border-[#dce3ec] bg-white/95 p-1.5 shadow-[0_8px_24px_rgba(50,63,82,0.16)] backdrop-blur-sm">
             <button type="button" onClick={fitView} className="focus-ring rounded-lg p-1.5 text-[#64748b] hover:bg-[#f5f7fa]" aria-label={t("creative_board_fit", { defaultValue: "Arrange canvas" })} title={t("creative_board_fit", { defaultValue: "Arrange canvas" })}><Maximize2 className="h-3.5 w-3.5" aria-hidden /></button>
             <div className="relative">
               <button type="button" onClick={() => setMinimapOpen((open) => !open)} className={"focus-ring rounded-lg p-1.5 " + (minimapOpen ? "bg-[#f0edff] text-[#6254d9]" : "text-[#64748b] hover:bg-[#f5f7fa]")} aria-label={t("creative_board_minimap", { defaultValue: "Canvas minimap" })} aria-expanded={minimapOpen} title={t("creative_board_minimap", { defaultValue: "Canvas minimap" })}><PanelLeft className="h-3.5 w-3.5" aria-hidden /></button>
-              {minimapOpen ? <div className="absolute bottom-[calc(100%+8px)] left-1/2 z-40 -translate-x-1/2 rounded-xl border border-[#dce3ec] bg-white p-2 shadow-[0_12px_30px_rgba(50,63,82,0.18)]"><div className="relative h-24 w-40 overflow-hidden rounded-lg border border-[#e3e8ef] bg-[#f8fafc]" aria-label={t("creative_board_minimap", { defaultValue: "Canvas minimap" })}>{(board?.items ?? []).map((item) => <span key={item.id} className="absolute h-2.5 w-4 rounded-sm bg-[#b9b1f4]" style={{ left: Math.min(94, Math.max(2, item.position.x / CANVAS_SIZE.width * 100)) + "%", top: Math.min(92, Math.max(2, item.position.y / CANVAS_SIZE.height * 100)) + "%" }} />)}</div></div> : null}
+              {minimapOpen ? <div className="absolute bottom-[calc(100%+8px)] left-1/2 z-40 -translate-x-1/2 rounded-xl border border-[#dce3ec] bg-white p-2 shadow-[0_12px_30px_rgba(50,63,82,0.18)]"><div className="relative h-24 w-40 overflow-hidden rounded-lg border border-[#e3e8ef] bg-[#f8fafc]" aria-label={t("creative_board_minimap", { defaultValue: "Canvas minimap" })}>{(board?.items ?? []).map((item) => <span key={item.id} className="absolute h-2.5 w-4 rounded-sm bg-[#b9b1f4]" style={{ left: Math.min(94, Math.max(2, (item.position.x - worldBounds.minX) / worldBounds.width * 100)) + "%", top: Math.min(92, Math.max(2, (item.position.y - worldBounds.minY) / worldBounds.height * 100)) + "%" }} />)}</div></div> : null}
             </div>
             <button type="button" onClick={() => setConnectMode((value) => !value)} className={"focus-ring rounded-lg p-1.5 " + (connectMode ? "bg-[#f0edff] text-[#6254d9]" : "text-[#64748b] hover:bg-[#f5f7fa]")} aria-label={t("creative_board_connections", { defaultValue: "Show node connections" })} title={t("creative_board_connections", { defaultValue: "Show node connections" })}><Link2 className="h-3.5 w-3.5" aria-hidden /></button>
             <button type="button" onClick={() => setGridVisible((value) => !value)} className={"focus-ring rounded-lg p-1.5 " + (gridVisible ? "bg-[#f0edff] text-[#6254d9]" : "text-[#64748b] hover:bg-[#f5f7fa]")} aria-label={t("creative_board_grid", { defaultValue: "Snap to grid" })} title={t("creative_board_grid", { defaultValue: "Snap to grid" })}><Grid3X3 className="h-3.5 w-3.5" aria-hidden /></button>
@@ -1336,7 +1473,7 @@ if (event.key === "Escape") closeBoardMenu();
             </div>
             <div className="relative">
               <button type="button" onClick={() => { setRoleLibraryOpen((open) => !open); setLibraryOpen(false); }} className={"focus-ring rounded-lg p-1.5 " + (roleLibraryOpen ? "bg-[#f0edff] text-[#6254d9]" : "text-[#64748b] hover:bg-[#f5f7fa]")} aria-label={t("creative_board_role_library", { defaultValue: "Character library" })} aria-expanded={roleLibraryOpen} title={t("creative_board_role_library", { defaultValue: "Character library" })}><UserRound className="h-3.5 w-3.5" aria-hidden /></button>
-              {roleLibraryOpen ? <div className="absolute bottom-[calc(100%+8px)] left-1/2 z-40 w-48 -translate-x-1/2 rounded-xl border border-[#dce3ec] bg-white p-2.5 shadow-[0_12px_30px_rgba(50,63,82,0.18)]"><div className="mb-2 px-2 text-[11px] font-semibold text-[#334155]">{t("creative_board_role_library", { defaultValue: "Character library" })}</div><button type="button" onClick={() => { setLeftOpen(true); setLeftTab("assets"); setAssetTypeFilter("character"); setRoleLibraryOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[11px] text-[#475569] hover:bg-[#f8fafc]"><UserRound className="h-3.5 w-3.5" aria-hidden />{t("creative_board_role_assets", { defaultValue: "Characters" })}</button></div> : null}
+              {roleLibraryOpen ? <div className="absolute bottom-[calc(100%+8px)] left-1/2 z-40 w-48 -translate-x-1/2 rounded-xl border border-[#dce3ec] bg-white p-2.5 shadow-[0_12px_30px_rgba(50,63,82,0.18)]"><div className="mb-2 px-2 text-[11px] font-semibold text-[#334155]">{t("creative_board_role_library", { defaultValue: "Character library" })}</div><button type="button" onClick={() => { setLeftOpen(true); setLeftTab("assets"); setAssetCategory("agent"); setAssetTypeFilter("character"); setRoleLibraryOpen(false); }} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-[11px] text-[#475569] hover:bg-[#f8fafc]"><UserRound className="h-3.5 w-3.5" aria-hidden />{t("creative_board_role_assets", { defaultValue: "Characters" })}</button></div> : null}
             </div>
             <div className="relative">
               <button type="button" onClick={() => setHistoryOpen((open) => !open)} className={"focus-ring rounded-lg p-1.5 " + (historyOpen ? "bg-[#f0edff] text-[#6254d9]" : "text-[#64748b] hover:bg-[#f5f7fa]")} aria-label={t("creative_board_history", { defaultValue: "History" })} aria-expanded={historyOpen} title={t("creative_board_history", { defaultValue: "History" })}><History className="h-3.5 w-3.5" aria-hidden /></button>

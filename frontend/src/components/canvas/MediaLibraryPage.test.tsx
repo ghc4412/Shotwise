@@ -3,10 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MediaLibraryPage } from "./MediaLibraryPage";
 import { API } from "@/api";
 
-const locationState = vi.hoisted(() => ({ value: "" }));
+const locationState = vi.hoisted(() => ({ value: "", navigate: vi.fn() }));
 const translate = vi.hoisted(() => (key: string) => key);
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: translate }) }));
-vi.mock("wouter", () => ({ useLocation: () => [locationState.value, vi.fn()] }));
+vi.mock("wouter", () => ({ useLocation: () => [locationState.value, locationState.navigate] }));
 vi.mock("@/api", () => ({ API: {
   listMediaAssets: vi.fn(), listCreationResources: vi.fn(), getMediaAssetContentUrl: vi.fn(() => "/media"),
   uploadMediaAsset: vi.fn(), getMediaAsset: vi.fn(), bindMediaAsset: vi.fn(), archiveMediaAsset: vi.fn(),
@@ -18,6 +18,7 @@ describe("MediaLibraryPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     locationState.value = "";
+    locationState.navigate.mockReset();
     vi.mocked(API.listMediaAssets).mockResolvedValue({ items: [asset] });
     vi.mocked(API.listCreationResources).mockResolvedValue({ items: [{ id: "character-1", type: "character", label: "Ava" }] });
     vi.mocked(API.getMediaAsset).mockResolvedValue({ ...asset, bindings: [{ id: "binding-1", binding_kind: "character", target_id: "character-1", purpose: "reference" }] });
@@ -48,5 +49,14 @@ describe("MediaLibraryPage", () => {
 
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(screen.getByRole("dialog")).toHaveTextContent("hero.png");
+  });
+
+  it("navigates to the creative board within the current project", async () => {
+    render(<MediaLibraryPage projectName="demo" />);
+
+    await screen.findByText("hero.png");
+    fireEvent.click(screen.getByRole("button", { name: "media_library_open_board" }));
+
+    expect(locationState.navigate).toHaveBeenCalledWith("/creative-board");
   });
 });

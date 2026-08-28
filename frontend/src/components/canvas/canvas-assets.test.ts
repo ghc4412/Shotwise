@@ -83,6 +83,29 @@ describe("canvas asset catalog", () => {
     expect(catalog.assets.find((asset) => asset.name === "长剑")?.reference.id).toBe("长剑");
   });
 
+  it("uses character avatars in sidebars and design sheets on the canvas", async () => {
+    const loaders = makeLoaders();
+    loaders.characters = async () => ({
+      林冲: {
+        character_avatar: "characters/林冲_avatar.png",
+        character_sheet: "characters/林冲.png",
+        reference_image: "characters/refs/林冲.png",
+        description: "禁军教头",
+      },
+      鲁智深: { character_sheet: "characters/鲁智深.png", description: "花和尚" },
+    });
+
+    const catalog = await loadCanvasAssets(loaders, "demo-project");
+    const hero = catalog.assets.find((asset) => asset.name === "林冲");
+    const monk = catalog.assets.find((asset) => asset.name === "鲁智深");
+
+    expect(hero?.previewUrl).toBe("characters/林冲_avatar.png");
+    expect(hero?.sidebarPreviewUrl).toBe("characters/林冲_avatar.png");
+    expect(hero?.canvasPreviewUrl).toBe("characters/林冲.png");
+    expect(monk?.sidebarPreviewUrl).toBe("characters/鲁智深.png");
+    expect(monk?.canvasPreviewUrl).toBe("characters/鲁智深.png");
+  });
+
   it("uses generated project sheets as previews, with character reference-image fallback", async () => {
     const loaders = makeLoaders();
     loaders.characters = async () => ({

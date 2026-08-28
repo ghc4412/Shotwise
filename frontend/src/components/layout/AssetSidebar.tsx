@@ -33,7 +33,6 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   meta?: number;
-  newTab?: boolean;
 }
 
 /**
@@ -98,7 +97,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
       : [
           { key: "skills", path: "/skills", label: t("dashboard:workspace_nav_skills"), icon: Workflow },
           { key: "media", path: "/media", label: t("dashboard:workspace_nav_media"), icon: Package },
-          { key: "board", path: "/creative-board", label: t("dashboard:workspace_nav_board"), icon: LayoutDashboard, newTab: true },
+          { key: "board", path: "/creative-board", label: t("dashboard:workspace_nav_board"), icon: LayoutDashboard },
         ]),
     // 演示项目没有可切片的源文件，且后端不存在该项目，隐藏入口而非渲染必然报错的空页
     ...(demoMode
@@ -158,10 +157,6 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
         (ep) => !search || ep.title.includes(search) || String(ep.episode).includes(search),
       );
 
-  if (typeof window !== "undefined" && window.location.pathname.includes("/creative-board")) {
-    return null;
-  }
-
   return (
     <aside
       className={`flex flex-col overflow-hidden ${className ?? ""}`}
@@ -183,20 +178,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
             <button
               key={item.key}
               type="button"
-              onClick={() => {
-                if (!item.newTab) {
-                  setLocation(item.path);
-                  return;
-                }
-                const projectPrefix =
-                  window.location.pathname.match(/^(\/app\/projects\/[^/]+)/)?.[1] ??
-                  (currentProjectName ? "/app/projects/" + encodeURIComponent(currentProjectName) : "");
-                if (!projectPrefix) {
-                  setLocation(item.path);
-                  return;
-                }
-                window.open(projectPrefix + item.path, "_blank", "noopener,noreferrer");
-              }}
+              onClick={() => setLocation(item.path)}
               title={collapsed ? item.label : ""}
               aria-label={collapsed ? item.label : undefined}
               className="relative mb-px flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors focus-ring hover:bg-[var(--color-shell-hover)]"

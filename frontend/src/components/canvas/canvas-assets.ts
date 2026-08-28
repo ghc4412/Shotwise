@@ -44,8 +44,12 @@ export interface CanvasAsset {
   source: CanvasAssetSource;
   kind: CanvasAssetKind;
   name: string;
-  /** Media and image assets use this URL for thumbnails/previews. */
+  /** Backwards-compatible sidebar preview URL. */
   previewUrl: string | null;
+  /** Compact preview used by asset/sidebar lists. */
+  sidebarPreviewUrl: string | null;
+  /** Larger/complete preview used by items rendered on the canvas. */
+  canvasPreviewUrl: string | null;
   mimeType?: string;
   projectName?: string;
   reference: CanvasAssetReference;
@@ -140,34 +144,49 @@ const kindFromRecord = (record: Record<string, unknown>, fallback?: CanvasAssetK
     fallback,
   );
 
-const PROJECT_PREVIEW_FIELDS: Partial<Record<CanvasAssetKind, string[]>> = {
-  // AI 生成的定型图是项目角色在画布中的首选预览；用户上传的参考图
-  // 作为没有定型图时的可用回退。
+const COMMON_PREVIEW_FIELDS = [
+  "preview_url",
+  "previewUrl",
+  "thumbnail_url",
+  "thumbnailUrl",
+  "image_url",
+  "imageUrl",
+  "file_url",
+  "fileUrl",
+  "download_url",
+  "downloadUrl",
+  "image_path",
+  "video_path",
+  "file_path",
+  "path",
+  "url",
+];
+
+const SIDEBAR_PREVIEW_FIELDS: Partial<Record<CanvasAssetKind, string[]>> = {
+  character: ["character_avatar", "characterAvatar", "avatar_url", "avatarUrl", "portrait_url", "portraitUrl"],
+};
+
+const CANVAS_PREVIEW_FIELDS: Partial<Record<CanvasAssetKind, string[]>> = {
   character: ["character_sheet", "characterSheet", "reference_image", "referenceImage"],
   scene: ["scene_sheet", "sceneSheet"],
   prop: ["prop_sheet", "propSheet"],
   product: ["product_sheet", "productSheet"],
 };
 
-const previewUrlFromRecord = (record: Record<string, unknown>, kind: CanvasAssetKind): string | null =>
-  firstString(record, [
-    ...(PROJECT_PREVIEW_FIELDS[kind] ?? []),
-    "preview_url",
-    "previewUrl",
-    "thumbnail_url",
-    "thumbnailUrl",
-    "image_url",
-    "imageUrl",
-    "file_url",
-    "fileUrl",
-    "download_url",
-    "downloadUrl",
-    "image_path",
-    "video_path",
-    "file_path",
-    "path",
-    "url",
-  ]) ?? null;
+const previewUrlFromRecord = (
+  record: Record<string, unknown>,
+  kind: CanvasAssetKind,
+  fields: Partial<Record<CanvasAssetKind, string[]>>,
+): string | null => firstString(record, [...(fields[kind] ?? []), ...COMMON_PREVIEW_FIELDS]) ?? null;
+
+const previewUrlsFromRecord = (record: Record<string, unknown>, kind: CanvasAssetKind) => {
+  const sidebarPreviewUrl = previewUrlFromRecord(record, kind, SIDEBAR_PREVIEW_FIELDS);
+  const canvasPreviewUrl = previewUrlFromRecord(record, kind, CANVAS_PREVIEW_FIELDS);
+  return {
+    sidebarPreviewUrl: sidebarPreviewUrl ?? canvasPreviewUrl,
+    canvasPreviewUrl: canvasPreviewUrl ?? sidebarPreviewUrl,
+  };
+};
 
 const importedAssetDetails = (record: Record<string, unknown>) => {
   const nested = asRecord(record.imported_asset) ?? asRecord(record.importedAsset) ?? {};
@@ -285,6 +304,7 @@ export function normalizeCanvasAsset(record: unknown, context: CanvasAssetNormal
     ...(projectName ? { projectName } : {}),
     requiresImport: context.source === "global" && importState !== "imported",
   };
+  const previews = previewUrlsFromRecord(value, kind);
 
   return {
     id: context.source + ":" + kind + ":" + sourceId,
@@ -292,7 +312,8 @@ export function normalizeCanvasAsset(record: unknown, context: CanvasAssetNormal
     source: context.source,
     kind,
     name,
-    previewUrl: previewUrlFromRecord(value, kind),
+    previewUrl: previews.sidebarPreviewUrl,
+    ...previews,
     mimeType: firstString(value, ["mime_type", "mimeType", "content_type", "contentType"]),
     ...(projectName ? { projectName } : {}),
     reference,
