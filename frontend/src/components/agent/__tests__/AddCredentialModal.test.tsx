@@ -107,26 +107,76 @@ describe("AddCredentialModal", () => {
     expect(screen.getByRole("option", { name: "deepseek-chat" })).toBeInTheDocument();
   });
 
-  it("fetch button stays visible but shows toast for presets without auto-discovery (ark-agent-plan)", async () => {
+  it("clears stale discovered models when a later discovery request fails", async () => {
+    const discoverSpy = vi
+      .spyOn(API, "discoverAnthropicModels")
+      .mockResolvedValueOnce({
+        models: [
+          {
+            model_id: "deepseek-v4-pro",
+            display_name: "DeepSeek V4 Pro",
+            endpoint: "anthropic-messages",
+            is_default: true,
+            is_enabled: true,
+            context_window: 128000,
+          },
+        ],
+      })
+      .mockRejectedValueOnce(new Error("Connection error"));
+
+    render(
+      <AddCredentialModal
+        open
+        sdkType="claude"
+        presets={presets}
+        customSentinelId="__custom__"
+        onSubmit={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /DeepSeek/i }));
+    fireEvent.change(screen.getByLabelText(/anthropic[_ ]?api[_ ]?key|Anthropic API 密钥/i), {
+      target: { value: "sk-test" },
+    });
+
+    const fetchButton = screen.getByRole("button", { name: /获取模型列表/ });
+    fireEvent.click(fetchButton);
+    await waitFor(() => expect(discoverSpy).toHaveBeenCalledTimes(1));
+    const modelInput = screen.getByLabelText(/default[_ ]model|默认模型/i);
+    fireEvent.click(within(modelInput.parentElement as HTMLElement).getByRole("button", {
+      name: /toggle[_ ]options|切换选项/i,
+    }));
+    expect(screen.getByRole("option", { name: "deepseek-v4-pro" })).toBeInTheDocument();
+
+    fireEvent.click(fetchButton);
+    await waitFor(() => expect(discoverSpy).toHaveBeenCalledTimes(2));
+    await waitFor(() => {
+      expect(screen.queryByRole("option", { name: "deepseek-v4-pro" })).not.toBeInTheDocument();
+    });
+    expect(screen.getAllByText("Connection error")).toHaveLength(2);
+  });
+
+  it("fetch button stays visible but shows toast for OpenAI Ark Agent Plan without auto-discovery", async () => {
     const arkPresets: PresetProvider[] = [
       {
         ...presets[0],
-        id: "ark-agent-plan",
+        id: "ark-agent-plan-openai",
+        sdk_type: "openai",
         display_name: "火山方舟 Agent Plan",
-        messages_url: "https://ark.cn-beijing.volces.com/api/plan",
-        discovery_url: "https://ark.cn-beijing.volces.com",
+        messages_url: "https://ark.cn-beijing.volces.com/api/plan/v3",
+        discovery_url: null,
         suggested_models: ["doubao-seed-2.0-code"],
         supportsDiscovery: false,
       },
     ];
     const pushToastSpy = vi.spyOn(useAppStore.getState(), "pushToast");
-    const discoverSpy = vi.spyOn(API, "discoverAnthropicModels").mockResolvedValue({
+    const discoverSpy = vi.spyOn(API, "discoverOpenAIModels").mockResolvedValue({
       models: [],
     });
     render(
       <AddCredentialModal
         open
-        sdkType='claude'
+        sdkType='openai'
         presets={arkPresets}
         customSentinelId="__custom__"
         onSubmit={vi.fn()}
@@ -134,7 +184,7 @@ describe("AddCredentialModal", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /火山方舟 Agent Plan/i }));
-    fireEvent.change(screen.getByLabelText(/anthropic[_ ]?api[_ ]?key|Anthropic API 密钥/i), {
+    fireEvent.change(screen.getByLabelText(/openai[_ ]?api[_ ]?key|OpenAI API 密钥|API 密钥/i), {
       target: { value: "sk-test" },
     });
     // 按钮保留可点

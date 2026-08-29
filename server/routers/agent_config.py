@@ -25,6 +25,14 @@ from lib.db.repositories.agent_credential_repo import AgentCredentialRepository
 from lib.i18n import Translator
 from server.auth import AdminUser
 
+
+async def _invalidate_runtime_sessions(sdk_type: str) -> None:
+    """Drop resident clients so future turns use the newly active credential."""
+    from server.routers.assistant import get_assistant_service
+
+    await get_assistant_service().session_manager.invalidate_sdk_sessions(sdk_type)
+
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agent", tags=["Agent 配置"])
@@ -241,6 +249,8 @@ async def create_credential(
         await repo.set_active(cred.id)
     await session.commit()
     await session.refresh(cred)
+    if should_activate:
+        await _invalidate_runtime_sessions(body.sdk_type)
     return _cred_to_response(cred)
 
 
@@ -265,7 +275,11 @@ async def update_credential(
     cred = await repo.update(cred_id, **fields)
     if cred is None:
         raise HTTPException(status_code=404, detail=_t("agent_credential_not_found"))
+    sdk_type = cred.sdk_type
+    active = bool(cred.is_active)
     await session.commit()
+    if active:
+        await _invalidate_runtime_sessions(sdk_type)
     return _cred_to_response(cred)
 
 
@@ -301,11 +315,16 @@ async def activate_credential(
     session: AsyncSession = Depends(get_async_session),
 ) -> ActivateResponse:
     repo = AgentCredentialRepository(session)
+    cred = await repo.get(cred_id)
+    if cred is None:
+        raise HTTPException(status_code=404, detail=_t("agent_credential_not_found"))
+    sdk_type = cred.sdk_type
     try:
         await repo.set_active(cred_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=_t("agent_credential_not_found")) from exc
     await session.commit()
+    await _invalidate_runtime_sessions(sdk_type)
     return ActivateResponse(active_id=cred_id)
 
 

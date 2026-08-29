@@ -1646,6 +1646,20 @@ async def _execute_image_edit_task_proxy(
     return await execute_image_edit_task(project_name, resource_id, payload, user_id=user_id, task_id=task_id)
 
 
+async def _execute_canvas_image_task_proxy(
+    project_name: str,
+    resource_id: str,
+    payload: dict[str, Any],
+    *,
+    user_id: str,
+    task_id: str | None = None,
+) -> dict[str, Any]:
+    """Lazy proxy for independent Creative Board image tasks."""
+    from server.services.canvas_image_tasks import execute_canvas_image_task
+
+    return await execute_canvas_image_task(project_name, resource_id, payload, user_id=user_id, task_id=task_id)
+
+
 _TASK_EXECUTORS = {
     "storyboard": execute_storyboard_task,
     "video": execute_video_task,
@@ -1658,6 +1672,16 @@ _TASK_EXECUTORS = {
     "grid": execute_grid_task,
     "reference_video": _execute_reference_video_task_proxy,
     "image_edit": _execute_image_edit_task_proxy,
+    "canvas_image_split": _execute_canvas_image_task_proxy,
+    "canvas_image_panorama": _execute_canvas_image_task_proxy,
+    "canvas_image_angles": _execute_canvas_image_task_proxy,
+    "canvas_image_layers": _execute_canvas_image_task_proxy,
+    "canvas_image_hd": _execute_canvas_image_task_proxy,
+    "canvas_image_outpaint": _execute_canvas_image_task_proxy,
+    "canvas_image_redraw": _execute_canvas_image_task_proxy,
+    "canvas_image_erase": _execute_canvas_image_task_proxy,
+    "canvas_image_cutout": _execute_canvas_image_task_proxy,
+    "canvas_image_crop": _execute_canvas_image_task_proxy,
 }
 
 

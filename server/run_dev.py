@@ -1,25 +1,21 @@
 """开发服务器启动入口。
 
-Windows + Python 3.14 下，uvicorn --reload/多 worker 会先创建事件循环再加载 app，
-并把事件循环退化为 SelectorEventLoop（不支持子进程），导致 Claude Agent 启动
-claude.exe 时 NotImplementedError。本入口在 uvicorn.run() 之前应用
-``server._win_loop_patch`` 的修正；spawn 的 reload worker 会以 ``__mp_main__``
-重新执行本文件顶层代码（不含 ``__main__`` 块），patch 在 worker 的 Server.run()
-之前同样生效。
+Windows + Python 3.14 下，uvicorn reload 与 ProactorEventLoop 组合会在注册监听
+socket 时触发 ``WinError 87``，导致进程虽然打印 startup complete，却无法接受
+HTTP 请求。Windows 开发环境因此禁用 reload，保留 ProactorEventLoop 以支持
+Claude Agent SDK、ffmpeg 等子进程；非 Windows 仍使用 reload。
 
-用法（所有平台通用，等价于原 uvicorn 命令）：
+用法（所有平台通用）：
     uv run python server/run_dev.py
 
 可通过 ``LISTEN_HOST`` / ``LISTEN_PORT`` 覆盖默认监听地址和端口，例如：
     $env:LISTEN_PORT = "18080"; uv run python server/run_dev.py
-
-等价命令：
-    uv run uvicorn server.app:app --reload --reload-dir server --reload-dir lib --port 18080
 """
 
 from __future__ import annotations
 
 import os
+import sys
 
 from server._win_loop_patch import patch_windows_uvicorn_event_loop
 
@@ -33,10 +29,11 @@ if __name__ == "__main__":
     configured_port = os.environ.get("LISTEN_PORT")
     # 1241 is reserved by Windows on this machine; ignore stale shell settings.
     listen_port = int(configured_port) if configured_port and configured_port != "1241" else 18080
+    reload_enabled = sys.platform != "win32"
     uvicorn.run(
         "server.app:app",
         host=os.environ.get("LISTEN_HOST") or "127.0.0.1",
         port=listen_port,
-        reload=True,
-        reload_dirs=["server", "lib"],
+        reload=reload_enabled,
+        reload_dirs=["server", "lib"] if reload_enabled else None,
     )

@@ -11,6 +11,7 @@ MESSAGES = {
     "workflow_version_conflict": "Quy trình đã thay đổi: cần phiên bản {expected}, hiện tại là {actual}",
     "project_not_found": "Dự án '{name}' không tồn tại hoặc chưa được khởi tạo",
     "resource_not_found": "Tài nguyên được yêu cầu không tồn tại",
+    "canvas_image_source_invalid": "Nguồn ảnh trên canvas không hợp lệ; hãy chọn ảnh khả dụng trong dự án",
     "overview_ai_response_invalid": "Không thể phân tích phản hồi của AI thành tổng quan dự án, vui lòng thử lại hoặc đổi mô hình/nhà cung cấp",
     "overview_generation_failed": "Tạo tổng quan thất bại, vui lòng thử lại sau hoặc đổi mô hình/nhà cung cấp",
     "video_capabilities_unresolved": "Không xác định được khả năng mô hình video cho dự án '{name}'; vui lòng kiểm tra cấu hình nhà cung cấp",
@@ -324,6 +325,7 @@ MESSAGES = {
     "image_edit_instruction_required": "Chỉ dẫn chỉnh sửa không được để trống",
     "image_edit_script_file_required": "Cần cung cấp script_file khi chỉnh sửa ảnh phân cảnh",
     "image_edit_no_current_image": "'{id}' chưa có ảnh hiện tại để chỉnh sửa; hãy tạo hoặc tải lên trước",
+    "image_edit_reference_invalid": "Ảnh tham chiếu '{id}' không tồn tại, không phải ảnh hoặc không thể đọc",
     "image_edit_i2i_unavailable": "Chưa cấu hình nhà cung cấp ảnh hỗ trợ image-to-image (i2i); hãy cấu hình trong Cài đặt trước",
     "image_edit_task_submitted": "Đã gửi tác vụ chỉnh sửa ảnh cho '{id}'",
     # Video Capability

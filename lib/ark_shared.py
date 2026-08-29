@@ -11,6 +11,8 @@ Ark (火山方舟) 共享工具模块
 
 from __future__ import annotations
 
+import httpx
+
 ARK_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3"
 
 
@@ -25,4 +27,9 @@ def create_ark_client(*, api_key: str | None = None, base_url: str | None = None
     from volcenginesdkarkruntime import Ark
 
     effective_base_url = base_url or ARK_BASE_URL
-    return Ark(base_url=effective_base_url, api_key=resolve_ark_api_key(api_key))
+    http_client = httpx.Client(trust_env=False)
+    return Ark(
+        base_url=effective_base_url,
+        api_key=resolve_ark_api_key(api_key),
+        http_client=http_client,
+    )

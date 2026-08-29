@@ -16,13 +16,13 @@ export const CANVAS_ASSET_KINDS = [
 ] as const;
 
 export type CanvasAssetKind = (typeof CANVAS_ASSET_KINDS)[number];
-export type CanvasAssetSource = "project" | "global";
+export type CanvasAssetSource = "project" | "global" | "media";
 export type CanvasAssetImportState = "imported" | "not-imported" | "unknown";
 
 export interface CanvasAssetReference {
   source: CanvasAssetSource;
   kind: CanvasAssetKind;
-  /** Project asset id for project assets, global asset id for global assets. */
+  /** Project asset id, global asset id, or media-library asset id. */
   id: string;
   projectName?: string;
   /** Global assets must be imported before they can become project references. */
@@ -293,8 +293,10 @@ export function normalizeCanvasAsset(record: unknown, context: CanvasAssetNormal
   const name = firstString(value, ["name", "title", "display_name", "displayName", "filename", "file_name"]);
   if (!sourceId || !name) return null;
 
-  const kind = kindFromRecord(value, context.fallbackKind);
-  const projectName = context.source === "project" ? context.projectName : undefined;
+  const rawMediaKind = firstString(value, ["kind", "media_kind", "mediaKind", "media_type", "mediaType"]);
+  if (context.source === "media" && rawMediaKind && !["image", "video"].includes(rawMediaKind.toLowerCase())) return null;
+  const kind = context.source === "media" ? "media" : kindFromRecord(value, context.fallbackKind);
+  const projectName = context.source === "global" ? undefined : context.projectName;
   const imported = context.source === "global" ? importedAssetDetails(value) : undefined;
   const importState = context.source === "global" ? importStateFromRecord(value, imported?.id) : undefined;
   const reference: CanvasAssetReference = {
@@ -360,7 +362,7 @@ export async function loadCanvasAssets(
     { source: "project", kind: "scene", load: loaders.scenes },
     { source: "project", kind: "prop", load: loaders.props },
     { source: "project", kind: "product", load: loaders.products },
-    { source: "project", kind: "media", load: loaders.media },
+    { source: "media", kind: "media", load: loaders.media },
     { source: "global", load: loaders.globalAssets },
   ];
 

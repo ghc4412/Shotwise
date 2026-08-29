@@ -291,6 +291,40 @@ class TestSessionManagerMore:
             await session_manager.close_session(meta3.id)
 
     @pytest.mark.asyncio
+    async def test_invalidate_sdk_sessions_closes_idle_sessions_but_defers_running_ones(
+        self, session_manager, meta_store
+    ):
+        """Credential changes must not leave an idle actor bound to the old client."""
+        from tests.fakes import build_managed_with_actor
+
+        idle_meta = await meta_store.create("demo", "sdk-stale-idle")
+        idle, _idle_actor, idle_client = await build_managed_with_actor(
+            session_id=idle_meta.id,
+            project_name="demo",
+            status="idle",
+        )
+        idle.sdk_type = "openai"
+        session_manager.sessions[idle_meta.id] = idle
+
+        running_meta = await meta_store.create("demo", "sdk-stale-running")
+        running, _running_actor, _running_client = await build_managed_with_actor(
+            session_id=running_meta.id,
+            project_name="demo",
+            status="running",
+        )
+        running.sdk_type = "openai"
+        session_manager.sessions[running_meta.id] = running
+
+        await session_manager.invalidate_sdk_sessions("openai")
+
+        assert idle_meta.id not in session_manager.sessions
+        assert idle_client.disconnected is True
+        assert running_meta.id in session_manager.sessions
+        assert running.credential_stale is True
+
+        await session_manager.close_session(running_meta.id)
+
+    @pytest.mark.asyncio
     async def test_process_inbox_cancel_marks_interrupted_when_running(self, session_manager, meta_store):
         """Cancel on a running session → _mark_session_terminal("interrupted")."""
         meta = await meta_store.create("demo", "sdk-cancel-1")

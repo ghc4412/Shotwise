@@ -115,6 +115,52 @@ class TestEditImageEnqueue:
                 # i2i 槽在入队前已解析，provider_id 直接复用（限流池按 i2i 槽精确记账）
                 assert call["provider_id"] == "gemini-aistudio"
 
+    def test_reference_media_asset_id_is_carried_into_payload(self, tmp_path, monkeypatch):
+        project_path = _prepare_files(tmp_path)
+        fake_queue = _FakeQueue()
+        client = _client(monkeypatch, _FakePM(project_path), fake_queue)
+        monkeypatch.setattr(
+            generate, "resolve_reference_media_asset_path", lambda root, asset_id: project_path / "reference.png"
+        )
+
+        with client:
+            resp = client.post(
+                "/api/v1/projects/demo/edit/image",
+                json={
+                    "resource_type": "character",
+                    "resource_id": "Alice",
+                    "instruction": "匹配参考图的服装",
+                    "reference_media_asset_id": "media-ref-1",
+                },
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert fake_queue.calls[0]["payload"]["reference_media_asset_id"] == "media-ref-1"
+
+    def test_invalid_reference_media_asset_is_rejected(self, tmp_path, monkeypatch):
+        project_path = _prepare_files(tmp_path)
+        fake_queue = _FakeQueue()
+        client = _client(monkeypatch, _FakePM(project_path), fake_queue)
+        monkeypatch.setattr(
+            generate,
+            "resolve_reference_media_asset_path",
+            lambda root, asset_id: (_ for _ in ()).throw(ValueError("not an image")),
+        )
+
+        with client:
+            resp = client.post(
+                "/api/v1/projects/demo/edit/image",
+                json={
+                    "resource_type": "character",
+                    "resource_id": "Alice",
+                    "instruction": "匹配参考图",
+                    "reference_media_asset_id": "media-ref-1",
+                },
+            )
+
+        assert resp.status_code == 400
+        assert fake_queue.calls == []
+
     def test_storyboard_enqueue_success_carries_script_file(self, tmp_path, monkeypatch):
         project_path = _prepare_files(tmp_path)
         fake_queue = _FakeQueue()

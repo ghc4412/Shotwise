@@ -11,6 +11,7 @@ MESSAGES = {
     "workflow_version_conflict": "The workflow changed: expected version {expected}, current version {actual}",
     "project_not_found": "Project '{name}' does not exist or is not initialized",
     "resource_not_found": "The requested resource does not exist",
+    "canvas_image_source_invalid": "The canvas image source is invalid; choose an available image inside the project",
     "overview_ai_response_invalid": "The AI response could not be parsed into a project overview. Please retry or switch to a different model/provider",
     "overview_generation_failed": "Overview generation failed. Please retry later or switch to a different model/provider",
     "video_capabilities_unresolved": "Cannot resolve video model capabilities for project '{name}'; please check the provider configuration",
@@ -322,6 +323,7 @@ MESSAGES = {
     "image_edit_instruction_required": "Edit instruction must not be empty",
     "image_edit_script_file_required": "script_file is required when editing a storyboard image",
     "image_edit_no_current_image": "'{id}' has no current image to edit; generate or upload one first",
+    "image_edit_reference_invalid": "Reference image '{id}' does not exist, is not an image, or cannot be read",
     "image_edit_i2i_unavailable": "No image provider with image-to-image (i2i) support is configured; configure one in Settings first",
     "image_edit_task_submitted": "Image edit task for '{id}' submitted",
     # Video Capability

@@ -111,6 +111,7 @@ export interface CreativeBoardItemRecord {
   position: { x: number; y: number };
   size: { width: number; height: number };
   group_id?: string | null;
+  display_settings?: Record<string, unknown>;
 }
 
 export interface CreativeBoardEdgeRecord {
@@ -1825,6 +1826,8 @@ class API {
       resourceId: string;
       instruction: string;
       scriptFile?: string | null;
+      /** Optional project-scoped media library image used as an additional reference. */
+      referenceMediaAssetId?: string | null;
     }
   ): Promise<{
     success: boolean;
@@ -1841,12 +1844,86 @@ class API {
           resource_id: params.resourceId,
           instruction: params.instruction,
           script_file: params.scriptFile ?? null,
+          ...(params.referenceMediaAssetId ? { reference_media_asset_id: params.referenceMediaAssetId } : {}),
         }),
       }
     );
   }
 
   // ==================== 任务队列 API ====================
+
+  static async splitCanvasImage(
+    projectName: string,
+    params: {
+      sourceKind: "project" | "media";
+      resourceType?: "character" | "scene" | "prop" | "product" | "storyboard";
+      resourceId?: string;
+      mediaAssetId?: string;
+      scriptFile?: string | null;
+      rows: number;
+      cols: number;
+      includeSplitLines: boolean;
+    },
+  ): Promise<{ success: boolean; task_id: string; deduped: boolean }> {
+    return this.request(`/projects/${encodeURIComponent(projectName)}/canvas-images/split`, {
+      method: "POST",
+      body: JSON.stringify({
+        source_kind: params.sourceKind,
+        ...(params.resourceType ? { resource_type: params.resourceType } : {}),
+        ...(params.resourceId ? { resource_id: params.resourceId } : {}),
+        ...(params.mediaAssetId ? { media_asset_id: params.mediaAssetId } : {}),
+        ...(params.scriptFile ? { script_file: params.scriptFile } : {}),
+        rows: params.rows,
+        cols: params.cols,
+        include_split_lines: params.includeSplitLines,
+      }),
+    });
+  }
+
+  static async advancedCanvasImage(
+    projectName: string,
+    params: {
+      operation:
+        | "canvas_image_panorama"
+        | "canvas_image_angles"
+        | "canvas_image_layers"
+        | "canvas_image_hd"
+        | "canvas_image_outpaint"
+        | "canvas_image_redraw"
+        | "canvas_image_erase"
+        | "canvas_image_cutout"
+        | "canvas_image_crop";
+      sourceKind: "project" | "media";
+      resourceType?: "character" | "scene" | "prop" | "product" | "storyboard";
+      resourceId?: string;
+      mediaAssetId?: string;
+      scriptFile?: string | null;
+      instruction?: string;
+      count?: number;
+      region?: { x: number; y: number; width: number; height: number };
+      aspectRatio?: string;
+      multiplier?: number;
+      quality?: string;
+    },
+  ): Promise<{ success: boolean; task_id: string; deduped: boolean }> {
+    return this.request(`/projects/${encodeURIComponent(projectName)}/canvas-images/advanced`, {
+      method: "POST",
+      body: JSON.stringify({
+        operation: params.operation,
+        source_kind: params.sourceKind,
+        ...(params.resourceType ? { resource_type: params.resourceType } : {}),
+        ...(params.resourceId ? { resource_id: params.resourceId } : {}),
+        ...(params.mediaAssetId ? { media_asset_id: params.mediaAssetId } : {}),
+        ...(params.scriptFile ? { script_file: params.scriptFile } : {}),
+        ...(params.instruction ? { instruction: params.instruction } : {}),
+        ...(params.count ? { count: params.count } : {}),
+        ...(params.region ? { region: params.region } : {}),
+        ...(params.aspectRatio ? { aspect_ratio: params.aspectRatio } : {}),
+        ...(params.multiplier ? { multiplier: params.multiplier } : {}),
+        ...(params.quality ? { quality: params.quality } : {}),
+      }),
+    });
+  }
 
   static async getTask(taskId: string): Promise<TaskItem> {
     return this.request(`/tasks/${encodeURIComponent(taskId)}`);
@@ -3127,10 +3204,10 @@ class API {
   static async deleteCreativeBoard(boardId: string): Promise<Record<string, unknown>> {
     return this.request("/creative-boards/" + encodeURIComponent(boardId), { method: "DELETE" });
   }
-  static async addCreativeBoardItem(boardId: string, body: { item_type: string; resource_type: string; resource_id: string; position?: { x: number; y: number }; size?: { width: number; height: number }; group_id?: string | null; expected_revision?: number }): Promise<CreativeBoardMutationResponse> {
+  static async addCreativeBoardItem(boardId: string, body: { item_type: string; resource_type: string; resource_id: string; position?: { x: number; y: number }; size?: { width: number; height: number }; group_id?: string | null; display_settings?: Record<string, unknown>; expected_revision?: number }): Promise<CreativeBoardMutationResponse> {
     return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/items", { method: "POST", body: JSON.stringify(body) });
   }
-  static async updateCreativeBoardItem(boardId: string, itemId: string, body: { item_type: string; resource_type: string; resource_id: string; position?: { x: number; y: number }; size?: { width: number; height: number }; group_id?: string | null; expected_revision?: number }): Promise<CreativeBoardMutationResponse> {
+  static async updateCreativeBoardItem(boardId: string, itemId: string, body: { item_type: string; resource_type: string; resource_id: string; position?: { x: number; y: number }; size?: { width: number; height: number }; group_id?: string | null; display_settings?: Record<string, unknown>; expected_revision?: number }): Promise<CreativeBoardMutationResponse> {
     return this.request("/creative-boards/" + encodeURIComponent(boardId) + "/items/" + encodeURIComponent(itemId), { method: "PATCH", body: JSON.stringify(body) });
   }
   static async deleteCreativeBoardItem(boardId: string, itemId: string, expectedRevision?: number): Promise<CreativeBoardMutationResponse> {

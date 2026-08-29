@@ -11,6 +11,7 @@ MESSAGES = {
     "workflow_version_conflict": "工作流已变化：预期版本 {expected}，当前版本 {actual}",
     "project_not_found": "项目 '{name}' 不存在或未初始化",
     "resource_not_found": "请求的资源不存在",
+    "canvas_image_source_invalid": "画布图片源无效，必须是项目内可用的图片素材",
     "overview_ai_response_invalid": "AI 返回内容无法解析为项目概述，请重试或更换模型/供应商",
     "overview_generation_failed": "概述生成失败，请稍后重试或更换模型/供应商",
     "video_capabilities_unresolved": "无法解析项目 '{name}' 的视频模型能力，请检查供应商配置",
@@ -278,6 +279,7 @@ MESSAGES = {
     "image_edit_instruction_required": "编辑指令不能为空",
     "image_edit_script_file_required": "编辑分镜图需要提供 script_file",
     "image_edit_no_current_image": "「{id}」还没有可编辑的当前图，请先生成或上传",
+    "image_edit_reference_invalid": "参考图片「{id}」不存在、不是图片或文件不可读取",
     "image_edit_i2i_unavailable": "当前未配置支持图生图（i2i）的图片供应商，请先在设置中配置",
     "image_edit_task_submitted": "「{id}」图片编辑任务已提交",
     # Video Capability

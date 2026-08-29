@@ -40,6 +40,7 @@ _SYSTEM_SETTING_KEYS: list[str] = [
     "claude_code_subagent_model",
 ]
 
+
 _HANDLED_KEYS = {
     "gemini_api_key",
     "gemini_base_url",

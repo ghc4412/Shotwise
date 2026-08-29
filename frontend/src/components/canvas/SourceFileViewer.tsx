@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useId } from "react";
+import { useState, useEffect, useCallback, useId, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, FileText, Edit3, Save, X, Trash2, Type } from "lucide-react";
 import { useLocation } from "wouter";
@@ -6,6 +6,7 @@ import { API } from "@/api";
 import { voidPromise } from "@/utils/async";
 import { useAppStore } from "@/stores/app-store";
 import { SourceOutlineSidebar } from "./SourceOutlineSidebar";
+import { findOutlineItemOffset, type OutlineItem } from "./source-outline";
 
 // ---------------------------------------------------------------------------
 // SourceFileViewer — 源文件预览/编辑组件（v3 视觉）
@@ -25,7 +26,11 @@ export function SourceFileViewer({ projectName, filename }: SourceFileViewerProp
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
   const filenameHeadingId = useId();
+  const sourceEditorRef = useRef<HTMLTextAreaElement>(null);
+  const sourceLineRefs = useRef(new Map<number, HTMLSpanElement>());
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [fontSize, setFontSize] = useState(13);
+  const [selectedOffset, setSelectedOffset] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,6 +81,44 @@ export function SourceFileViewer({ projectName, filename }: SourceFileViewerProp
       // 静默失败
     }
   }, [projectName, filename, setLocation, t]);
+
+  const handleOutlineSelect = useCallback(
+    (item: OutlineItem) => {
+      const source = editing ? editContent : content;
+      if (source === null) return;
+      const offset = findOutlineItemOffset(source, item);
+      if (offset === undefined) return;
+
+      setSelectedOffset(offset);
+      if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = window.setTimeout(() => {
+        setSelectedOffset(null);
+        highlightTimerRef.current = null;
+      }, 2400);
+
+      window.setTimeout(() => {
+        if (editing) {
+          const editor = sourceEditorRef.current;
+          if (!editor) return;
+          editor.focus();
+          editor.setSelectionRange(offset, offset);
+          const lineNumber = source.slice(0, offset).split("\n").length - 1;
+          const lineHeight = fontSize * 1.7;
+          editor.scrollTop = Math.max(0, lineNumber * lineHeight - editor.clientHeight * 0.25);
+          return;
+        }
+
+        sourceLineRefs.current.get(offset)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 0);
+    },
+    [content, editContent, editing, fontSize],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current);
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -162,10 +205,12 @@ export function SourceFileViewer({ projectName, filename }: SourceFileViewerProp
           projectName={projectName}
           filename={filename}
           content={editing ? editContent : content}
+          onSelectItem={handleOutlineSelect}
         />
         <div className="source-file-scroll min-h-0 flex-1 overflow-auto p-5">
           {editing ? (
             <textarea
+              ref={sourceEditorRef}
               aria-labelledby={filenameHeadingId}
               aria-busy={saving}
               readOnly={saving}
@@ -190,7 +235,26 @@ export function SourceFileViewer({ projectName, filename }: SourceFileViewerProp
                 boxShadow: "inset 0 1px 0 oklch(1 0 0 / 0.03)",
               }}
             >
-              {content}
+              {(() => {
+                let offset = 0;
+                return content.split(/(\r?\n)/).map((part) => {
+                  const partOffset = offset;
+                  offset += part.length;
+                  if (/^\r?\n$/.test(part)) return part;
+                  return (
+                    <span
+                      key={partOffset}
+                      ref={(element) => {
+                        if (element) sourceLineRefs.current.set(partOffset, element);
+                        else sourceLineRefs.current.delete(partOffset);
+                      }}
+                      className={selectedOffset === partOffset ? "source-outline-target" : undefined}
+                    >
+                      {part}
+                    </span>
+                  );
+                });
+              })()}
             </pre>
           )}
         </div>

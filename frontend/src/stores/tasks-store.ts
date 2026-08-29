@@ -23,7 +23,9 @@ export type ResourceKind =
   | "video"
   | "tts"
   | "reference_video"
-  | "grid";
+  | "grid"
+  | "canvas_image_split"
+  | "canvas_image_advanced";
 
 /** 可做指令式编辑的资源种类；`image_edit` 任务按此归入对应资源槽。 */
 export type ImageEditResourceKind = Extract<

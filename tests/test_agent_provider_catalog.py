@@ -37,6 +37,22 @@ def test_alibaba_coding_plan_is_only_recommended_for_claude() -> None:
     assert [p.id for p in openai_recommended] == ["deepseek-openai"]
 
 
+def test_ark_agent_plan_supports_both_protocols() -> None:
+    claude = get_preset("ark-agent-plan")
+    assert claude is not None
+    assert claude.sdk_type == "claude"
+    assert claude.messages_url == "https://ark.cn-beijing.volces.com/api/plan"
+    assert claude.discovery_url is None
+    assert claude.supports_discovery is False
+
+    openai = get_preset("ark-agent-plan-openai")
+    assert openai is not None
+    assert openai.sdk_type == "openai"
+    assert openai.messages_url == "https://ark.cn-beijing.volces.com/api/plan/v3"
+    assert openai.discovery_url is None
+    assert openai.supports_discovery is False
+
+
 def test_get_preset_unknown_returns_none() -> None:
     assert get_preset("does-not-exist") is None
 

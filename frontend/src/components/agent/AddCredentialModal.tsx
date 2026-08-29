@@ -242,7 +242,13 @@ export function AddCredentialModal({
         toast(t("discover_models_success", { count: res.models.length }), "success");
       }
     } catch (err) {
-      if (session === sessionRef.current) setDiscoverError(errMsg(err));
+      if (session === sessionRef.current) {
+        // A failed request must not leave the previous discovery result looking current.
+        // Keep user-entered mappings/model values intact; only invalidate server-derived options.
+        setModelOptions([]);
+        setDiscoveredModels([]);
+        setDiscoverError(errMsg(err));
+      }
     } finally {
       if (session === sessionRef.current) setDiscovering(false);
     }

@@ -371,6 +371,64 @@ describe("API", () => {
       });
     });
 
+    it("splitCanvasImage posts an arbitrary source and grid configuration", async () => {
+      const requestSpy = vi
+        .spyOn(API, "request")
+        .mockResolvedValue({ success: true, task_id: "grid-task", deduped: false } as never);
+
+      await API.splitCanvasImage("demo project", {
+        sourceKind: "media",
+        mediaAssetId: "media-1",
+        rows: 3,
+        cols: 2,
+        includeSplitLines: true,
+      });
+
+      expect(requestSpy).toHaveBeenCalledWith("/projects/demo%20project/canvas-images/split", {
+        method: "POST",
+        body: JSON.stringify({
+          source_kind: "media",
+          media_asset_id: "media-1",
+          rows: 3,
+          cols: 2,
+          include_split_lines: true,
+        }),
+      });
+    });
+
+    it("advancedCanvasImage posts an operation and optional instruction", async () => {
+      const requestSpy = vi
+        .spyOn(API, "request")
+        .mockResolvedValue({ success: true, task_id: "advanced-task", deduped: false } as never);
+
+      await API.advancedCanvasImage("demo project", {
+        operation: "canvas_image_hd",
+        sourceKind: "project",
+        resourceType: "character",
+        resourceId: "Hero",
+        instruction: "preserve the subject",
+        region: { x: 0.1, y: 0.2, width: 0.5, height: 0.6 },
+        aspectRatio: "16:9",
+        multiplier: 4,
+        quality: "4K",
+      });
+
+      expect(requestSpy).toHaveBeenCalledWith("/projects/demo%20project/canvas-images/advanced", {
+        method: "POST",
+        body: JSON.stringify({
+          operation: "canvas_image_hd",
+          source_kind: "project",
+          resource_type: "character",
+          resource_id: "Hero",
+          instruction: "preserve the subject",
+          region: { x: 0.1, y: 0.2, width: 0.5, height: 0.6 },
+          aspect_ratio: "16:9",
+          multiplier: 4,
+          quality: "4K",
+        }),
+      });
+    });
+
     it("rejects unsupported project mode updates before sending the request", async () => {
       const requestSpy = vi
         .spyOn(API, "request")

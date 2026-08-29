@@ -8,8 +8,10 @@ import {
   buildCreativeOutlineDocument,
   CREATIVE_OUTLINE_FILENAME,
   mergeOutlineItems,
+  mergeOutlineWithSourceChapters,
   parseOutline,
   parseSavedCreativeOutline,
+  parseSourceChapters,
   splitSourceIntoChunks,
   type OutlineItem,
 } from "./source-outline";
@@ -18,6 +20,7 @@ interface SourceOutlineSidebarProps {
   projectName: string;
   filename: string;
   content: string;
+  onSelectItem: (item: OutlineItem) => void;
 }
 
 async function requestOutline(
@@ -40,7 +43,7 @@ async function requestOutline(
   });
 }
 
-export function SourceOutlineSidebar({ projectName, filename, content }: SourceOutlineSidebarProps) {
+export function SourceOutlineSidebar({ projectName, filename, content, onSelectItem }: SourceOutlineSidebarProps) {
   const { t } = useTranslation("dashboard");
   const [expanded, setExpanded] = useState(true);
   const [showSummaries, setShowSummaries] = useState(true);
@@ -101,13 +104,14 @@ export function SourceOutlineSidebar({ projectName, filename, content }: SourceO
     setError(false);
     try {
       const chunks = splitSourceIntoChunks(content);
+      const sourceChapters = parseSourceChapters(content);
       const batches: OutlineItem[][] = [];
       for (let index = 0; index < chunks.length; index += 1) {
         const result = await requestOutline(projectName, filename, chunks[index], index + 1, chunks.length);
         batches.push(parseOutline(result.content));
-        setItems(mergeOutlineItems(batches));
+        setItems(mergeOutlineWithSourceChapters(sourceChapters, mergeOutlineItems(batches)));
       }
-      const extractedItems = mergeOutlineItems(batches);
+      const extractedItems = mergeOutlineWithSourceChapters(sourceChapters, mergeOutlineItems(batches));
       if (extractedItems.length === 0) {
         setError(true);
         return;
@@ -222,7 +226,12 @@ export function SourceOutlineSidebar({ projectName, filename, content }: SourceO
               <ol className="space-y-1">
                 {items.map((item, index) => (
                   <li key={item.title + "-" + index}>
-                    <div className="rounded-md px-2.5 py-2 transition-colors hover:bg-bg-grad-a">
+                    <button
+                      type="button"
+                      onClick={() => onSelectItem(item)}
+                      className="focus-ring w-full rounded-md px-2.5 py-2 text-left transition-colors hover:bg-bg-grad-a"
+                      title={item.title}
+                    >
                       <div className="flex gap-2 text-[12px] leading-5 text-text-2">
                         <span className="shrink-0 font-mono text-[10px] text-accent-2">
                           {String(item.chapter ?? index + 1).padStart(2, "0")}
@@ -232,7 +241,7 @@ export function SourceOutlineSidebar({ projectName, filename, content }: SourceO
                       {showSummaries && item.summary && (
                         <p className="mt-1 pl-7 text-[10.5px] leading-5 text-text-4">{item.summary}</p>
                       )}
-                    </div>
+                    </button>
                   </li>
                 ))}
               </ol>

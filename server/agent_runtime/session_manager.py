@@ -229,6 +229,7 @@ class ManagedSession:
     last_user_prompt: str = ""
     assistant_model: str = ""
     sdk_type: str = SDK_TYPE_CLAUDE  # 会话当前活跃的 Agent SDK 类型
+    credential_stale: bool = False  # active credential changed while this actor was resident
     _cleanup: Any = None  # 会话终结时释放 SDK 专属资源（当前为保留字段）
     interrupt_requested: bool = False
     last_activity: float | None = None  # updated on every send/receive
@@ -977,8 +978,12 @@ class SessionManager:
         消息分叉出的分支）：这类会话没有历史可 resume，改以 ``session_id=`` 预指定
         身份开一个全新会话。首轮跑完 transcript 即存在，之后照常按 resume 复活。
         """
-        if session_id in self.sessions and session_id not in self._disconnecting:
-            return self.sessions[session_id]
+        managed = self.sessions.get(session_id)
+        if managed is not None and session_id not in self._disconnecting:
+            if managed.credential_stale and managed.status != "running":
+                await self.close_session(session_id, reason="agent credential changed")
+            else:
+                return managed
 
         # Per-session lock prevents concurrent connect() for the same session_id.
         if session_id not in self._connect_locks:
@@ -987,8 +992,12 @@ class SessionManager:
 
         async with lock:
             # Re-check after acquiring lock
-            if session_id in self.sessions and session_id not in self._disconnecting:
-                return self.sessions[session_id]
+            managed = self.sessions.get(session_id)
+            if managed is not None and session_id not in self._disconnecting:
+                if managed.credential_stale and managed.status != "running":
+                    await self.close_session(session_id, reason="agent credential changed")
+                else:
+                    return managed
 
             if meta is None:
                 meta = await self.meta_store.get(session_id)
@@ -1342,6 +1351,23 @@ class SessionManager:
         result = cleanup()
         if hasattr(result, "__await__"):
             await result
+
+    async def invalidate_sdk_sessions(self, sdk_type: str) -> None:
+        """Invalidate resident sessions after the active credential changes.
+
+        Idle actors are closed immediately so their next request rebuilds the client
+        from the new credential. A running turn is allowed to finish; it is marked
+        stale and cannot be reused for the next turn.
+        """
+        if sdk_type not in SDK_TYPES:
+            raise ValueError(f"unknown sdk_type: {sdk_type!r}")
+
+        for managed in list(self.sessions.values()):
+            if managed.sdk_type != sdk_type:
+                continue
+            managed.credential_stale = True
+            if managed.status != "running":
+                await self.close_session(managed.session_id, reason="agent credential changed")
 
     async def switch_agent(
         self,

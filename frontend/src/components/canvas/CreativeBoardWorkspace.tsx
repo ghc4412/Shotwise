@@ -2,19 +2,23 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as Re
 import { createPortal } from "react-dom";
 /* eslint-disable jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions -- board nodes are pointer-driven canvas objects. */
 /* eslint-disable react-hooks/exhaustive-deps -- keyboard commands intentionally capture current board actions. */
-import { Check, ChevronDown, CircleHelp, FileText, FolderOpen, Globe2, Grid3X3, History, Image as ImageIcon, Keyboard, Landmark, Layers3, Link2, Loader2, Maximize2, MessageCircle, MoreHorizontal, MousePointer2, Move, Package, PanelLeft, Plus, Search, Send, Sparkles, Trash2, Upload, UserRound, Video } from "lucide-react";
+import { Check, ChevronDown, CircleHelp, Copy, Download, FileText, FolderOpen, Globe2, Grid3X3, History, Image as ImageIcon, Keyboard, Landmark, Layers3, Link2, Loader2, LocateFixed, Maximize2, MoreHorizontal, MousePointer2, Move, Package, PanelLeft, Pencil, Plus, Search, Send, Sparkles, Trash2, Upload, UserRound, Video } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useSearch } from "wouter";
 import { API, getCreativeBoardConflictRevision, isCreativeBoardRevisionConflict } from "@/api";
+import { enqueueCanvasImageAdvanced, enqueueCanvasImageSplit, enqueueImageEdit, type CanvasAdvancedOperation } from "@/actions/generation";
 import { useProjectsStore } from "@/stores/projects-store";
+import { useTasksStore } from "@/stores/tasks-store";
 import { loadCanvasAssets, type CanvasAsset } from "./canvas-assets";
 import { CanvasSaveStatus } from "./CanvasSaveStatus";
 import { ConflictModal, type ConflictResolution } from "./ConflictModal";
 import { handleCanvasSaveShortcut, useCanvasPersistence } from "./canvasPersistence";
 import { CreativeBoardActions } from "./CreativeBoardActions";
-import { BoardSelectionOverlay, type ResizeCorner } from "./BoardSelectionOverlay";
+import { BoardSelectionOverlay, type BoardToolbarAction, type BoardToolbarSelection, type ResizeCorner } from "./BoardSelectionOverlay";
+import { BoardImageToolPanel, type ReferenceAsset } from "./BoardImageToolPanel";
+import { CanvasImageEditorOverlay, type CanvasEditorOperation, type CanvasEditorSubmission } from "./CanvasImageEditorOverlay";
 
-type BoardItem = { id: string; item_type: string; resource_type: string; resource_id: string; position: { x: number; y: number }; size: { width: number; height: number }; group_id?: string | null };
+type BoardItem = { id: string; item_type: string; resource_type: string; resource_id: string; position: { x: number; y: number }; size: { width: number; height: number }; group_id?: string | null; display_settings?: Record<string, unknown> };
 type BoardEdge = { id: string; source_item_id: string; target_item_id: string; relation: string };
 type Board = { id: string; project_id: string; name: string; viewport: { x?: number; y?: number; zoom?: number }; items: BoardItem[]; edges: BoardEdge[]; revision: number };
 type BoardHistory = { past: Board[]; future: Board[] };
@@ -176,6 +180,12 @@ type BoardItemType = "document" | "character" | "scene" | "prop" | "product" | "
 const ASSET_TYPES: Array<AssetKind | "all"> = ["all", "character", "scene", "prop", "product", "media", "video"];
 const ASSET_CATEGORIES: AssetCategory[] = ["personal", "agent", "global"];
 type ElementFilter = "all" | "text" | "image" | "video" | "video_edit" | "director" | "frame_extract" | "audio" | "script";
+
+const IMAGE_ITEM_TYPES = new Set(["character", "scene", "prop", "product", "media"]);
+
+function isImageBoardItem(item: BoardItem) {
+  return IMAGE_ITEM_TYPES.has(item.item_type);
+}
 
 const ELEMENT_FILTERS: Array<{ value: ElementFilter; labelKey: string; label: string }> = [
   { value: "all", labelKey: "creative_board_filter_all", label: "全部" },
@@ -370,7 +380,12 @@ function getWorldBounds(items: BoardItem[]) {
   return { minX, minY, width: maxX - minX, height: maxY - minY };
 }
 
-function nodeTitle(item: BoardItem, names: Map<string, string>) { return names.get(assetKey(item.resource_type, item.resource_id)) || names.get(item.resource_id) || item.resource_id; }
+function nodeTitle(item: BoardItem, names: Map<string, string>) {
+  const customName = item.display_settings?.name;
+  return typeof customName === "string" && customName.trim()
+    ? customName.trim()
+    : names.get(assetKey(item.resource_type, item.resource_id)) || names.get(item.resource_id) || item.resource_id;
+}
 
 function mediaSource(media?: Media) { return media?.preview_url || media?.thumbnail_url || media?.content_url || media?.url; }
 
@@ -401,6 +416,34 @@ function assetIcon(type: AssetKind) {
   if (type === "scene") return Landmark;
   if (type === "prop" || type === "product") return Package;
   return type === "video" ? Video : ImageIcon;
+}
+
+const IMAGE_EDIT_TOOL_ACTIONS = new Set<BoardToolbarAction>([
+  "edit",
+  "portrait",
+  "portrait-emotion",
+  "lighting",
+  "adjust",
+  "symmetry",
+]);
+
+/** 高清下拉的六个操作：走独立画布编辑器（区域框选 + 每操作配置面板），即图标工具。 */
+const CANVAS_EDITOR_OPERATIONS = new Set<BoardToolbarAction>(["hd", "outpaint", "redraw", "erase", "cutout", "crop"]);
+
+const CANVAS_EDITOR_OPERATION_MAP: Record<CanvasEditorOperation, CanvasAdvancedOperation> = {
+  hd: "canvas_image_hd",
+  outpaint: "canvas_image_outpaint",
+  redraw: "canvas_image_redraw",
+  erase: "canvas_image_erase",
+  cutout: "canvas_image_cutout",
+  crop: "canvas_image_crop",
+};
+
+function imageEditInstruction(action: BoardToolbarAction, preset: string | undefined, instruction: string) {
+  const normalized = instruction.trim();
+  if (action === "edit") return normalized;
+  const operation = preset ? `${action}:${preset}` : action;
+  return `[${operation}] ${normalized}`;
 }
 
 function previewFor(item: BoardItem, asset: UnifiedAsset | undefined) {
@@ -454,6 +497,7 @@ function boardItemPayload(item: BoardItem) {
     position: item.position,
     size: item.size,
     ...(item.group_id === undefined ? {} : { group_id: item.group_id }),
+    display_settings: item.display_settings ?? {},
   };
 }
 
@@ -463,6 +507,64 @@ function sameBoardItem(left: BoardItem, right: BoardItem) {
 
 function sameViewport(left: CreativeBoardSnapshot["viewport"], right: CreativeBoardSnapshot["viewport"]) {
   return left.x === right.x && left.y === right.y && left.zoom === right.zoom;
+}
+
+type PendingCanvasSplit = {
+  sourceItemId: string;
+  rows: number;
+  cols: number;
+  includeSplitLines: boolean;
+};
+
+type PendingCanvasAdvanced = {
+  sourceItemId: string;
+  operation: CanvasAdvancedOperation;
+};
+
+type CanvasSplitCell = {
+  row: number;
+  col: number;
+  index: number;
+  width?: number;
+  height?: number;
+  media_asset_id?: string;
+  media_asset?: { id?: string };
+};
+
+type CanvasOutput = {
+  index?: number;
+  label?: string;
+  width?: number;
+  height?: number;
+  media_asset_id?: string;
+  media_asset?: { id?: string };
+};
+
+function readCanvasSplitCells(result: Record<string, unknown> | null): CanvasSplitCell[] {
+  if (!result || !Array.isArray(result.cells)) return [];
+  return result.cells.filter((cell): cell is CanvasSplitCell => {
+    if (!cell || typeof cell !== "object") return false;
+    const record = cell as Record<string, unknown>;
+    return Number.isInteger(record.row) && Number.isInteger(record.col) && Number.isInteger(record.index);
+  });
+}
+
+function readCanvasOutputs(result: Record<string, unknown> | null): CanvasOutput[] {
+  if (!result || !Array.isArray(result.outputs)) return [];
+  return result.outputs.filter((output): output is CanvasOutput => {
+    if (!output || typeof output !== "object") return false;
+    const record = output as Record<string, unknown>;
+    return typeof record.media_asset_id === "string" || Boolean(record.media_asset && typeof record.media_asset === "object");
+  });
+}
+
+function canvasOutputCardSize(source: BoardItem, output: CanvasOutput) {
+  const sourceRatio = source.size.width / Math.max(1, source.size.height);
+  const outputRatio = output.width && output.height && output.width > 0 && output.height > 0
+    ? output.width / output.height
+    : sourceRatio;
+  const width = Math.max(160, Math.round(source.size.width * 0.9), Math.round(120 * outputRatio));
+  return { width, height: Math.max(120, Math.round(width / outputRatio)) };
 }
 
 export function CreativeBoardWorkspace({ projectName }: { projectName: string }) {
@@ -481,6 +583,7 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
   const panRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
   const dragHistoryRecordedRef = useRef(false);
   const suppressNextNodeClickRef = useRef(false);
+  const pendingNodePointerSelectionRef = useRef<string | null>(null);
   const [draggingItemIds, setDraggingItemIds] = useState<string[]>([]);
   const boardHistoryRef = useRef<BoardHistory>({ past: [], future: [] });
   const spacePanRef = useRef(false);
@@ -490,6 +593,11 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
   const pendingBoardEditRef = useRef<string | null>(null);
   const serverItemIdsRef = useRef(new Map<string, string>());
   const serverEdgeIdsRef = useRef(new Map<string, string>());
+  const pendingCanvasSplitsRef = useRef(new Map<string, PendingCanvasSplit>());
+  const pendingCanvasAdvancedRef = useRef(new Map<string, PendingCanvasAdvanced>());
+  const consumedCanvasSplitsRef = useRef(new Set<string>());
+  const consumedCanvasAdvancedRef = useRef(new Set<string>());
+  const tasks = useTasksStore((state) => state.tasks);
   const [board, setBoard] = useState<Board | null>(null);
   const [boardOptions, setBoardOptions] = useState<BoardOption[]>([]);
   const [catalog, setCatalog] = useState<UnifiedAsset[]>([]);
@@ -501,8 +609,30 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
   const [_resourceId, setResourceId] = useState("");
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [elementActionsId, setElementActionsId] = useState<string | null>(null);
+  const [editingElementId, setEditingElementId] = useState<string | null>(null);
+  const [editingElementName, setEditingElementName] = useState("");
+  const elementNameInputRef = useRef<HTMLInputElement>(null);
   const [elementFilter, setElementFilter] = useState<ElementFilter>("all");
   const [elementFilterOpen, setElementFilterOpen] = useState(false);
+  useEffect(() => {
+    if (!editingElementId) return;
+    elementNameInputRef.current?.focus();
+    elementNameInputRef.current?.select();
+  }, [editingElementId]);
+
+  useEffect(() => {
+    if (!elementActionsId) return;
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (target instanceof Element && target.closest(`[data-creative-board-element-actions="${elementActionsId}"]`)) return;
+      setElementActionsId(null);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointerDown);
+  }, [elementActionsId]);
+
   const activeElementFilter = ELEMENT_FILTERS.find((filter) => filter.value === elementFilter) ?? ELEMENT_FILTERS[0];
   const [assetCategory, setAssetCategory] = useState<AssetCategory>("personal");
   const [assetTypeFilter, setAssetTypeFilter] = useState<AssetKind | "all">("all");
@@ -531,6 +661,18 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
   const [conflictOpen, setConflictOpen] = useState(false);
   const [conflictRevision, setConflictRevision] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [toolAction, setToolAction] = useState<BoardToolbarAction | null>(null);
+  const [toolPreset, setToolPreset] = useState<string | undefined>(undefined);
+  const [toolInstruction, setToolInstruction] = useState("");
+  const [toolReferenceMediaAssetId, setToolReferenceMediaAssetId] = useState("");
+  const [toolGridRows, setToolGridRows] = useState(3);
+  const [toolGridCols, setToolGridCols] = useState(3);
+  const [toolIncludeSplitLines, setToolIncludeSplitLines] = useState(true);
+  const [toolAdjustmentOpen, setToolAdjustmentOpen] = useState(true);
+  const [toolBusy, setToolBusy] = useState(false);
+  const [toolEditorOperation, setToolEditorOperation] = useState<CanvasEditorOperation | null>(null);
+  const [toolEditorBusy, setToolEditorBusy] = useState(false);
+  const [canvasSplitGeneration, setCanvasSplitGeneration] = useState(0);
   const currentEpisode = useMemo(() => {
     if (typeof window === "undefined") return undefined;
     const value = Number(new URLSearchParams(window.location.search).get("episode"));
@@ -587,7 +729,7 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     setCatalog(assets);
     if (catalogError) setError(catalogError);
     return assets;
-  }, [fetchCatalog]);
+  }, [fetchCatalog, setError]);
 
   const load = useCallback(async (): Promise<CreativeBoardSnapshot | undefined> => {
     const loadGeneration = boardLoadGenerationRef.current + 1;
@@ -639,7 +781,7 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
       if (isCurrentLoad()) setLoading(false);
     }
     return undefined;
-  }, [currentBoardId, projectName, t]);
+  }, [currentBoardId, projectName, setError, t]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initialize the board from the project when the workspace mounts
@@ -671,7 +813,10 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
   }, [catalog]);
   const selectedItems = useMemo(() => (board?.items ?? []).filter((item) => selectedIds.includes(item.id)), [board?.items, selectedIds]);
   const selectedItem = selectedItems.length === 1 ? selectedItems[0] : undefined;
-  const selectedAsset = selectedItem ? assetsByReference.get(assetKey(selectedItem.resource_type, selectedItem.resource_id)) ?? assetsByReference.get(selectedItem.resource_id) : undefined;
+  const selectedAsset = selectedItem ? assetsByReference.get(assetKey(selectedItem.resource_type, selectedItem.resource_id)) || assetsByReference.get(selectedItem.resource_id) : undefined;
+  const referenceAssets = useMemo<ReferenceAsset[]>(() => catalog
+    .filter((asset) => asset.source === "media" && asset.kind === "media")
+    .map((asset) => ({ id: asset.id, name: asset.name, previewUrl: assetSourceUrl(asset), mimeType: asset.media?.mime_type })), [catalog]);
   const filteredItems = useMemo(() => { const value = search.trim().toLowerCase(); return (board?.items ?? []).filter((item) => matchesElementFilter(item, elementFilter) && (!value || nodeTitle(item, names).toLowerCase().includes(value) || item.item_type.includes(value) || item.resource_id.toLowerCase().includes(value))); }, [board?.items, elementFilter, names, search]);
   const filteredAssets = useMemo(() => {
     const value = search.trim().toLowerCase();
@@ -704,6 +849,61 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     boardHistoryRef.current.past.push(cloneBoard(board));
     boardHistoryRef.current.future = [];
   };
+
+  useEffect(() => {
+    if (!board || tasks.length === 0) return;
+    const completed = tasks.filter((task) => task.project_name === projectName && task.status === "succeeded");
+    for (const task of completed) {
+      const pendingSplit = task.task_type === "canvas_image_split" ? pendingCanvasSplitsRef.current.get(task.task_id) : undefined;
+      const pendingAdvanced = task.task_type !== "canvas_image_split" ? pendingCanvasAdvancedRef.current.get(task.task_id) : undefined;
+      if ((!pendingSplit || consumedCanvasSplitsRef.current.has(task.task_id)) && (!pendingAdvanced || consumedCanvasAdvancedRef.current.has(task.task_id))) continue;
+      const sourceItemId = pendingSplit?.sourceItemId ?? pendingAdvanced?.sourceItemId;
+      const source = board.items.find((item) => item.id === sourceItemId);
+      if (!source) continue;
+      const cells = pendingSplit ? readCanvasSplitCells(task.result) : [];
+      const outputs = pendingAdvanced ? readCanvasOutputs(task.result) : [];
+      if (cells.length === 0 && outputs.length === 0) continue;
+      const operation = pendingSplit ? "canvas_image_split" : pendingAdvanced?.operation ?? task.task_type;
+      const groupId = (cells.length + outputs.length) > 1 ? clientId("canvas-output-group") : undefined;
+      const createdItems: BoardItem[] = pendingSplit
+        ? cells.sort((left, right) => left.index - right.index).flatMap((cell): BoardItem[] => {
+            const mediaAssetId = cell.media_asset_id || cell.media_asset?.id;
+            if (!mediaAssetId || !pendingSplit) return [];
+            const cellWidth = Math.max(120, Math.round(source.size.width / pendingSplit.cols));
+            const cellHeight = Math.max(120, Math.round(source.size.height / pendingSplit.rows));
+            return [{
+              id: clientId("grid-cell"), item_type: "media", resource_type: "media_asset", resource_id: mediaAssetId,
+              position: { x: Math.round(source.position.x + source.size.width + 48 + cell.col * (cellWidth + 16)), y: Math.round(source.position.y + cell.row * (cellHeight + 16)) },
+              size: { width: cellWidth, height: cellHeight }, group_id: groupId,
+              display_settings: { canvas_operation: operation, source_item_id: source.id, grid_rows: pendingSplit.rows, grid_cols: pendingSplit.cols, include_split_lines: pendingSplit.includeSplitLines, cell: { row: cell.row, col: cell.col, index: cell.index } },
+            }];
+          })
+        : outputs.flatMap((output): BoardItem[] => {
+            const mediaAssetId = output.media_asset_id || output.media_asset?.id;
+            if (!mediaAssetId) return [];
+            const index = output.index ?? 0;
+            const { width, height } = canvasOutputCardSize(source, output);
+            return [{
+              id: clientId("canvas-output"), item_type: "media", resource_type: "media_asset", resource_id: mediaAssetId,
+              position: { x: Math.round(source.position.x + source.size.width + 48 + (index % 3) * (width + 16)), y: Math.round(source.position.y + Math.floor(index / 3) * (height + 16)) },
+              size: { width, height }, group_id: groupId,
+              display_settings: { canvas_operation: operation, source_item_id: source.id, output_index: index, output_label: output.label ?? operation },
+            }];
+          });
+      if (createdItems.length === 0) continue;
+      if (pendingSplit) {
+        consumedCanvasSplitsRef.current.add(task.task_id);
+        pendingCanvasSplitsRef.current.delete(task.task_id);
+      } else {
+        consumedCanvasAdvancedRef.current.add(task.task_id);
+        pendingCanvasAdvancedRef.current.delete(task.task_id);
+      }
+      rememberBoard();
+      setBoard((current) => current ? { ...current, items: current.items.concat(createdItems) } : current);
+      setSelectedIds(createdItems.map((item) => item.id));
+      void loadCatalog();
+    }
+  }, [board, canvasSplitGeneration, loadCatalog, projectName, tasks]);
 
   const undoBoard = () => {
     if (!board) return;
@@ -828,7 +1028,7 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     } finally {
       if (mountedRef.current) setCreatingBoard(false);
     }
-  }, [creatingBoard, navigateToBoard, newBoardName, projectName, t]);
+  }, [creatingBoard, navigateToBoard, newBoardName, projectName, setError, t]);
 
   const switchBoard = useCallback((boardId: string) => {
     setBoardMenuOpen(false);
@@ -862,7 +1062,7 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("creative_board_rename_error"));
     }
-  }, [board, editingBoardName, t]);
+  }, [board, editingBoardName, setError, t]);
 
   const openBoardInNewWindow = useCallback((boardId: string) => {
     const params = new URLSearchParams(routeSearch);
@@ -883,7 +1083,7 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("creative_board_copy_error"));
     }
-  }, [navigateToBoard, t]);
+  }, [navigateToBoard, setError, t]);
 
   const deleteBoard = useCallback(async (option: BoardOption) => {
     setBoardActionsId(null);
@@ -894,7 +1094,7 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : t("creative_board_delete_error"));
     }
-  }, [t]);
+  }, [setError, t]);
 
   const removeItem = (item: BoardItem, shouldRemember = true) => {
     if (!board) return;
@@ -944,7 +1144,13 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     const onNode = (event.target as HTMLElement).closest("[data-board-node]");
     const shouldPan = event.button === 1 || activeTool === "pan" || spacePanRef.current;
     if (!shouldPan) {
-      if (!onNode) setSelectedIds([]);
+      if (!onNode) {
+        if (toolAction) {
+          setToolAdjustmentOpen(false);
+        } else {
+          setSelectedIds([]);
+        }
+      }
       return;
     }
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -1071,6 +1277,281 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
     setViewport({ x: (width - (maxX - minX) * nextZoom) / 2 - minX * nextZoom, y: (height - (maxY - minY) * nextZoom) / 2 - minY * nextZoom, zoom: nextZoom });
   };
 
+  const beginElementRename = useCallback((item: BoardItem) => {
+    setElementActionsId(null);
+    setEditingElementId(item.id);
+    setEditingElementName(nodeTitle(item, names));
+  }, [names]);
+
+  const locateItem = useCallback((item: BoardItem) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    const zoom = viewportRef.current.zoom;
+    setSelectedIds([item.id]);
+    setActiveTool("select");
+    setConnectMode(false);
+    if (rect) {
+      setViewport({
+        x: rect.width / 2 - (item.position.x + item.size.width / 2) * zoom,
+        y: rect.height / 2 - (item.position.y + item.size.height / 2) * zoom,
+        zoom,
+      });
+    }
+  }, []);
+
+  const downloadItem = useCallback((item: BoardItem) => {
+    setElementActionsId(null);
+    const asset = assetsByReference.get(assetKey(item.resource_type, item.resource_id)) || assetsByReference.get(item.resource_id);
+    const source = asset?.media?.url || asset?.media?.content_url || assetImageSourceUrl(asset, asset?.imagePath);
+    if (!source) {
+      setError(t("creative_board_download_error", { defaultValue: "无法获取该素材的下载地址。" }));
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = source;
+    link.download = asset?.name || item.resource_id;
+    link.target = "_blank";
+    link.rel = "noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }, [assetsByReference, setError, t]);
+
+  const closeToolPanel = useCallback(() => {
+    setToolAction(null);
+    setToolPreset(undefined);
+    setToolInstruction("");
+    setToolReferenceMediaAssetId("");
+    setToolGridRows(3);
+    setToolGridCols(3);
+    setToolIncludeSplitLines(true);
+    setToolAdjustmentOpen(true);
+    setToolBusy(false);
+    setToolEditorOperation(null);
+    setToolEditorBusy(false);
+  }, []);
+
+  const expandSelectedItem = useCallback((item: BoardItem) => {
+    rememberBoard();
+    setBoard((current) => current ? {
+      ...current,
+      items: current.items.map((candidate) => candidate.id === item.id
+        ? { ...candidate, position: { x: candidate.position.x - 40, y: candidate.position.y - 30 }, size: { width: Math.round(candidate.size.width * 1.25), height: Math.round(candidate.size.height * 1.25) } }
+        : candidate),
+    } : current);
+  }, [board]);
+
+  const openToolPanel = useCallback((selection: BoardToolbarSelection, item: BoardItem) => {
+    const { action, preset } = selection;
+    if (action === "download") {
+      downloadItem(item);
+      return;
+    }
+    if (action === "expand") {
+      expandSelectedItem(item);
+      return;
+    }
+    if (CANVAS_EDITOR_OPERATIONS.has(action)) {
+      setSelectedIds([item.id]);
+      setToolEditorOperation(action as CanvasEditorOperation);
+      return;
+    }
+    setSelectedIds([item.id]);
+    setToolPreset(preset);
+    setToolInstruction("");
+    setToolReferenceMediaAssetId("");
+    if (action === "grid" || action === "split") {
+      const presetMatch = preset?.match(/^(\\d+)x(\\d+)$/);
+      setToolGridRows(presetMatch ? Math.min(8, Math.max(2, Number(presetMatch[1]))) : 3);
+      setToolGridCols(presetMatch ? Math.min(8, Math.max(2, Number(presetMatch[2]))) : 3);
+      setToolIncludeSplitLines(true);
+    } else {
+      setToolGridRows(3);
+      setToolGridCols(3);
+      setToolIncludeSplitLines(true);
+    }
+    setToolAdjustmentOpen(true);
+    setToolAction(action);
+  }, [downloadItem, expandSelectedItem]);
+
+  const uploadToolReference = useCallback(async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setError(t("creative_board_tool_reference_image", { defaultValue: "Reference image" }));
+      return;
+    }
+    setToolBusy(true);
+    try {
+      const uploaded = await API.uploadMediaAsset(projectName, file);
+      const record = uploaded && typeof uploaded === "object" ? uploaded : {};
+      const uploadedId = typeof record.id === "string" ? record.id : typeof record.media_asset_id === "string" ? record.media_asset_id : "";
+      await loadCatalog();
+      if (uploadedId) setToolReferenceMediaAssetId(uploadedId);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t("creative_board_save_error", { defaultValue: "Upload failed. Please try again." }));
+    } finally {
+      if (mountedRef.current) setToolBusy(false);
+    }
+  }, [loadCatalog, projectName, setError, t]);
+
+  const submitToolAction = async () => {
+    if (!toolAction || !selectedItem) return;
+    const isGridAction = toolAction === "grid" || toolAction === "split";
+    if (!isGridAction && !toolInstruction.trim()) return;
+    setToolBusy(true);
+    try {
+      if (isGridAction) {
+        const isMediaSource = selectedItem.resource_type === "media_asset";
+        const projectResourceType = selectedItem.resource_type === "character"
+          || selectedItem.resource_type === "scene"
+          || selectedItem.resource_type === "prop"
+          || selectedItem.resource_type === "product"
+          || selectedItem.resource_type === "storyboard"
+          ? selectedItem.resource_type
+          : undefined;
+        if (!isMediaSource && !projectResourceType) {
+          setError(t("creative_board_tool_media_edit_unsupported"));
+          return;
+        }
+        const enqueueResult = await enqueueCanvasImageSplit(projectName, isMediaSource
+          ? {
+              sourceKind: "media",
+              mediaAssetId: selectedItem.resource_id,
+              rows: toolGridRows,
+              cols: toolGridCols,
+              includeSplitLines: toolIncludeSplitLines,
+            }
+          : {
+              sourceKind: "project",
+              resourceType: projectResourceType,
+              resourceId: selectedItem.resource_id,
+              rows: toolGridRows,
+              cols: toolGridCols,
+              includeSplitLines: toolIncludeSplitLines,
+            });
+        for (const taskId of enqueueResult?.taskIds ?? []) {
+          pendingCanvasSplitsRef.current.set(taskId, {
+            sourceItemId: selectedItem.id,
+            rows: toolGridRows,
+            cols: toolGridCols,
+            includeSplitLines: toolIncludeSplitLines,
+          });
+        }
+        setCanvasSplitGeneration((value) => value + 1);
+        setError(t("creative_board_tool_split_submitted"));
+      } else {
+        const isMediaSource = selectedItem.resource_type === "media_asset";
+        const projectResourceType = selectedItem.resource_type === "character"
+          || selectedItem.resource_type === "scene"
+          || selectedItem.resource_type === "prop"
+          || selectedItem.resource_type === "product"
+          || selectedItem.resource_type === "storyboard"
+          ? selectedItem.resource_type
+          : undefined;
+        if (!isMediaSource && !projectResourceType) {
+          setError(t("creative_board_tool_media_edit_unsupported"));
+          return;
+        }
+        const advancedOperation: CanvasAdvancedOperation | undefined = toolAction === "panorama"
+          ? "canvas_image_panorama"
+          : toolAction === "angles"
+            ? "canvas_image_angles"
+            : toolAction === "layers"
+              ? "canvas_image_layers"
+              : toolAction === "hd"
+                ? "canvas_image_hd"
+                : undefined;
+        if (advancedOperation) {
+          const enqueueResult = await enqueueCanvasImageAdvanced(projectName, isMediaSource
+            ? { operation: advancedOperation, sourceKind: "media", mediaAssetId: selectedItem.resource_id, instruction: toolInstruction.trim() || undefined }
+            : { operation: advancedOperation, sourceKind: "project", resourceType: projectResourceType, resourceId: selectedItem.resource_id, instruction: toolInstruction.trim() || undefined });
+          for (const taskId of enqueueResult.taskIds) pendingCanvasAdvancedRef.current.set(taskId, { sourceItemId: selectedItem.id, operation: advancedOperation });
+          setCanvasSplitGeneration((value) => value + 1);
+          setError(t("creative_board_tool_advanced_submitted"));
+        } else {
+          if (!IMAGE_EDIT_TOOL_ACTIONS.has(toolAction) || !projectResourceType) {
+            setError(t("creative_board_tool_media_edit_unsupported"));
+            return;
+          }
+          await enqueueImageEdit(projectName, {
+            resourceType: projectResourceType,
+            resourceId: selectedItem.resource_id,
+            instruction: imageEditInstruction(toolAction, toolPreset, toolInstruction),
+            referenceMediaAssetId: toolReferenceMediaAssetId || null,
+          });
+          setError(t("creative_board_tool_edit_submitted"));
+        }
+      }
+      closeToolPanel();
+      await loadCatalog();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t("creative_board_save_error", { defaultValue: "Save failed. Please try again." }));
+    } finally {
+      if (mountedRef.current) setToolBusy(false);
+    }
+  };
+
+  const submitCanvasEditor = async (submission: CanvasEditorSubmission) => {
+    if (!selectedItem || !toolEditorOperation) return;
+    setToolEditorBusy(true);
+    try {
+      const operation = CANVAS_EDITOR_OPERATION_MAP[toolEditorOperation];
+      const isMediaSource = selectedItem.resource_type === "media_asset";
+      const projectResourceType = selectedItem.resource_type === "character"
+        || selectedItem.resource_type === "scene"
+        || selectedItem.resource_type === "prop"
+        || selectedItem.resource_type === "product"
+        || selectedItem.resource_type === "storyboard"
+        ? selectedItem.resource_type
+        : undefined;
+      if (!isMediaSource && !projectResourceType) {
+        setError(t("creative_board_tool_media_edit_unsupported"));
+        return;
+      }
+      const base = {
+        operation,
+        instruction: submission.instruction || undefined,
+        count: submission.count,
+        region: submission.region,
+        aspectRatio: submission.aspectRatio,
+        multiplier: submission.multiplier,
+      };
+      const enqueueResult = await enqueueCanvasImageAdvanced(
+        projectName,
+        isMediaSource
+          ? { ...base, sourceKind: "media", mediaAssetId: selectedItem.resource_id }
+          : { ...base, sourceKind: "project", resourceType: projectResourceType, resourceId: selectedItem.resource_id },
+      );
+      for (const taskId of enqueueResult.taskIds) {
+        pendingCanvasAdvancedRef.current.set(taskId, { sourceItemId: selectedItem.id, operation });
+      }
+      setCanvasSplitGeneration((value) => value + 1);
+      setError(t("creative_board_tool_advanced_submitted"));
+      closeToolPanel();
+      await loadCatalog();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t("creative_board_save_error", { defaultValue: "Save failed. Please try again." }));
+    } finally {
+      if (mountedRef.current) setToolEditorBusy(false);
+    }
+  };
+
+  const cancelElementRename = useCallback(() => {
+    setEditingElementId(null);
+    setEditingElementName("");
+  }, []);
+
+  const saveElementRename = useCallback((item: BoardItem, rawName: string) => {
+    const nextName = rawName.trim();
+    cancelElementRename();
+    if (!nextName || nextName === nodeTitle(item, names)) return;
+    rememberBoard();
+    setBoard((current) => current ? {
+      ...current,
+      items: current.items.map((candidate) => candidate.id === item.id
+        ? { ...candidate, display_settings: { ...candidate.display_settings, name: nextName } }
+        : candidate),
+    } : current);
+  }, [cancelElementRename, names]);
+
   const persistSnapshot = useCallback(async (snapshot: CreativeBoardSnapshot, previousSnapshot: CreativeBoardSnapshot | undefined): Promise<CreativeBoardSnapshot> => {
     const previous = previousSnapshot?.boardId === snapshot.boardId ? previousSnapshot : EMPTY_SNAPSHOT;
     let revision = revisionRef.current;
@@ -1138,7 +1619,7 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
       }
       throw reason;
     }
-  }, [t]);
+  }, [setError, t]);
 
   const persistenceSnapshot = useMemo<CreativeBoardSnapshot>(() => board ? { boardId: board.id, name, viewport: { x: viewport.x, y: viewport.y, zoom: viewport.zoom }, items: board.items, edges: board.edges, revision } : EMPTY_SNAPSHOT, [board, name, revision, viewport]);
   const persistence = useCanvasPersistence({ snapshot: persistenceSnapshot, snapshotKey: board ? JSON.stringify(persistenceSnapshot) : "", hydrated: Boolean(board) && !loading, enabled: Boolean(board), debounceMs: 1_000, save: persistSnapshot });
@@ -1161,7 +1642,7 @@ export function CreativeBoardWorkspace({ projectName }: { projectName: string })
       setError(null);
       void retry();
     }
-  }, [conflictRevision, reloadBoard, retry]);
+  }, [conflictRevision, reloadBoard, retry, setError]);
 
   const handleSaveRetry = useCallback(() => {
     if (conflict) {
@@ -1350,14 +1831,98 @@ if (event.key === "Escape") closeBoardMenu();
                   const asset = assetsByReference.get(assetKey(item.resource_type, item.resource_id)) || assetsByReference.get(item.resource_id);
                   const source = sidebarAssetSourceUrl(asset);
                   return (
-                    <button type="button" key={item.id} onClick={() => selectItem(item, false)} className={"group flex min-h-10 w-full items-center gap-2 rounded-lg border px-1.5 py-1 text-left transition-colors " + (selected ? "border-transparent bg-[#f3f3f5]" : "border-transparent hover:bg-[#f8f8fa]")}>
+                    <div
+                      key={item.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => selectItem(item, false)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          selectItem(item, false);
+                        }
+                      }}
+                      className={"group flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-lg border px-1.5 py-1 text-left transition-colors focus-within:ring-2 focus-within:ring-[#c8c1ff] " + (selected ? "border-transparent bg-[#f3f3f5]" : "border-transparent hover:bg-[#f8f8fa]")}
+                    >
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md border border-[#e4e8ef] bg-[#f5f6f8]" style={{ color: colorFor(item.item_type) }}>
                         {source ? <img src={source} alt="" draggable={false} onDragStart={(event) => event.preventDefault()} className="h-full w-full object-cover" /> : <Icon className="h-3.5 w-3.5" aria-hidden />}
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-[#4b5563]">{nodeTitle(item, names)}</span>
-                      <MoreHorizontal className="h-3.5 w-3.5 shrink-0 text-[#a5afbd] opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />
-                      <Send className="h-3.5 w-3.5 shrink-0 text-[#a5afbd]" aria-hidden />
-                    </button>
+                      {editingElementId === item.id ? (
+                        <input
+                          ref={elementNameInputRef}
+                          value={editingElementName}
+                          onChange={(event) => setEditingElementName(event.target.value)}
+                          onClick={(event) => event.stopPropagation()}
+                          onBlur={() => saveElementRename(item, editingElementName)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              saveElementRename(item, editingElementName);
+                            } else if (event.key === "Escape") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              cancelElementRename();
+                            }
+                          }}
+                          className="min-w-0 flex-1 rounded border border-[#c8c1ff] bg-white px-1.5 py-0.5 text-[11px] font-medium text-[#4b5563] outline-none"
+                          aria-label={t("creative_board_item_name_input")}
+                        />
+                      ) : (
+                        <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-[#4b5563]">{nodeTitle(item, names)}</span>
+                      )}
+                      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                        <span className="group/locate relative">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              locateItem(item);
+                            }}
+                            className="focus-ring rounded p-1 text-[#a5afbd] transition-colors hover:bg-[#ecebff] hover:text-[#6254d9]"
+                            aria-label={t("creative_board_locate_node")}
+                            title={t("creative_board_locate_node")}
+                          >
+                            <LocateFixed className="h-3.5 w-3.5" aria-hidden />
+                          </button>
+                          <span role="tooltip" className="pointer-events-none absolute bottom-[calc(100%+7px)] right-0 z-50 whitespace-nowrap rounded-md bg-[#30343b] px-2 py-1 text-[10px] font-normal text-white opacity-0 shadow-[0_4px_12px_rgba(20,24,32,0.18)] transition-opacity group-hover/locate:opacity-100">
+                            {t("creative_board_locate_node")}
+                          </span>
+                        </span>
+                        <div className="relative" data-creative-board-element-actions={item.id}>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setElementActionsId((currentId) => currentId === item.id ? null : item.id);
+                            }}
+                            className={"focus-ring rounded p-1 text-[#a5afbd] transition-colors hover:bg-[#ecebff] hover:text-[#6254d9] " + (elementActionsId === item.id ? "bg-[#ecebff] text-[#6254d9]" : "")}
+                            aria-label={t("creative_board_more")}
+                            aria-haspopup="menu"
+                            aria-expanded={elementActionsId === item.id}
+                            title={t("creative_board_more")}
+                          >
+                            <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
+                          </button>
+                          {elementActionsId === item.id ? (
+                            <div role="menu" className="absolute right-0 top-[calc(100%+4px)] z-50 w-36 rounded-lg border border-[#dce3ec] bg-white p-1 shadow-[0_10px_24px_rgba(50,63,82,0.16)]">
+                              <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); beginElementRename(item); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] text-[#475569] hover:bg-[#f5f7fa]">
+                                <Pencil className="h-3.5 w-3.5 text-[#64748b]" aria-hidden />
+                                {t("creative_board_rename_item")}
+                              </button>
+                              <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setElementActionsId(null); duplicateItems(false, [item]); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] text-[#475569] hover:bg-[#f5f7fa]">
+                                <Copy className="h-3.5 w-3.5 text-[#64748b]" aria-hidden />
+                                {t("creative_board_duplicate_item")}
+                              </button>
+                              <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); void downloadItem(item); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[11px] text-[#475569] hover:bg-[#f5f7fa]">
+                                <Download className="h-3.5 w-3.5 text-[#64748b]" aria-hidden />
+                                {t("creative_board_download_item")}
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
                   );
                 })}
               </div>
@@ -1423,7 +1988,7 @@ if (event.key === "Escape") closeBoardMenu();
         </button>
       )}
       <section className="relative flex min-w-0 flex-1 flex-col bg-[#f5f8fc]">
-{error ? <div className="z-20 flex items-center justify-between border-b border-[#e9c2c2] bg-[#fff8f8] px-4 py-2 text-[10px] text-[#a34a4a]"><span>{error}</span><button type="button" onClick={() => void load()} className="underline">{t("creative_board_retry")}</button></div> : null}<div ref={canvasRef} onPointerDown={onCanvasDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheel} onDoubleClick={(event) => { if ((event.target as HTMLElement).closest("[data-board-node], button, input, [role=menu]")) return; setAddMenuOpen(true); }} onDragOver={(event) => event.preventDefault()} onDrop={onCanvasDrop} data-testid="creative-board-canvas" className={"relative min-h-0 flex-1 overflow-hidden " + (activeTool === "pan" ? "cursor-grab" : "cursor-default")} style={gridVisible ? { backgroundImage: "linear-gradient(#dce4ee 1px, transparent 1px), linear-gradient(90deg, #dce4ee 1px, transparent 1px)", backgroundSize: gridSize + "px " + gridSize + "px", backgroundPosition: viewport.x % gridSize + "px " + viewport.y % gridSize + "px" } : undefined}>{loading ? <div className="flex h-full items-center justify-center text-[11px] text-[#8a96a7]"><Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />{t("creative_board_loading")}</div> : board ? <div className="absolute" style={{ left: worldBounds.minX, top: worldBounds.minY, width: worldBounds.width, height: worldBounds.height, overflow: "visible", transform: "translate(" + (viewport.x - worldBounds.minX) + "px, " + (viewport.y - worldBounds.minY) + "px) scale(" + viewport.zoom + ")", transformOrigin: "0 0" }}><svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={worldBounds.width} height={worldBounds.height} aria-label={t("creative_board_connections", { defaultValue: "Board connections" })}><defs><marker id="creative-board-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#a8b3c3" /></marker></defs>{board.edges.map((edge) => { const source = board.items.find((item) => item.id === edge.source_item_id); const target = board.items.find((item) => item.id === edge.target_item_id); return source && target ? <path key={edge.id} d={edgePath(source, target)} fill="none" stroke="#a8b3c3" strokeWidth="2.5" markerEnd="url(#creative-board-arrow)" className="pointer-events-auto cursor-pointer hover:stroke-[#6254d9]" onClick={() => void removeEdge(edge.id)} /> : null; })}</svg>{board.items.map((item) => { const Icon = iconFor(item.item_type); const selected = selectedIds.includes(item.id); const dragging = draggingItemIds.includes(item.id); const itemAsset = assetsByReference.get(assetKey(item.resource_type, item.resource_id)) || assetsByReference.get(item.resource_id); return <article key={item.id} data-testid={`creative-board-item-${item.id}`} data-board-node className={"group absolute select-none overflow-hidden rounded-xl border bg-white " + (dragging ? "z-30 cursor-grabbing shadow-[0_14px_34px_rgba(53,68,91,0.2)] " : "shadow-[0_8px_24px_rgba(53,68,91,0.12)] ") + (selected ? "border-[#6254d9] ring-2 ring-[#6254d9]/20" : "border-[#d9e0ea] hover:shadow-[0_12px_30px_rgba(53,68,91,0.16)]")} style={{ left: item.position.x, top: item.position.y, width: item.size.width, minHeight: item.size.height }} onPointerDown={(event) => { if (event.button !== 0 || activeTool === "pan") return; event.preventDefault(); event.stopPropagation(); if (connectMode) return; const draggedItem = event.altKey ? duplicateItems(event.ctrlKey || event.metaKey, [item])[0] ?? item : item; const dragItems = event.altKey ? [draggedItem] : selectedIds.includes(item.id) && selectedItems.length > 0 ? selectedItems : [draggedItem]; dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, active: false, items: dragItems.map((candidate) => ({ id: candidate.id, x: candidate.position.x, y: candidate.position.y })) }; canvasRef.current?.setPointerCapture?.(event.pointerId); }} onClick={(event) => { if (activeTool === "pan") return; event.stopPropagation(); if (suppressNextNodeClickRef.current) { suppressNextNodeClickRef.current = false; return; } selectItem(item, event.shiftKey); }} onDoubleClick={() => item.resource_type === "media_asset" ? navigate("/media?asset=" + encodeURIComponent(item.resource_id)) : navigate("/timeline")}><div className="flex items-center gap-2 border-b border-[#edf0f4] px-3 py-2"><span className="flex h-5 w-5 items-center justify-center rounded" style={{ background: colorFor(item.item_type) + "20", color: colorFor(item.item_type) }}><Icon className="h-3 w-3" aria-hidden /></span><span className="min-w-0 flex-1 truncate text-[10px] font-semibold text-[#334155]">{nodeTitle(item, names)}</span><button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); void removeItem(item); }} aria-label={t("creative_board_delete_item")} className="rounded p-0.5 text-[#a5afbd] opacity-0 group-hover:opacity-100"><Trash2 className="h-3 w-3" aria-hidden /></button></div><div className="h-[154px] overflow-hidden border-b border-[#edf0f4]">{previewFor(item, itemAsset)}</div><div className="flex items-center justify-between px-3 py-2"><span className="truncate text-[9px] text-[#94a3b8]">{t("creative_board_type_" + item.item_type)}</span><span className="flex items-center gap-1 text-[9px] text-[#94a3b8]"><Link2 className="h-3 w-3" aria-hidden />{board.edges.filter((edge) => edge.source_item_id === item.id || edge.target_item_id === item.id).length}</span></div><span className="absolute -left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white bg-[#a8b3c3] shadow-sm" /><span className="absolute -right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white bg-[#a8b3c3] shadow-sm" /></article>; })}{selectedItem && draggingItemIds.length === 0 ? <BoardSelectionOverlay name={nodeTitle(selectedItem, names)} position={selectedItem.position} size={selectedItem.size} zoom={viewport.zoom} multiSelected={selectedItems.length > 1} onResizeStart={(event, corner) => startResize(event, selectedItem, corner)} onDuplicate={() => { duplicateItems(false, [selectedItem]); }} onDelete={() => removeItem(selectedItem)} onOpenSkills={() => openSkills(selectedItem)} labels={{ openTools: t("creative_board_selection_tools", { defaultValue: "Creative tools" }), duplicate: t("creative_board_duplicate_item", { defaultValue: "Duplicate element" }), delete: t("creative_board_delete_item"), resize: (corner) => t("creative_board_resize", { defaultValue: "Resize {{corner}}", corner }) }} /> : null}</div> : null}
+{error ? <div className="z-20 flex items-center justify-between border-b border-[#e9c2c2] bg-[#fff8f8] px-4 py-2 text-[10px] text-[#a34a4a]"><span>{error}</span><button type="button" onClick={() => void load()} className="underline">{t("creative_board_retry")}</button></div> : null}<div ref={canvasRef} onPointerDown={onCanvasDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} onWheel={onWheel} onDoubleClick={(event) => { if ((event.target as HTMLElement).closest("[data-board-node], button, input, [role=menu]")) return; setAddMenuOpen(true); }} onDragOver={(event) => event.preventDefault()} onDrop={onCanvasDrop} data-testid="creative-board-canvas" className={"relative min-h-0 flex-1 overflow-hidden " + (activeTool === "pan" ? "cursor-grab" : "cursor-default")} style={gridVisible ? { backgroundImage: "linear-gradient(#dce4ee 1px, transparent 1px), linear-gradient(90deg, #dce4ee 1px, transparent 1px)", backgroundSize: gridSize + "px " + gridSize + "px", backgroundPosition: viewport.x % gridSize + "px " + viewport.y % gridSize + "px" } : undefined}>{loading ? <div className="flex h-full items-center justify-center text-[11px] text-[#8a96a7]"><Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />{t("creative_board_loading")}</div> : board ? <div className="absolute" style={{ left: worldBounds.minX, top: worldBounds.minY, width: worldBounds.width, height: worldBounds.height, overflow: "visible", transform: "translate(" + (viewport.x - worldBounds.minX) + "px, " + (viewport.y - worldBounds.minY) + "px) scale(" + viewport.zoom + ")", transformOrigin: "0 0" }}><svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={worldBounds.width} height={worldBounds.height} aria-label={t("creative_board_connections", { defaultValue: "Board connections" })}><defs><marker id="creative-board-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#a8b3c3" /></marker></defs>{board.edges.map((edge) => { const source = board.items.find((item) => item.id === edge.source_item_id); const target = board.items.find((item) => item.id === edge.target_item_id); return source && target ? <path key={edge.id} d={edgePath(source, target)} fill="none" stroke="#a8b3c3" strokeWidth="2.5" markerEnd="url(#creative-board-arrow)" className="pointer-events-auto cursor-pointer hover:stroke-[#6254d9]" onClick={() => void removeEdge(edge.id)} /> : null; })}</svg>{board.items.map((item) => { const Icon = iconFor(item.item_type); const selected = selectedIds.includes(item.id); const dragging = draggingItemIds.includes(item.id); const itemAsset = assetsByReference.get(assetKey(item.resource_type, item.resource_id)) || assetsByReference.get(item.resource_id); return <article key={item.id} data-testid={`creative-board-item-${item.id}`} data-board-node className={"group absolute flex select-none flex-col overflow-hidden rounded-xl border bg-white " + (dragging ? "z-30 cursor-grabbing shadow-[0_14px_34px_rgba(53,68,91,0.2)] " : "shadow-[0_8px_24px_rgba(53,68,91,0.12)] ") + (selected ? "border-[#6254d9] ring-2 ring-[#6254d9]/20" : "border-[#d9e0ea] hover:shadow-[0_12px_30px_rgba(53,68,91,0.16)]")} style={{ left: item.position.x, top: item.position.y, width: item.size.width, height: item.size.height, minHeight: item.size.height }} onPointerDown={(event) => { if (event.button !== 0 || activeTool === "pan") return; event.preventDefault(); event.stopPropagation(); if (connectMode) return; pendingNodePointerSelectionRef.current = item.id; if (event.shiftKey || !selectedIds.includes(item.id)) selectItem(item, event.shiftKey); const draggedItem = event.altKey ? duplicateItems(event.ctrlKey || event.metaKey, [item])[0] ?? item : item; const dragItems = event.altKey ? [draggedItem] : selectedIds.includes(item.id) && selectedItems.length > 0 ? selectedItems : [draggedItem]; dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, active: false, items: dragItems.map((candidate) => ({ id: candidate.id, x: candidate.position.x, y: candidate.position.y })) }; canvasRef.current?.setPointerCapture?.(event.pointerId); }} onClick={(event) => { if (activeTool === "pan") return; event.stopPropagation(); if (suppressNextNodeClickRef.current) { suppressNextNodeClickRef.current = false; pendingNodePointerSelectionRef.current = null; return; } if (pendingNodePointerSelectionRef.current === item.id) { pendingNodePointerSelectionRef.current = null; return; } if (event.shiftKey || !selectedIds.includes(item.id)) selectItem(item, event.shiftKey); }} onDoubleClick={() => item.resource_type === "media_asset" ? navigate("/media?asset=" + encodeURIComponent(item.resource_id)) : navigate("/timeline")}><div className="flex items-center gap-2 border-b border-[#edf0f4] px-3 py-2"><span className="flex h-5 w-5 items-center justify-center rounded" style={{ background: colorFor(item.item_type) + "20", color: colorFor(item.item_type) }}><Icon className="h-3 w-3" aria-hidden /></span><span className="min-w-0 flex-1 truncate text-[10px] font-semibold text-[#334155]">{nodeTitle(item, names)}</span><button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); void removeItem(item); }} aria-label={t("creative_board_delete_item")} className="rounded p-0.5 text-[#a5afbd] opacity-0 group-hover:opacity-100"><Trash2 className="h-3 w-3" aria-hidden /></button></div><div className="min-h-0 flex-1 overflow-hidden border-b border-[#edf0f4]">{previewFor(item, itemAsset)}</div><div className="flex items-center justify-between px-3 py-2"><span className="truncate text-[9px] text-[#94a3b8]">{t("creative_board_type_" + item.item_type)}</span><span className="flex items-center gap-1 text-[9px] text-[#94a3b8]"><Link2 className="h-3 w-3" aria-hidden />{board.edges.filter((edge) => edge.source_item_id === item.id || edge.target_item_id === item.id).length}</span></div><span className="absolute -left-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white bg-[#a8b3c3] shadow-sm" /><span className="absolute -right-1.5 top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white bg-[#a8b3c3] shadow-sm" /></article>; })}{selectedItem && draggingItemIds.length === 0 ? <BoardSelectionOverlay name={nodeTitle(selectedItem, names)} position={selectedItem.position} size={selectedItem.size} zoom={viewport.zoom} multiSelected={selectedItems.length > 1} onResizeStart={(event, corner) => startResize(event, selectedItem, corner)} onDuplicate={() => { duplicateItems(false, [selectedItem]); }} onDelete={() => removeItem(selectedItem)} onOpenSkills={() => openSkills(selectedItem)} showTools={isImageBoardItem(selectedItem)} labels={{ openTools: t("creative_board_selection_tools", { defaultValue: "Creative tools" }), duplicate: t("creative_board_duplicate_item", { defaultValue: "Duplicate element" }), delete: t("creative_board_delete_item"), resize: (corner) => t("creative_board_resize", { defaultValue: "Resize {{corner}}", corner }), toolbar: { portrait: t("creative_board_toolbar_portrait"), portraitEmotion: t("creative_board_toolbar_portrait_emotion"), panorama: t("creative_board_toolbar_panorama"), angles: t("creative_board_toolbar_angles"), lighting: t("creative_board_toolbar_lighting"), grid: t("creative_board_toolbar_grid"), gridPending: t("creative_board_tool_grid_pending"), hd: t("creative_board_toolbar_hd"), hd2k: t("creative_board_toolbar_hd2k"), hd4k: t("creative_board_toolbar_hd4k"), outpaint: t("creative_board_toolbar_outpaint"), redraw: t("creative_board_toolbar_redraw"), erase: t("creative_board_toolbar_erase"), cutout: t("creative_board_toolbar_cutout"), crop: t("creative_board_toolbar_crop"), edit: t("creative_board_toolbar_edit"), layers: t("creative_board_toolbar_layers"), split: t("creative_board_toolbar_split"), split2x2: t("creative_board_toolbar_split2x2"), split3x3: t("creative_board_toolbar_split3x3"), split4x4: t("creative_board_toolbar_split4x4"), adjust: t("creative_board_toolbar_adjust"), symmetry: t("creative_board_toolbar_symmetry"), download: t("creative_board_download_item"), expand: t("creative_board_toolbar_expand") } }} onToolbarAction={(selection) => openToolPanel(selection, selectedItem)} /> : null}{toolAction && selectedItem ? <BoardImageToolPanel action={toolAction} preset={toolPreset} adjustmentOpen={toolAdjustmentOpen} onPreviewClick={() => setToolAdjustmentOpen(true)} title={toolAction === "portrait-emotion" ? t("creative_board_toolbar_portrait_emotion") : toolAction === "grid" ? t("creative_board_toolbar_grid") : t("creative_board_toolbar_" + toolAction)} imageUrl={assetSourceUrl(selectedAsset)} instruction={toolInstruction} referenceMediaAssetId={toolReferenceMediaAssetId} referenceAssets={referenceAssets} gridRows={toolGridRows} gridCols={toolGridCols} includeSplitLines={toolIncludeSplitLines} busy={toolBusy} onClose={closeToolPanel} onInstructionChange={setToolInstruction} onReferenceChange={setToolReferenceMediaAssetId} onGridRowsChange={setToolGridRows} onGridColsChange={setToolGridCols} onIncludeSplitLinesChange={setToolIncludeSplitLines} onUploadReference={uploadToolReference} onSubmit={submitToolAction} labels={{ description: toolAction === "edit" ? t("creative_board_tool_description_edit") : t("creative_board_tool_description_adjust"), close: t("creative_board_tool_close"), previewUnavailable: t("creative_board_tool_preview_unavailable"), instructionPlaceholder: t("creative_board_tool_instruction_placeholder"), instructionLabel: t("creative_board_tool_instruction_label"), referenceImage: t("creative_board_tool_reference_image"), upload: t("creative_board_tool_upload"), noReference: t("creative_board_tool_no_reference"), cancel: t("creative_board_tool_cancel"), submitEdit: t("creative_board_tool_submit_edit"), applyAdjustment: t("creative_board_tool_apply_adjustment"), gridRows: t("creative_board_tool_grid_rows"), gridCols: t("creative_board_tool_grid_cols"), includeSplitLines: t("creative_board_tool_split_lines") }} /> : null}{toolEditorOperation && selectedItem ? <CanvasImageEditorOverlay operation={toolEditorOperation} title={t("creative_board_toolbar_" + toolEditorOperation)} imageUrl={assetSourceUrl(selectedAsset)} busy={toolEditorBusy} onClose={closeToolPanel} onSubmit={submitCanvasEditor} labels={{ close: t("creative_board_tool_close"), run: t("creative_board_tool_run"), running: t("creative_board_tool_running"), instructionPlaceholder: t("creative_board_tool_instruction_placeholder"), instructionLabel: t("creative_board_tool_instruction_label"), regionHint: t("creative_board_editor_region_hint"), ratio: t("creative_board_editor_ratio"), ratioOriginal: t("creative_board_editor_ratio_original"), ratio116: t("creative_board_editor_ratio_1x1"), ratio34: t("creative_board_editor_ratio_3x4"), ratio169: t("creative_board_editor_ratio_16x9"), resolution: t("creative_board_editor_resolution"), resolution2k: t("creative_board_editor_resolution_2k"), resolution4k: t("creative_board_editor_resolution_4k"), count: t("creative_board_editor_count"), multiplier: t("creative_board_editor_multiplier"), multiplier2: t("creative_board_editor_multiplier_2"), multiplier4: t("creative_board_editor_multiplier_4"), multiplier6: t("creative_board_editor_multiplier_6") }} /> : null}</div> : null}
         <div className="pointer-events-none absolute inset-x-0 bottom-4 z-30 flex items-end px-4 sm:px-6" onPointerDown={(event) => event.stopPropagation()}>
           <div className="pointer-events-auto flex shrink-0 items-center gap-1 rounded-xl border border-[#dce3ec] bg-white/95 p-1.5 shadow-[0_8px_24px_rgba(50,63,82,0.16)] backdrop-blur-sm">
             <button type="button" onClick={fitView} className="focus-ring rounded-lg p-1.5 text-[#64748b] hover:bg-[#f5f7fa]" aria-label={t("creative_board_fit", { defaultValue: "Arrange canvas" })} title={t("creative_board_fit", { defaultValue: "Arrange canvas" })}><Maximize2 className="h-3.5 w-3.5" aria-hidden /></button>
@@ -1493,14 +2058,6 @@ if (event.key === "Escape") closeBoardMenu();
         </div>
         </div></section>
       {shortcutsOpen ? <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#172033]/10 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShortcutsOpen(false); }}><div className="relative w-full max-w-4xl rounded-xl border border-[#dce3ec] bg-white px-6 py-5 shadow-[0_20px_60px_rgba(33,45,66,0.2)]" role="dialog" aria-modal="true" aria-label={t("creative_board_shortcuts", { defaultValue: "Keyboard shortcuts" })}><button type="button" onClick={() => setShortcutsOpen(false)} className="focus-ring absolute right-3 top-3 rounded-md px-2 py-1 text-lg leading-none text-[#64748b] hover:bg-[#f5f7fa]" aria-label={t("creative_board_action_cancel", { defaultValue: "Close" })}>×</button><div className="grid gap-6 md:grid-cols-4">{SHORTCUT_GROUPS.map((group) => <section key={group.titleKey} className="min-w-0"><h2 className="mb-4 text-[12px] font-semibold text-[#12a8c0]">{t(group.titleKey, { defaultValue: group.titleDefault })}</h2><div className="space-y-3">{group.rows.map((row) => <div key={row.labelKey} className="flex items-center justify-between gap-3 text-[10px] text-[#5f6b7a]"><span className="min-w-0 truncate">{t(row.labelKey, { defaultValue: row.labelDefault })}</span><span className="flex shrink-0 items-center gap-1">{row.keys.map((key, index) => <span key={key + index} className={key === "+" ? "px-0.5 text-[#8a96a7]" : "rounded border border-[#dfe5ed] bg-[#fafbfe] px-1.5 py-0.5 font-mono text-[9px] text-[#64748b]"}>{key}</span>)}</span></div>)}</div></section>)}</div></div></div> : null}
-      {selectedItem || selectedItems.length > 1 ? (
-        <aside className="flex w-[282px] shrink-0 flex-col border-l border-[#e2e8f0] bg-white">
-          <div className="flex h-11 items-center justify-between border-b border-[#edf0f4] px-3"><div className="flex items-center gap-2 text-[11px] font-semibold text-[#334155]"><MessageCircle className="h-3.5 w-3.5 text-[#6254d9]" aria-hidden />{t("creative_board_inspector", { defaultValue: "Inspector" })}</div><button type="button" className="focus-ring rounded p-1 text-[#8a96a7]" aria-label={t("creative_board_more", { defaultValue: "More" })}><MoreHorizontal className="h-3.5 w-3.5" aria-hidden /></button></div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            {selectedItem ? <><div className="flex items-start gap-2 border-b border-[#edf0f4] pb-3"><span className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: colorFor(selectedItem.item_type) + "20", color: colorFor(selectedItem.item_type) }}>{(() => { const Icon = iconFor(selectedItem.item_type); return <Icon className="h-4 w-4" aria-hidden />; })()}</span><div className="min-w-0 flex-1"><div className="truncate text-[11px] font-semibold text-[#334155]">{nodeTitle(selectedItem, names)}</div><div className="mt-1 truncate text-[9px] text-[#94a3b8]">{t("creative_board_type_" + selectedItem.item_type, { defaultValue: selectedItem.item_type })} · {selectedItem.resource_id}</div></div></div><div className="mt-3 rounded-lg border border-[#edf0f4] bg-[#fafbfe] p-2.5"><div className="mb-2 text-[10px] font-semibold text-[#475569]">{t("creative_board_preview", { defaultValue: "Preview" })}</div><div className="h-32 overflow-hidden rounded-md border border-[#dfe5ed] bg-white">{previewFor(selectedItem, selectedAsset)}</div></div><div className="mt-3 space-y-2"><div className="text-[10px] font-semibold text-[#475569]">{t("creative_board_properties", { defaultValue: "Properties" })}</div><div className="flex items-center justify-between rounded-md border border-[#dfe5ed] px-2.5 py-2 text-[10px] text-[#64748b]"><span>X</span><span className="tabular-nums text-[#94a3b8]">{Math.round(selectedItem.position.x)}</span></div><div className="flex items-center justify-between rounded-md border border-[#dfe5ed] px-2.5 py-2 text-[10px] text-[#64748b]"><span>Y</span><span className="tabular-nums text-[#94a3b8]">{Math.round(selectedItem.position.y)}</span></div></div><div className="mt-4 space-y-1.5"><button type="button" onClick={() => openSkills(selectedItem)} className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-md bg-[#6254d9] px-3 py-2 text-[10px] font-semibold text-white"><Sparkles className="h-3 w-3" aria-hidden />{t("creation_plan_preview", { defaultValue: "Generate with Skill" })}</button><button type="button" onClick={() => { setConnectMode(true); setSelectedIds([selectedItem.id]); }} className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-md border border-[#dfe5ed] px-3 py-2 text-[10px] text-[#64748b]"><Link2 className="h-3 w-3" aria-hidden />{t("creative_board_connect_mode", { defaultValue: "Connect to another node" })}</button><button type="button" disabled={saving} onClick={() => void removeItem(selectedItem)} className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-[10px] text-[#c45a5a] hover:bg-[#fff5f5] disabled:opacity-50"><Trash2 className="h-3 w-3" aria-hidden />{t("creative_board_delete_item")}</button></div></> : <><div className="rounded-lg bg-[#f0edff] p-3"><div className="text-[11px] font-semibold text-[#5145b6]">{t("creative_board_nodes_selected", { count: selectedItems.length, defaultValue: "{{count}} nodes selected" })}</div><div className="mt-1 text-[10px] text-[#7168b4]">{t("creative_board_batch_hint", { defaultValue: "Apply an action to the selected nodes." })}</div></div><div className="mt-3 space-y-1.5"><button type="button" onClick={() => setConnectMode(true)} className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-md bg-[#6254d9] px-3 py-2 text-[10px] font-semibold text-white"><Link2 className="h-3 w-3" aria-hidden />{t("creative_board_relate")}</button><button type="button" disabled={saving} onClick={() => void removeSelected()} className="focus-ring flex w-full items-center justify-center gap-1.5 rounded-md border border-[#efcaca] px-3 py-2 text-[10px] text-[#c45a5a] disabled:opacity-50"><Trash2 className="h-3 w-3" aria-hidden />{t("creative_board_delete_selected", { defaultValue: "Delete selected" })}</button></div></>}
-          </div>
-        </aside>
-      ) : null}
     </div>
   </div>;
 }

@@ -122,6 +122,31 @@
   will-change: box-shadow, background-color;
 }
 
+.source-outline-target {
+  display: inline;
+  border-radius: 0.25rem;
+  background: var(--color-accent-dim);
+  box-shadow: 0 0 0 3px var(--color-accent-dim);
+  animation: source-outline-target 2.4s ease-out forwards;
+}
+
+@keyframes source-outline-target {
+  0%, 65% {
+    background: var(--color-accent-dim);
+    box-shadow: 0 0 0 3px var(--color-accent-dim);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .source-outline-target {
+    animation: none;
+  }
+}
+
 /* 通用按钮：sv-navbtn */
 .sv-navbtn {
   font-size: 0.71875rem;

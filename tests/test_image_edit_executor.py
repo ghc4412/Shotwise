@@ -194,6 +194,62 @@ class TestExecuteImageEditTask:
         assert result["version"] == 2
         assert result["file_path"] == "characters/Alice.png"
 
+    async def test_character_edit_appends_project_media_reference(self, tmp_path, monkeypatch):
+        project_path = _prepare_files(tmp_path)
+        reference_path = project_path / "uploads" / "reference.png"
+        reference_path.parent.mkdir(parents=True, exist_ok=True)
+        reference_path.write_bytes(b"reference")
+        fake_pm = _FakePM(project_path)
+        fake_generator = _FakeGenerator()
+        _patch_common(monkeypatch, fake_pm, fake_generator)
+        monkeypatch.setattr(
+            image_edit_tasks,
+            "get_project_media_asset",
+            lambda *, project_root, media_asset_id: {
+                "id": media_asset_id,
+                "kind": "image",
+                "physical_path": "uploads/reference.png",
+            },
+        )
+
+        await execute_image_edit_task(
+            "demo",
+            "Alice",
+            {
+                "resource_type": "character",
+                "prompt": "匹配参考图的服装",
+                "reference_media_asset_id": "media-ref-1",
+            },
+        )
+
+        assert fake_generator.image_calls[0]["reference_images"] == [
+            project_path / "characters/Alice.png",
+            reference_path,
+        ]
+
+    async def test_non_image_media_reference_is_rejected(self, tmp_path, monkeypatch):
+        project_path = _prepare_files(tmp_path)
+        fake_pm = _FakePM(project_path)
+        fake_generator = _FakeGenerator()
+        _patch_common(monkeypatch, fake_pm, fake_generator)
+        monkeypatch.setattr(
+            image_edit_tasks,
+            "get_project_media_asset",
+            lambda *, project_root, media_asset_id: {
+                "id": media_asset_id,
+                "kind": "audio",
+                "physical_path": "uploads/reference.mp3",
+            },
+        )
+
+        with pytest.raises(ValueError, match="must be an image"):
+            await execute_image_edit_task(
+                "demo",
+                "Alice",
+                {"resource_type": "character", "prompt": "参考", "reference_media_asset_id": "media-audio-1"},
+            )
+        assert fake_generator.image_calls == []
+
     async def test_storyboard_edit_reads_pointer_writes_canonical(self, tmp_path, monkeypatch):
         project_path = _prepare_files(tmp_path)
         fake_pm = _FakePM(project_path)

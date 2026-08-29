@@ -432,13 +432,20 @@ def index_generation_task_result(
     origin_by_task: dict[str, MediaOrigin] = {
         "image_edit": "edited",
         "grid_split": "extracted",
+        "canvas_image_split": "extracted",
+        "canvas_image_layers": "extracted",
+        "canvas_image_panorama": "generated",
+        "canvas_image_angles": "generated",
+        "canvas_image_hd": "generated",
     }
     origin = origin_by_task.get(task_type, "generated")
     operation: Literal["generated", "edited", "extracted", "composited"] = "generated"
     if task_type == "image_edit":
         operation = "edited"
-    elif task_type == "grid_split":
+    elif task_type in {"grid_split", "canvas_image_split", "canvas_image_layers"}:
         operation = "extracted"
+    elif task_type == "canvas_image_hd":
+        operation = "composited"
     from server.services.workflow_execution import AssetRef
 
     refs = {"result": [AssetRef(kind=media_kind, path=path, label=task_type) for _, path in output_paths]}

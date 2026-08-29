@@ -88,15 +88,27 @@ async def test_list_preset_providers_returns_catalog(authed_client) -> None:
     siliconflow = next(p for p in data["providers"] if p["id"] == "siliconflow")
     assert siliconflow["icon_key"] == "SiliconCloud"
     assert siliconflow["messages_url"] == "https://api.siliconflow.cn"
-    # ark-coding-plan / ark-agent-plan 的 display_name 走 name_i18n_key（默认 locale 为 zh）
     ark_coding = next(p for p in data["providers"] if p["id"] == "ark-coding-plan")
     assert ark_coding["display_name"] == "火山方舟 Coding Plan"
     assert ark_coding["messages_url"] == "https://ark.cn-beijing.volces.com/api/coding"
-    ark_agent = next(p for p in data["providers"] if p["id"] == "ark-agent-plan")
+    ark_agent_claude = next(p for p in data["providers"] if p["id"] == "ark-agent-plan")
+    assert ark_agent_claude["display_name"] == "火山方舟 Agent Plan"
+    assert ark_agent_claude["sdk_type"] == "claude"
+    assert ark_agent_claude["messages_url"] == "https://ark.cn-beijing.volces.com/api/plan"
+    assert ark_agent_claude["discovery_url"] is None
+    assert ark_agent_claude["supports_discovery"] is False
+
+    openai_resp = await authed_client.get("/api/v1/agent/preset-providers?sdk_type=openai")
+    assert openai_resp.status_code == 200
+    openai_data = openai_resp.json()
+    ark_agent = next(p for p in openai_data["providers"] if p["id"] == "ark-agent-plan-openai")
     assert ark_agent["display_name"] == "火山方舟 Agent Plan"
-    assert ark_agent["messages_url"] == "https://ark.cn-beijing.volces.com/api/plan"
+    assert ark_agent["messages_url"] == "https://ark.cn-beijing.volces.com/api/plan/v3"
+    assert ark_agent["discovery_url"] is None
+    assert ark_agent["supports_discovery"] is False
     # 方舟不支持模型自动发现 → 预设提供官方模型名建议列表
     assert "deepseek-v4-flash" in ark_coding["suggested_models"]
+    assert "ark-code-latest" in ark_agent_claude["suggested_models"]
     assert "ark-code-latest" in ark_agent["suggested_models"]
 
 
@@ -130,6 +142,32 @@ async def test_create_with_preset(authed_client) -> None:
     assert cred["icon_key"] == "DeepSeek"
     # 第一条凭证应自动 active
     assert cred["is_active"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_ark_agent_plan_for_both_sdk_types(authed_client) -> None:
+    claude_resp = await authed_client.post(
+        "/api/v1/agent/credentials",
+        json={"preset_id": "ark-agent-plan", "sdk_type": "claude", "api_key": "ark-claude", "activate": False},
+    )
+    assert claude_resp.status_code == 201
+    claude_cred = claude_resp.json()
+    assert claude_cred["sdk_type"] == "claude"
+    assert claude_cred["base_url"] == "https://ark.cn-beijing.volces.com/api/plan"
+
+    openai_resp = await authed_client.post(
+        "/api/v1/agent/credentials",
+        json={
+            "preset_id": "ark-agent-plan-openai",
+            "sdk_type": "openai",
+            "api_key": "ark-openai",
+            "activate": False,
+        },
+    )
+    assert openai_resp.status_code == 201
+    openai_cred = openai_resp.json()
+    assert openai_cred["sdk_type"] == "openai"
+    assert openai_cred["base_url"] == "https://ark.cn-beijing.volces.com/api/plan/v3"
 
 
 @pytest.mark.asyncio
@@ -291,6 +329,31 @@ async def test_activate_credential_switches(authed_client, monkeypatch) -> None:
     flags = {c["id"]: c["is_active"] for c in listing}
     assert flags[a["id"]] is False
     assert flags[b["id"]] is True
+
+
+@pytest.mark.asyncio
+async def test_activate_credential_invalidates_runtime_sessions(authed_client, monkeypatch) -> None:
+    from unittest.mock import AsyncMock
+
+    invalidate = AsyncMock()
+    monkeypatch.setattr("server.routers.agent_config._invalidate_runtime_sessions", invalidate)
+
+    cred = (
+        await authed_client.post(
+            "/api/v1/agent/credentials",
+            json={
+                "preset_id": "deepseek-openai",
+                "sdk_type": "openai",
+                "api_key": "sk-openai",
+                "activate": False,
+            },
+        )
+    ).json()
+
+    resp = await authed_client.post(f"/api/v1/agent/credentials/{cred['id']}/activate")
+
+    assert resp.status_code == 200
+    invalidate.assert_awaited_once_with("openai")
 
 
 @pytest.mark.asyncio

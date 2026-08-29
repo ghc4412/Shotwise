@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import httpx
 from openai import OpenAI
 
 from lib.ark_shared import ARK_BASE_URL, create_ark_client, resolve_ark_api_key
@@ -37,7 +38,11 @@ class ArkTextBackend:
         resolved_key = resolve_ark_api_key(api_key)
         effective_base_url = base_url or ARK_BASE_URL
         self._client = create_ark_client(api_key=resolved_key, base_url=effective_base_url)
-        self._openai_client = OpenAI(base_url=effective_base_url, api_key=resolved_key)
+        self._openai_client = OpenAI(
+            base_url=effective_base_url,
+            api_key=resolved_key,
+            http_client=httpx.Client(trust_env=False),
+        )
         self._model = model or DEFAULT_MODEL
         self._capabilities: set[TextCapability] = self._resolve_capabilities()
 

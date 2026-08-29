@@ -204,7 +204,7 @@ PRESET_PROVIDERS: dict[str, PresetProvider] = {
         display_name="Volcengine Ark Agent Plan",
         icon_key="Volcengine",
         messages_url="https://ark.cn-beijing.volces.com/api/plan",
-        discovery_url="https://ark.cn-beijing.volces.com",
+        discovery_url=None,
         default_model="",
         suggested_models=(
             "doubao-seed-2.0-code",

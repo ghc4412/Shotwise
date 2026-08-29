@@ -236,6 +236,7 @@ export async function enqueueImageEdit(
     resourceId: string;
     instruction: string;
     scriptFile?: string | null;
+    referenceMediaAssetId?: string | null;
   },
 ): Promise<EnqueueResult> {
   // image_edit 与生成任务共享同一资源槽位：kind 按被编辑资源类型归槽，
@@ -246,6 +247,67 @@ export async function enqueueImageEdit(
     oneTaskId,
   );
   notifyEnqueued(res.deduped, res.message);
+  return { taskIds: [res.task_id], deduped: res.deduped };
+}
+
+export async function enqueueCanvasImageSplit(
+  projectName: string,
+  params: {
+    sourceKind: "project" | "media";
+    resourceType?: ImageEditResourceKind;
+    resourceId?: string;
+    mediaAssetId?: string;
+    scriptFile?: string | null;
+    rows: number;
+    cols: number;
+    includeSplitLines: boolean;
+  },
+): Promise<EnqueueResult> {
+  const resourceId = params.resourceId ?? params.mediaAssetId ?? "canvas-image";
+  const res = await submit(
+    [markResource(projectName, "canvas_image_split", resourceId, "canvas_image_split")],
+    () => API.splitCanvasImage(projectName, params),
+    oneTaskId,
+  );
+  notifyEnqueued(res.deduped, i18n.t("dashboard:creative_board_tool_split_submitted"));
+  return { taskIds: [res.task_id], deduped: res.deduped };
+}
+
+export type CanvasAdvancedOperation =
+  | "canvas_image_panorama"
+  | "canvas_image_angles"
+  | "canvas_image_layers"
+  | "canvas_image_hd"
+  | "canvas_image_outpaint"
+  | "canvas_image_redraw"
+  | "canvas_image_erase"
+  | "canvas_image_cutout"
+  | "canvas_image_crop";
+
+export async function enqueueCanvasImageAdvanced(
+  projectName: string,
+  params: {
+    operation: CanvasAdvancedOperation;
+    sourceKind: "project" | "media";
+    resourceType?: ImageEditResourceKind;
+    resourceId?: string;
+    mediaAssetId?: string;
+    scriptFile?: string | null;
+    instruction?: string;
+    count?: number;
+    region?: { x: number; y: number; width: number; height: number };
+    aspectRatio?: string;
+    multiplier?: number;
+    quality?: string;
+  },
+): Promise<EnqueueResult> {
+  const resourceId = params.resourceId ?? params.mediaAssetId ?? "canvas-image";
+  const res = await submit(
+    [markResource(projectName, "canvas_image_advanced", resourceId, params.operation)],
+    () => API.advancedCanvasImage(projectName, params),
+    oneTaskId,
+  );
+  notifyEnqueued(res.deduped, i18n.t("dashboard:creative_board_tool_advanced_submitted"));
   return { taskIds: [res.task_id], deduped: res.deduped };
 }
 

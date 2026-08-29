@@ -401,6 +401,9 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
       setDiscoveredModelNames(discovered.map((d) => d.model_id));
       setModelFilter("");
     } catch (e) {
+      // The read-only list represents only the latest upstream response. Invalidate it on
+      // failure, while preserving configured/manual model rows in the editable form.
+      setDiscoveredModelNames([]);
       showError(errMsg(e, t("fetch_models_failed")));
     } finally {
       setDiscovering(false);

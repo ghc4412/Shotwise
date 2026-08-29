@@ -17,7 +17,7 @@ from typing import Any
 
 from lib.asset_types import ASSET_SPECS, resolve_asset_key
 from lib.db.base import DEFAULT_USER_ID
-from lib.path_safety import safe_exists
+from lib.path_safety import safe_exists, safe_join
 from lib.resource_paths import resource_relative_path
 from lib.script_models import get_generated_assets
 from lib.storyboard_sequence import find_storyboard_item, get_storyboard_items
@@ -26,12 +26,24 @@ from server.services.generation_tasks import (
     get_aspect_ratio,
     get_project_manager,
 )
+from server.services.media_assets import get_project_media_asset
 
 # 版本记录里标记「指令式编辑」的 source 值；前端据此展示编辑标记（与 manual_upload 同机制）
 IMAGE_EDIT_VERSION_SOURCE = "image_edit"
 
 # 可编辑的资源类型白名单（API 契约用的单数形态；storyboard 之外与 ASSET_SPECS 同源）
 EDITABLE_RESOURCE_TYPES: tuple[str, ...] = (*ASSET_SPECS.keys(), "storyboard")
+
+
+def resolve_reference_media_asset_path(project_root, media_asset_id: str):
+    """Resolve a project-scoped image MediaAsset to a safe existing path."""
+    asset = get_project_media_asset(project_root=project_root, media_asset_id=media_asset_id)
+    if asset.get("kind") != "image":
+        raise ValueError("reference media asset must be an image")
+    physical_path = asset.get("physical_path")
+    if not isinstance(physical_path, str) or not physical_path:
+        raise ValueError("reference media asset has no file path")
+    return safe_join(project_root, physical_path, require_file=True)
 
 
 def edit_version_resource_type(resource_type: str) -> str:
@@ -105,6 +117,11 @@ async def execute_image_edit_task(
     script_file = payload.get("script_file")
     if resource_type == "storyboard" and not script_file:
         raise ValueError("script_file is required for storyboard image_edit task")
+    reference_media_asset_id = payload.get("reference_media_asset_id")
+    if reference_media_asset_id is not None and not isinstance(reference_media_asset_id, str):
+        raise ValueError("reference_media_asset_id must be a string")
+    if isinstance(reference_media_asset_id, str):
+        reference_media_asset_id = reference_media_asset_id.strip() or None
 
     version_resource_type = edit_version_resource_type(resource_type)
 
@@ -121,9 +138,14 @@ async def execute_image_edit_task(
         _current_rel = resolve_current_image_rel(_project, resource_type, _key, _script)
         if not (_current_rel and safe_exists(_project_path, _current_rel)):
             raise ValueError(f"no current image to edit: {resource_type}/{resource_id}")
-        return _project, _project_path / _current_rel, _key
+        reference_image = (
+            resolve_reference_media_asset_path(_project_path, reference_media_asset_id)
+            if reference_media_asset_id
+            else None
+        )
+        return _project, _project_path / _current_rel, _key, reference_image
 
-    project, current_image, resource_key = await asyncio.to_thread(_prepare)
+    project, current_image, resource_key, reference_image = await asyncio.to_thread(_prepare)
 
     # 编辑必然 i2i：单次解析拿到 generator 与 image lane 产物（provider / backend / resolution）。
     ctx = await resolve_generation_context(
@@ -155,7 +177,7 @@ async def execute_image_edit_task(
         prompt=instruction,
         resource_type=version_resource_type,
         resource_id=resource_key,
-        reference_images=[current_image],
+        reference_images=[current_image, *([reference_image] if reference_image else [])],
         aspect_ratio=aspect_ratio,
         image_size=image_size,
         source=IMAGE_EDIT_VERSION_SOURCE,

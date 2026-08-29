@@ -16,6 +16,8 @@ import {
   type ResourceKind,
 } from "@/stores/tasks-store";
 import {
+  enqueueCanvasImageAdvanced,
+  enqueueCanvasImageSplit,
   enqueueCharacter,
   enqueueEpisodeNarration,
   enqueueGrid,
@@ -246,6 +248,48 @@ describe("enqueueImageEdit", () => {
     expect(occupied("demo", "storyboard", "seg-1")).toBe(true);
     expect(useAppStore.getState().toast?.text).toBe("已提交图片编辑");
     expect(res).toEqual({ taskIds: ["t1"], deduped: false });
+  });
+});
+
+describe("enqueueCanvasImageSplit", () => {
+  it("submits an arbitrary media source with grid settings and returns its task id", async () => {
+    vi.spyOn(API, "splitCanvasImage").mockResolvedValue({ success: true, task_id: "grid-task", deduped: false });
+
+    const res = await enqueueCanvasImageSplit("demo", {
+      sourceKind: "media",
+      mediaAssetId: "media-1",
+      rows: 3,
+      cols: 2,
+      includeSplitLines: true,
+    });
+
+    expect(occupied("demo", "canvas_image_split", "media-1")).toBe(true);
+    expect(res).toEqual({ taskIds: ["grid-task"], deduped: false });
+    expect(useAppStore.getState().toast?.text).toBe(i18n.t("dashboard:creative_board_tool_split_submitted"));
+  });
+});
+
+describe("enqueueCanvasImageAdvanced", () => {
+  it("submits an advanced project-image operation and uses its dedicated resource slot", async () => {
+    vi.spyOn(API, "advancedCanvasImage").mockResolvedValue({
+      success: true,
+      task_id: "advanced-task",
+      deduped: false,
+    });
+
+    const res = await enqueueCanvasImageAdvanced("demo", {
+      operation: "canvas_image_panorama",
+      sourceKind: "project",
+      resourceType: "character",
+      resourceId: "Hero",
+      instruction: "preserve the subject",
+    });
+
+    expect(occupied("demo", "canvas_image_advanced", "Hero")).toBe(true);
+    expect(res).toEqual({ taskIds: ["advanced-task"], deduped: false });
+    expect(useAppStore.getState().toast?.text).toBe(
+      i18n.t("dashboard:creative_board_tool_advanced_submitted"),
+    );
   });
 });
 

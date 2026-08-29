@@ -33,8 +33,13 @@ from lib.storyboard_sequence import (
 )
 from server.auth import CurrentUser
 from server.routers._validators import require_audio_switch_supported, require_video_bucket_capability
+from server.services.canvas_image_tasks import CANVAS_IMAGE_OPERATIONS, _validate_grid, resolve_canvas_image_source
 from server.services.generation_context import AudioLaneRequest, resolve_generation_context
-from server.services.image_edit_tasks import EDITABLE_RESOURCE_TYPES, resolve_current_image_rel
+from server.services.image_edit_tasks import (
+    EDITABLE_RESOURCE_TYPES,
+    resolve_current_image_rel,
+    resolve_reference_media_asset_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +94,116 @@ class EditImageRequest(BaseModel):
     resource_id: str
     instruction: str
     script_file: str | None = None
+    reference_media_asset_id: str | None = None
+
+
+class CanvasImageSplitRequest(BaseModel):
+    source_kind: str
+    resource_type: str | None = None
+    resource_id: str | None = None
+    media_asset_id: str | None = None
+    script_file: str | None = None
+    rows: int
+    cols: int
+    include_split_lines: bool = True
+
+
+class CanvasImageAdvancedRequest(BaseModel):
+    source_kind: str
+    resource_type: str | None = None
+    resource_id: str | None = None
+    media_asset_id: str | None = None
+    script_file: str | None = None
+    operation: str
+    instruction: str | None = None
+    count: int | None = None
+    region: dict[str, float] | None = None
+    aspect_ratio: str | None = None
+    multiplier: int | None = None
+    quality: str | None = None
+
+
+# ==================== 创意画布图片任务 ====================
+
+
+def _canvas_resource_id(req: BaseModel) -> str:
+    resource_type = getattr(req, "resource_type", None)
+    resource_id = getattr(req, "resource_id", None)
+    media_asset_id = getattr(req, "media_asset_id", None)
+    source_kind = getattr(req, "source_kind", None)
+    if source_kind == "project" and resource_type and resource_id:
+        return f"{resource_type}:{resource_id}"
+    if source_kind == "media" and media_asset_id:
+        return f"media:{media_asset_id}"
+    raise ValueError("invalid canvas image source")
+
+
+async def _enqueue_canvas_image_task(
+    project_name: str,
+    *,
+    operation: str,
+    payload: dict[str, object],
+    resource_id: str,
+    user: CurrentUser,
+):
+    if operation not in CANVAS_IMAGE_OPERATIONS:
+        raise BadRequestError("canvas_image_operation_invalid")
+    try:
+        await asyncio.to_thread(
+            resolve_canvas_image_source,
+            project_name,
+            payload,
+            project_manager=get_project_manager(),
+        )
+    except (KeyError, ValueError, FileNotFoundError):
+        raise BadRequestError("canvas_image_source_invalid") from None
+    queue = get_generation_queue()
+    result = await queue.enqueue_task(
+        project_name=project_name,
+        task_type=operation,
+        media_type="image",
+        resource_id=resource_id,
+        payload={"prompt": operation, **payload},
+        source="webui",
+        user_id=user.id,
+        provider_id="",
+    )
+    return {"success": True, "task_id": result["task_id"], "deduped": result.get("deduped", False)}
+
+
+@router.post("/projects/{project_name}/canvas-images/split")
+async def split_canvas_image(
+    project_name: str,
+    req: CanvasImageSplitRequest,
+    user: CurrentUser,
+):
+    """Submit an arbitrary canvas-image grid split without touching storyboard Grid records."""
+    payload = req.model_dump(exclude_none=True)
+    try:
+        _validate_grid(req.rows, req.cols)
+        resource_id = _canvas_resource_id(req)
+    except ValueError:
+        raise BadRequestError("canvas_image_source_invalid") from None
+    return await _enqueue_canvas_image_task(
+        project_name, operation="canvas_image_split", payload=payload, resource_id=resource_id, user=user
+    )
+
+
+@router.post("/projects/{project_name}/canvas-images/advanced")
+async def advanced_canvas_image(
+    project_name: str,
+    req: CanvasImageAdvancedRequest,
+    user: CurrentUser,
+):
+    """Submit a Creative Board image operation without mutating its source asset."""
+    payload = req.model_dump(exclude_none=True)
+    try:
+        resource_id = _canvas_resource_id(req)
+    except ValueError:
+        raise BadRequestError("canvas_image_source_invalid") from None
+    return await _enqueue_canvas_image_task(
+        project_name, operation=req.operation, payload=payload, resource_id=resource_id, user=user
+    )
 
 
 # ==================== 分镜图生成 ====================
@@ -800,6 +915,12 @@ async def edit_image(
             raise NotFoundError(_ASSET_GENERATE_I18N[req.resource_type]["not_found"], name=req.resource_id)
         if not (current_rel and safe_exists(project_path, current_rel)):
             raise BadRequestError("image_edit_no_current_image", id=req.resource_id)
+        reference_id = req.reference_media_asset_id.strip() if req.reference_media_asset_id else None
+        if reference_id:
+            try:
+                resolve_reference_media_asset_path(project_path, reference_id)
+            except (KeyError, ValueError, FileNotFoundError):
+                raise BadRequestError("image_edit_reference_invalid", id=reference_id)
         return project
 
     project = await asyncio.to_thread(_sync)
@@ -813,7 +934,14 @@ async def edit_image(
         resource_id=req.resource_id,
         prompt=instruction,
         script_file=script_file if is_storyboard else None,
-        extra_payload={"resource_type": req.resource_type},
+        extra_payload={
+            "resource_type": req.resource_type,
+            **(
+                {"reference_media_asset_id": req.reference_media_asset_id.strip()}
+                if req.reference_media_asset_id and req.reference_media_asset_id.strip()
+                else {}
+            ),
+        },
     )
 
     queue = get_generation_queue()

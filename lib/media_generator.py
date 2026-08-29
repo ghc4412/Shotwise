@@ -401,6 +401,99 @@ class MediaGenerator:
 
         return output_path, new_version
 
+    async def generate_image_output_async(
+        self,
+        *,
+        prompt: str,
+        output_path: Path,
+        reference_images=None,
+        aspect_ratio: str = "1:1",
+        image_size: str | None = None,
+        resource_id: str = "canvas-output",
+    ) -> Path:
+        """生成一张图片到显式 ``output_path``（Creative Board 独立图像操作输出用）。
+
+        与 :meth:`generate_image_async` 的区别：不写版本、不回写任何版本追踪资源——调用方传入
+        落盘路径，结果由调用方（``canvas_image_tasks``）自行登记 media asset。参考图压缩、
+        记账括号与 capability 闸与本方法共用同一套内部机制，安全性与既有图片生成一致。
+        无版本追踪故调用方可安心为每次操作使用独立输出目录而不污染资产版本历史。
+        """
+        from lib.image_backends.base import (
+            ImageCapability,
+            ImageCapabilityError,
+            ImageGenerationRequest,
+            ReferenceImage,
+        )
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        if self._image_backend is None:
+            raise RuntimeError("image_backend not configured")
+
+        ref_images: list[ReferenceImage] = []
+        if reference_images:
+            for ref in reference_images:
+                if isinstance(ref, dict):
+                    ref_images.append(
+                        ReferenceImage(
+                            path=str(ref.get("image", "")),
+                            label=str(ref.get("label", "")),
+                        )
+                    )
+                elif hasattr(ref, "__fspath__") or isinstance(ref, (str, Path)):
+                    ref_images.append(ReferenceImage(path=str(ref)))
+                # PIL Image 等不支持的类型忽略
+
+        needed = ImageCapability.IMAGE_TO_IMAGE if ref_images else ImageCapability.TEXT_TO_IMAGE
+        if needed not in self._image_backend.capabilities:
+            raise ImageCapabilityError(
+                "image_capability_missing_i2i"
+                if needed == ImageCapability.IMAGE_TO_IMAGE
+                else "image_capability_missing_t2i",
+                provider=self._image_backend.name,
+                model=self._image_backend.model,
+            )
+
+        async with self.ledger.record(
+            project_name=self.project_name,
+            call_type="image",
+            model=self._image_backend.model,
+            prompt=prompt,
+            resolution=image_size,
+            aspect_ratio=aspect_ratio,
+            # 记账 provider 取解析层 provider_id；成对不变量保证 backend 非 None 时 provider_id 亦非 None。
+            provider=cast(str, self._image_provider_id),
+            user_id=self._user_id,
+            # canvas_output 不在 image 记账 segment 白名单内 → segment_id=None，不锚定任何场景。
+            segment_id=segment_id_for("image", "canvas_output", resource_id),
+            output_path=str(output_path),
+        ) as call:
+            from lib.reference_compression import ReferenceSpec, RefRole
+
+            image_backend = self._image_backend
+            specs = [ReferenceSpec(source=Path(r.path), label=r.label, role=RefRole.ARRAY) for r in ref_images]
+
+            def _call_image(compressed: "list[CompressedRef]"):
+                return image_backend.generate(
+                    ImageGenerationRequest(
+                        prompt=prompt,
+                        output_path=output_path,
+                        reference_images=[ReferenceImage(path=str(c.path), label=c.label) for c in compressed],
+                        aspect_ratio=aspect_ratio,
+                        image_size=image_size,
+                        project_name=self.project_name,
+                    )
+                )
+
+            result = await self._run_with_reference_compression(
+                specs=specs,
+                provider_id=self._image_provider_id,
+                build_and_call=_call_image,
+            )
+            call.success(result)
+
+        return output_path
+
     async def generate_audio_async(
         self,
         text: str,
