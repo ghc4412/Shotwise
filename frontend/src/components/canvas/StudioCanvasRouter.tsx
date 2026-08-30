@@ -748,6 +748,7 @@ export function StudioCanvasRouter() {
                     key={`${currentProjectName}::${epNum}`}
                     projectName={currentProjectName}
                     episode={epNum}
+                    displayEpisode={episode?.display_episode}
                     episodeTitle={episode?.title}
                     onSaveTitle={(title) => handleUpdateEpisodeTitle(epNum, title)}
                     canEditTitle={Boolean(episode?.script_file)}
@@ -767,6 +768,7 @@ export function StudioCanvasRouter() {
                     key={`${currentProjectName}::${epNum}`}
                     projectName={currentProjectName}
                     episode={epNum}
+                    displayEpisode={episode?.display_episode}
                     episodeTitle={episode?.title}
                     onSaveTitle={(title) => handleUpdateEpisodeTitle(epNum, title)}
                     canEditTitle={Boolean(episode?.script_file)}

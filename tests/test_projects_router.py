@@ -2304,3 +2304,78 @@ class TestUnexpectedErrorsDoNotLeak:
             )
             assert resp.status_code == 500
             assert sentinel not in self._body(resp)
+
+
+class _EpisodeCancelQueue:
+    def __init__(self):
+        self.calls = []
+
+    async def cancel_episode_tasks(self, project_name, script_file):
+        self.calls.append((project_name, script_file))
+        return {"cancelled": [{"task_id": "target-queued"}], "cancelling": ["target-running"]}
+
+
+@pytest.mark.unit
+def test_delete_episode_removes_metadata_preserves_files_renumbers_display_and_cancels_tasks(tmp_path, monkeypatch):
+    fake_pm = _FakePM(tmp_path)
+    fake_pm.project_data["ready"]["episodes"] = [
+        {"episode": 1, "display_episode": 1, "title": "一", "script_file": "scripts/episode_1.json"},
+        {"episode": 2, "display_episode": 2, "title": "二", "script_file": "scripts/episode_2.json"},
+        {"episode": 3, "display_episode": 3, "title": "三", "script_file": "scripts/episode_3.json"},
+    ]
+    fake_pm.scripts.update(
+        {
+            ("ready", "episode_2.json"): {"episode": 2, "title": "二"},
+            ("ready", "episode_3.json"): {"episode": 3, "title": "三"},
+        }
+    )
+    queue = _EpisodeCancelQueue()
+    monkeypatch.setattr(projects, "get_generation_queue", lambda: queue)
+    client = _client(monkeypatch, fake_pm, _FakeCalc())
+
+    with client:
+        response = client.delete("/api/v1/projects/ready/episodes/2")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["deleted_episode"] == 2
+    assert body["cancelled_tasks"] == 1
+    assert body["cancelling_tasks"] == 1
+    assert [
+        (ep["episode"], ep["display_episode"], ep["script_file"]) for ep in fake_pm.project_data["ready"]["episodes"]
+    ] == [
+        (1, 1, "scripts/episode_1.json"),
+        (3, 2, "scripts/episode_3.json"),
+    ]
+    assert ("ready", "episode_2.json") in fake_pm.scripts
+    assert ("ready", "episode_3.json") in fake_pm.scripts
+    assert queue.calls == [("ready", "scripts/episode_2.json")]
+
+
+@pytest.mark.unit
+def test_update_episode_display_number_reorders_without_changing_stable_identity(tmp_path, monkeypatch):
+    fake_pm = _FakePM(tmp_path)
+    fake_pm.project_data["ready"]["episodes"] = [
+        {"episode": 1, "display_episode": 1, "title": "一", "script_file": "scripts/episode_1.json"},
+        {"episode": 2, "display_episode": 2, "title": "二", "script_file": "scripts/episode_2.json"},
+        {"episode": 3, "display_episode": 3, "title": "三", "script_file": "scripts/episode_3.json"},
+    ]
+    client = _client(monkeypatch, fake_pm, _FakeCalc())
+
+    with client:
+        response = client.patch(
+            "/api/v1/projects/ready/episodes/3/display-number",
+            json={"display_episode": 1},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["episode"] == 3
+    assert body["display_episode"] == 1
+    assert [
+        (ep["episode"], ep["display_episode"], ep["script_file"]) for ep in fake_pm.project_data["ready"]["episodes"]
+    ] == [
+        (3, 1, "scripts/episode_3.json"),
+        (1, 2, "scripts/episode_1.json"),
+        (2, 3, "scripts/episode_2.json"),
+    ]

@@ -62,7 +62,7 @@ export function EpisodeHeader({
             }}
           >
             {t("episode_header_episode_chip", {
-              number: String(ep.episode).padStart(2, "0"),
+              number: String(ep.display_episode ?? ep.episode).padStart(2, "0"),
             })}
           </span>
           <span className="num text-[11px]" style={{ color: "var(--color-text-4)" }}>

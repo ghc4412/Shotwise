@@ -19,6 +19,11 @@ import { useProjectsStore } from "@/stores/projects-store";
 import { useCostStore } from "@/stores/cost-store";
 import { useAppStore } from "@/stores/app-store";
 import { API } from "@/api";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { GlassModal } from "@/components/ui/GlassModal";
+import { PrimaryButton } from "@/components/ui/PrimaryButton";
+import { SecondaryButton } from "@/components/ui/SecondaryButton";
+import { errMsg } from "@/utils/async";
 import { useDemoWorkbench } from "@/onboarding/use-demo-workbench";
 import { isDemoProject } from "@/onboarding/demo-project";
 import { EpisodeCard } from "./EpisodeCard";
@@ -43,11 +48,15 @@ interface NavItem {
  */
 export function AssetSidebar({ className }: AssetSidebarProps) {
   const { t } = useTranslation(["common", "dashboard"]);
-  const { currentProjectName, currentProjectData } = useProjectsStore();
+  const { currentProjectName, currentProjectData, refreshProject } = useProjectsStore();
   const debouncedFetchCost = useCostStore((s) => s.debouncedFetch);
   const [location, setLocation] = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [search, setSearch] = useState("");
+  const [episodeToDelete, setEpisodeToDelete] = useState<number | null>(null);
+  const [episodeToRenumber, setEpisodeToRenumber] = useState<number | null>(null);
+  const [numberDraft, setNumberDraft] = useState("");
+  const [episodeActionLoading, setEpisodeActionLoading] = useState(false);
 
   const characterCount = Object.keys(currentProjectData?.characters ?? {}).length;
   const sceneCount = Object.keys(currentProjectData?.scenes ?? {}).length;
@@ -154,14 +163,72 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
   const filteredEps = isAd
     ? episodes
     : episodes.filter(
-        (ep) => !search || ep.title.includes(search) || String(ep.episode).includes(search),
+        (ep) =>
+          !search ||
+          ep.title.includes(search) ||
+          String(ep.display_episode ?? ep.episode).includes(search),
       );
 
+  const episodeForDelete = episodeToDelete == null
+    ? null
+    : episodes.find((ep) => ep.episode === episodeToDelete) ?? null;
+  const episodeForRenumber = episodeToRenumber == null
+    ? null
+    : episodes.find((ep) => ep.episode === episodeToRenumber) ?? null;
+
+  const handleDeleteEpisode = async () => {
+    if (!currentProjectName || episodeToDelete == null) return;
+    setEpisodeActionLoading(true);
+    try {
+      await API.deleteEpisode(currentProjectName, episodeToDelete);
+      const wasActive = activeEp === episodeToDelete;
+      setEpisodeToDelete(null);
+      await refreshProject(currentProjectName);
+      if (wasActive) setLocation("/");
+      useAppStore.getState().pushToast(t("dashboard:episode_deleted"), "success");
+    } catch (error) {
+      useAppStore.getState().pushToast(
+        errMsg(error, t("dashboard:episode_delete_failed")),
+        "error",
+      );
+    } finally {
+      setEpisodeActionLoading(false);
+    }
+  };
+
+  const handleRenumberEpisode = async () => {
+    if (!currentProjectName || episodeToRenumber == null) return;
+    const nextNumber = Number.parseInt(numberDraft, 10);
+    if (!Number.isInteger(nextNumber) || nextNumber < 1 || nextNumber > episodes.length) {
+      useAppStore.getState().pushToast(
+        t("dashboard:episode_number_invalid", { max: episodes.length }),
+        "error",
+      );
+      return;
+    }
+    setEpisodeActionLoading(true);
+    try {
+      await API.updateEpisodeDisplayNumber(currentProjectName, episodeToRenumber, nextNumber);
+      setEpisodeToRenumber(null);
+      await refreshProject(currentProjectName);
+      useAppStore.getState().pushToast(t("dashboard:episode_number_updated"), "success");
+    } catch (error) {
+      useAppStore.getState().pushToast(
+        errMsg(error, t("dashboard:episode_number_update_failed")),
+        "error",
+      );
+    } finally {
+      setEpisodeActionLoading(false);
+    }
+  };
+
   return (
+    <>
     <aside
       className={`flex flex-col overflow-hidden ${className ?? ""}`}
       style={{
         width: collapsed ? 64 : 256,
+        flexShrink: 0,
         transition: "width .18s ease",
         borderRight: "1px solid var(--color-hairline)",
         background:
@@ -317,6 +384,11 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
                   ep={ep}
                   active={ep.episode === activeEp}
                   onClick={() => setLocation(`/episodes/${ep.episode}`)}
+                  onDelete={!isAd ? () => setEpisodeToDelete(ep.episode) : undefined}
+                  onEditNumber={!isAd ? () => {
+                    setEpisodeToRenumber(ep.episode);
+                    setNumberDraft(String(ep.display_episode ?? ep.episode));
+                  } : undefined}
                   showEpisodeBadge={!isAd}
                   fallbackTitle={isAd ? currentProjectData?.title : undefined}
                 />
@@ -386,5 +458,68 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
         </button>
       </div>
     </aside>
+
+    <ConfirmDialog
+      open={episodeForDelete !== null}
+      title={t("dashboard:confirm_delete_episode_title")}
+      description={t("dashboard:confirm_delete_episode_description", {
+        episode: episodeForDelete?.display_episode ?? episodeForDelete?.episode ?? "",
+      })}
+      confirmLabel={t("dashboard:delete_episode")}
+      loadingLabel={t("dashboard:deleting_episode")}
+      cancelLabel={t("dashboard:cancel_action")}
+      tone="danger"
+      loading={episodeActionLoading}
+      onConfirm={handleDeleteEpisode}
+      onCancel={() => {
+        if (!episodeActionLoading) setEpisodeToDelete(null);
+      }}
+    />
+
+    <GlassModal
+      open={episodeForRenumber !== null}
+      onClose={episodeActionLoading ? () => {} : () => setEpisodeToRenumber(null)}
+      ariaLabel={t("dashboard:edit_episode_number")}
+      closeOnBackdrop={!episodeActionLoading}
+      closeOnEscape={!episodeActionLoading}
+    >
+      <div className="px-6 pb-6 pt-5">
+        <h2 className="display-serif text-[17px] font-semibold tracking-tight" style={{ color: "var(--color-text)" }}>
+          {t("dashboard:edit_episode_number")}
+        </h2>
+        <p className="mt-1 text-[12.5px] leading-relaxed" style={{ color: "var(--color-text-3)" }}>
+          {t("dashboard:edit_episode_number_description")}
+        </p>
+        <label className="mt-4 block text-[11px] font-semibold" style={{ color: "var(--color-text-3)" }}>
+          {t("dashboard:episode_number_label")}
+          <input
+            type="number"
+            min={1}
+            max={episodes.length}
+            value={numberDraft}
+            onChange={(event) => setNumberDraft(event.target.value)}
+            className="mt-1.5 w-full rounded-md border border-hairline bg-[var(--color-shell-field)] px-3 py-2 text-sm text-text outline-none focus:border-accent focus:ring-1 focus:ring-accent"
+            disabled={episodeActionLoading}
+          />
+        </label>
+        <div className="mt-5 flex justify-end gap-2">
+          <SecondaryButton
+            size="sm"
+            onClick={() => setEpisodeToRenumber(null)}
+            disabled={episodeActionLoading}
+          >
+            {t("dashboard:cancel_action")}
+          </SecondaryButton>
+          <PrimaryButton
+            size="sm"
+            onClick={() => void handleRenumberEpisode()}
+            disabled={episodeActionLoading}
+          >
+            {episodeActionLoading ? t("dashboard:saving_episode_number") : t("dashboard:save_episode_number")}
+          </PrimaryButton>
+        </div>
+      </div>
+    </GlassModal>
+    </>
   );
 }

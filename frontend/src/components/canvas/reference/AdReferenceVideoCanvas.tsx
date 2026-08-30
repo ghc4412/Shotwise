@@ -31,6 +31,7 @@ import type { AdReferenceUnit, AdShot, UnitStatus } from "@/types";
 export interface AdReferenceVideoCanvasProps {
   projectName: string;
   episode: number;
+  displayEpisode?: number;
   episodeTitle?: string;
   onSaveTitle?: (next: string) => Promise<void>;
   canEditTitle?: boolean;
@@ -85,6 +86,7 @@ function shotRangeLabel(shotIds: string[]): string {
 export function AdReferenceVideoCanvas({
   projectName,
   episode,
+  displayEpisode,
   episodeTitle,
   onSaveTitle,
   canEditTitle,
@@ -408,7 +410,8 @@ export function AdReferenceVideoCanvas({
     <div className="flex h-full min-h-0 flex-col">
       <EpisodeHeader
         episode={episode}
-        title={episodeTitle ?? `E${episode}`}
+        displayEpisode={displayEpisode}
+        title={episodeTitle ?? `E${displayEpisode ?? episode}`}
         units={headerUnits}
         onSaveTitle={onSaveTitle}
         canEditTitle={canEditTitle}

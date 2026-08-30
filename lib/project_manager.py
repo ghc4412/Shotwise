@@ -81,6 +81,10 @@ PROJECT_SLUG_SANITIZER = re.compile(r"[^a-zA-Z0-9]+")
 VALID_GENERATION_MODES: frozenset[str] = frozenset({"storyboard", "reference_video"})
 _DEFAULT_GENERATION_MODE = "storyboard"
 
+# 用户删除分集元数据后仍保留脚本文件；该字段记录被明确删除的稳定脚本绑定，
+# 防止项目事件扫描器把保留脚本误判为新分集。受支持的脚本保存会清除对应记录。
+DELETED_EPISODE_SCRIPT_FILES_FIELD = "deleted_episode_script_files"
+
 # 源文件性质（source_kind）：与 content_mode / generation_mode 正交的第三轴，project.json
 # 顶层字段，创建时确定、之后不可变。novel（默认，现状改编链路）/ screenplay（成品剧本，
 # drama 链路翻为提取优先）。详见 docs/adr/0036 与 CONTEXT.md「剧本源」词条。
@@ -926,6 +930,17 @@ class ProjectManager:
             episode_num = int(filename_match.group(1)) if filename_match else 1
         episode_title = script.get("title", "")
         script_file = f"scripts/{base_name}"
+
+        # 受支持的脚本保存代表显式重新创建该分集；解除删除抑制后才允许写回元数据。
+        deleted_script_files = project.get(DELETED_EPISODE_SCRIPT_FILES_FIELD)
+        if isinstance(deleted_script_files, list):
+            remaining_deleted = {
+                str(item) for item in deleted_script_files if isinstance(item, str) and str(item) != script_file
+            }
+            if remaining_deleted:
+                project[DELETED_EPISODE_SCRIPT_FILES_FIELD] = sorted(remaining_deleted)
+            else:
+                project.pop(DELETED_EPISODE_SCRIPT_FILES_FIELD, None)
 
         # 查找或创建 episode 条目（整段 RMW 在单一 _project_lock 内完成，避免并发同步丢失）
         episodes = project.setdefault("episodes", [])

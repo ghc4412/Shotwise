@@ -34,11 +34,19 @@ from lib.asset_fingerprints import compute_asset_fingerprints
 from lib.config.registry import default_model_for_provider
 from lib.config.resolver import ConfigResolver, VideoBucketCapabilityError
 from lib.db import async_session_factory
+from lib.episode_paths import episode_script_relpath
+from lib.generation_queue import get_generation_queue
 from lib.i18n import Translator
 from lib.json_io import domain_error_on_value_error
 from lib.profile_manifest import ContentMode
 from lib.project_change_hints import project_change_source
-from lib.project_manager import EmptySourceError, EpisodeScriptReboundError, SourceKind, get_project_manager
+from lib.project_manager import (
+    DELETED_EPISODE_SCRIPT_FILES_FIELD,
+    EmptySourceError,
+    EpisodeScriptReboundError,
+    SourceKind,
+    get_project_manager,
+)
 from lib.speech_rate import MAX_SPEECH_RATE_UPS, MIN_SPEECH_RATE_UPS, SPEECH_RATE_FIELD, is_valid_speech_rate
 from lib.status_calculator import StatusCalculator
 from lib.style_templates import is_known_template, resolve_template_prompt
@@ -61,7 +69,7 @@ self_auth_router = APIRouter()
 # StatusCalculator 注入的统计字段（scenes_count / status / storyboards / videos 等）
 # 是读时计算值，禁止写回 project.json。title 不在白名单：它以剧本顶层 title 为唯一真相源，
 # 经 _apply_episode_sync 单向同步进 episodes[].title，专用端点 PATCH /episodes/{episode} 写入。
-EPISODE_PERSIST_FIELDS = {"script_file"}
+EPISODE_PERSIST_FIELDS = {"script_file", "display_episode"}
 
 
 def get_status_calculator() -> StatusCalculator:
@@ -169,6 +177,7 @@ class EpisodePatch(BaseModel):
     model_config = ConfigDict(extra="ignore")
     episode: int
     script_file: str | None = None
+    display_episode: int | None = Field(default=None, gt=0)
 
 
 class UpdateProjectRequest(BaseModel):
@@ -1189,6 +1198,120 @@ class UpdateOverviewRequest(BaseModel):
 
 class UpdateEpisodeRequest(BaseModel):
     title: str
+
+
+class UpdateEpisodeDisplayNumberRequest(BaseModel):
+    display_episode: int = Field(gt=0)
+
+
+@router.delete("/projects/{name}/episodes/{episode}")
+async def delete_episode(name: str, episode: int, _t: Translator):
+    """删除分集元数据，不删除脚本、媒体或其他生成产物。"""
+    try:
+        manager = get_project_manager()
+
+        def _resolve_target() -> str | None:
+            project = manager.load_project(name)
+            meta = next((item for item in project.get("episodes") or [] if item.get("episode") == episode), None)
+            if meta is None:
+                raise HTTPException(status_code=404, detail=_t("episode_not_found", episode=episode))
+            script_file = meta.get("script_file")
+            return script_file if isinstance(script_file, str) and script_file else None
+
+        script_file = await asyncio.to_thread(_resolve_target)
+        cancellation = {"cancelled": [], "cancelling": []}
+        if script_file:
+            cancellation = await get_generation_queue().cancel_episode_tasks(
+                project_name=name,
+                script_file=script_file,
+            )
+
+        def _delete() -> None:
+            def mutate(project: dict[str, Any]) -> None:
+                episodes = list(project.get("episodes") or [])
+                target = next((item for item in episodes if item.get("episode") == episode), None)
+                if target is None:
+                    raise HTTPException(status_code=404, detail=_t("episode_not_found", episode=episode))
+                remaining = [item for item in episodes if item is not target]
+                remaining.sort(
+                    key=lambda item: (item.get("display_episode", item.get("episode", 0)), item.get("episode", 0))
+                )
+                for index, item in enumerate(remaining, start=1):
+                    item["display_episode"] = index
+                project["episodes"] = remaining
+                deleted_script_file = script_file or episode_script_relpath(episode)
+                deleted_script_files = project.setdefault(DELETED_EPISODE_SCRIPT_FILES_FIELD, [])
+                if not isinstance(deleted_script_files, list):
+                    deleted_script_files = []
+                    project[DELETED_EPISODE_SCRIPT_FILES_FIELD] = deleted_script_files
+                if deleted_script_file not in deleted_script_files:
+                    deleted_script_files.append(deleted_script_file)
+
+            with project_change_source("webui"):
+                manager.update_project(name, mutate)
+
+        await asyncio.to_thread(_delete)
+        return {
+            "success": True,
+            "deleted_episode": episode,
+            "script_file": script_file,
+            "cancelled_tasks": len(cancellation.get("cancelled", [])),
+            "cancelling_tasks": len(cancellation.get("cancelling", [])),
+        }
+    except (HTTPException, ApiError):
+        raise
+    except FileNotFoundError as exc:
+        raise NotFoundError("project_not_found", name=name) from exc
+    except Exception:
+        logger.exception("删除分集失败: project=%s episode=%s", name, episode)
+        raise HTTPException(status_code=500, detail=_t("internal_server_error"))
+
+
+@router.patch("/projects/{name}/episodes/{episode}/display-number")
+async def update_episode_display_number(
+    name: str,
+    episode: int,
+    req: UpdateEpisodeDisplayNumberRequest,
+    _t: Translator,
+):
+    """调整分集显示编号；编号移动不会改动脚本身份或任何产物。"""
+    try:
+
+        def _sync() -> dict[str, Any]:
+            manager = get_project_manager()
+
+            def mutate(project: dict[str, Any]) -> None:
+                episodes = list(project.get("episodes") or [])
+                target = next((item for item in episodes if item.get("episode") == episode), None)
+                if target is None:
+                    raise HTTPException(status_code=404, detail=_t("episode_not_found", episode=episode))
+                ordered = sorted(
+                    episodes,
+                    key=lambda item: (item.get("display_episode", item.get("episode", 0)), item.get("episode", 0)),
+                )
+                if req.display_episode > len(ordered):
+                    raise HTTPException(
+                        status_code=422,
+                        detail=_t("episode_display_number_invalid", max=len(ordered)),
+                    )
+                ordered.remove(target)
+                ordered.insert(req.display_episode - 1, target)
+                for index, item in enumerate(ordered, start=1):
+                    item["display_episode"] = index
+                project["episodes"] = ordered
+
+            with project_change_source("webui"):
+                updated = manager.update_project(name, mutate)
+            return {"success": True, "project": updated, "episode": episode, "display_episode": req.display_episode}
+
+        return await asyncio.to_thread(_sync)
+    except (HTTPException, ApiError):
+        raise
+    except FileNotFoundError as exc:
+        raise NotFoundError("project_not_found", name=name) from exc
+    except Exception:
+        logger.exception("调整分集编号失败: project=%s episode=%s", name, episode)
+        raise HTTPException(status_code=500, detail=_t("internal_server_error"))
 
 
 @router.patch("/projects/{name}/segments/{segment_id}")

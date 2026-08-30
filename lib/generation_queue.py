@@ -371,6 +371,21 @@ class GenerationQueue:
 
         return int(result.get("rows", 0))
 
+    async def cancel_episode_tasks(self, *, project_name: str, script_file: str) -> dict[str, Any]:
+        """取消指定分集的活动任务，并同步通知仍在 worker 中运行的任务。"""
+        async with self._task_repo() as repo:
+            result = await repo.cancel_episode_tasks(project_name=project_name, script_file=script_file)
+
+        callback = self._worker_cancel_callback
+        if callback is not None:
+            for tid in result.get("cancelling", []):
+                try:
+                    callback(tid)
+                except Exception:
+                    logger.exception("worker cancel callback 派发失败 task_id=%s (episode delete)", tid)
+
+        return result
+
     async def cancel_task(self, task_id: str) -> dict[str, Any]:
         async with self._task_repo() as repo:
             result = await repo.cancel_task(task_id)

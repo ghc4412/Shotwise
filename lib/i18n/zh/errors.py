@@ -264,6 +264,7 @@ MESSAGES = {
     "ref_warn_silent_episode": "本集已关闭参考音频：不会上传参考音频，声音一致性不生效，台词仅用于提示词参考；成片是否有声音由所选模型决定",
     # Episode meta
     "episode_not_found": "第 {episode} 集不存在或尚无剧本文件",
+    "episode_display_number_invalid": "显示编号必须在 1 到 {max} 之间",
     "episode_title_empty": "分集标题不能为空",
     "about_update_check_failed": "检查更新失败，请稍后重试",
     "about_version_read_failed": "读取应用版本失败",

@@ -310,6 +310,7 @@ MESSAGES = {
     ),
     # Episode meta
     "episode_not_found": "Không tìm thấy tập {episode} hoặc tập chưa có tệp kịch bản",
+    "episode_display_number_invalid": "Số hiển thị phải nằm trong khoảng từ 1 đến {max}",
     "episode_title_empty": "Tiêu đề tập không được để trống",
     "about_update_check_failed": "Kiểm tra cập nhật thất bại, vui lòng thử lại sau",
     "about_version_read_failed": "Không đọc được phiên bản ứng dụng",

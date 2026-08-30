@@ -46,6 +46,7 @@ import type {
 export interface ReferenceVideoCanvasProps {
   projectName: string;
   episode: number;
+  displayEpisode?: number;
   episodeTitle?: string;
   onSaveTitle?: (next: string) => Promise<void>;
   canEditTitle?: boolean;
@@ -116,6 +117,7 @@ function isUnitBusy(projectName: string, unitId: string): boolean {
 export function ReferenceVideoCanvas({
   projectName,
   episode,
+  displayEpisode,
   episodeTitle,
   onSaveTitle,
   canEditTitle,
@@ -693,7 +695,8 @@ export function ReferenceVideoCanvas({
     <div className="flex h-full min-h-0 flex-col">
       <EpisodeHeader
         episode={episode}
-        title={episodeTitle ?? `E${episode}`}
+        displayEpisode={displayEpisode}
+        title={episodeTitle ?? `E${displayEpisode ?? episode}`}
         units={units}
         onSaveTitle={onSaveTitle}
         canEditTitle={canEditTitle}

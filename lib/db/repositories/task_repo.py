@@ -504,6 +504,41 @@ class TaskRepository(BaseRepository):
             dependents.extend(await self._collect_queued_dependents(row[0]))
         return dependents
 
+    async def cancel_episode_tasks(self, *, project_name: str, script_file: str) -> dict[str, Any]:
+        """取消指定项目、指定原始剧本绑定下的全部活动任务。
+
+        ``script_file`` 是分集的稳定身份；删除或调整显示编号不会把其他分集的任务
+        一并取消。每个任务仍经过 ``_dispatch_cancel``，因此保留现有的 queued/running
+        状态迁移、取消信号列表和依赖级联语义。
+        """
+        result = await self.session.execute(
+            select(Task)
+            .where(
+                Task.project_name == project_name,
+                Task.script_file == script_file,
+                Task.status.in_(ACTIVE_TASK_STATUSES),
+            )
+            .order_by(Task.queued_at.asc(), Task.task_id.asc())
+        )
+        tasks = list(result.scalars().all())
+        cancelled: list[dict[str, Any]] = []
+        cancelling: list[str] = []
+        skipped_terminal: list[dict[str, Any]] = []
+        for task in tasks:
+            await self._dispatch_cancel(
+                task,
+                cancelled_by="episode_deleted",
+                cancelled=cancelled,
+                cancelling=cancelling,
+                skipped_terminal=skipped_terminal,
+            )
+        await self.session.commit()
+        return {
+            "cancelled": cancelled,
+            "cancelling": cancelling,
+            "skipped_terminal": skipped_terminal,
+        }
+
     async def cancel_task(self, task_id: str) -> dict[str, Any]:
         """按状态分发取消（ADR 0006）：
 

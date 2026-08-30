@@ -1093,6 +1093,27 @@ class API {
     );
   }
 
+  static async deleteEpisode(projectName: string, episode: number): Promise<SuccessResponse> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/episodes/${episode}`,
+      { method: "DELETE" },
+    );
+  }
+
+  static async updateEpisodeDisplayNumber(
+    projectName: string,
+    episode: number,
+    displayEpisode: number,
+  ): Promise<SuccessResponse> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/episodes/${episode}/display-number`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ display_episode: displayEpisode }),
+      },
+    );
+  }
+
   // ==================== step1→step2 审核 gate ====================
 
   /** 读取该集 step1 结构化中间态 + 审核状态（供 web 渲染与编辑）。 */

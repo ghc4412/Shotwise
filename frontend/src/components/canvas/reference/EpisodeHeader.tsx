@@ -15,13 +15,14 @@ export interface EpisodeHeaderUnit {
 
 export interface EpisodeHeaderProps {
   episode: number;
+  displayEpisode?: number;
   title: string;
   units: EpisodeHeaderUnit[];
   onSaveTitle?: (next: string) => Promise<void>;
   canEditTitle?: boolean;
 }
 
-export function EpisodeHeader({ episode, title, units, onSaveTitle, canEditTitle }: EpisodeHeaderProps) {
+export function EpisodeHeader({ episode, displayEpisode, title, units, onSaveTitle, canEditTitle }: EpisodeHeaderProps) {
   const { t } = useTranslation("dashboard");
   const epCost = useCostStore((s) => s._episodeIndex.get(episode));
 
@@ -43,7 +44,7 @@ export function EpisodeHeader({ episode, title, units, onSaveTitle, canEditTitle
   }, [units, epCost]);
 
   const epLabel = t("episode_header_episode_chip", {
-    number: String(episode).padStart(2, "0"),
+    number: String(displayEpisode ?? episode).padStart(2, "0"),
   });
 
   return (

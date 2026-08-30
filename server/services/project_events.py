@@ -25,7 +25,7 @@ from lib.project_change_hints import (
     register_project_change_batch_listener,
     register_project_change_listener,
 )
-from lib.project_manager import ProjectManager
+from lib.project_manager import DELETED_EPISODE_SCRIPT_FILES_FIELD, ProjectManager
 from lib.script_models import get_generated_assets
 from lib.script_skeleton import (
     SKELETON_ANCHOR_TYPES,
@@ -582,6 +582,9 @@ class ProjectEventService:
             return
 
         project = self.pm.load_project(project_name)
+        deleted_script_files = {
+            item for item in project.get(DELETED_EPISODE_SCRIPT_FILES_FIELD, []) or [] if isinstance(item, str)
+        }
         current_episodes: dict[int, dict[str, str]] = {}
         for ep in project.get("episodes") or []:
             if not isinstance(ep, dict):
@@ -606,6 +609,13 @@ class ProjectEventService:
                 continue
             title = str(script.get("title") or "")
             expected_script_file = f"scripts/{script_path.name}"
+            if expected_script_file in deleted_script_files:
+                logger.debug(
+                    "跳过已明确删除的分集脚本索引 project=%s file=%s",
+                    project_name,
+                    script_path.name,
+                )
+                continue
             existing = current_episodes.get(episode)
             if existing and existing["title"] == title and existing["script_file"] == expected_script_file:
                 continue

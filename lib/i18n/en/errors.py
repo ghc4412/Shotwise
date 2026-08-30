@@ -308,6 +308,7 @@ MESSAGES = {
     ),
     # Episode meta
     "episode_not_found": "Episode {episode} not found or has no script file yet",
+    "episode_display_number_invalid": "Display number must be between 1 and {max}",
     "episode_title_empty": "Episode title cannot be empty",
     "about_update_check_failed": "Failed to check for updates, please try again later",
     "about_version_read_failed": "Failed to read app version",

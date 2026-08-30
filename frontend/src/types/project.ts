@@ -145,7 +145,10 @@ export interface ProjectStatus {
 }
 
 export interface EpisodeMeta {
+  /** Stable script/task identity. This value is never renumbered after deletion. */
   episode: number;
+  /** User-facing ordering number; omitted on legacy projects and falls back to episode. */
+  display_episode?: number;
   title: string;
   script_file: string;
   /** Written by episode_planner at split time: ending hook / suspense */

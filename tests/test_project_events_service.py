@@ -292,6 +292,33 @@ class TestProjectEventService:
         await service.shutdown()
 
     @pytest.mark.unit
+    def test_deleted_episode_metadata_is_not_recreated_from_preserved_script(self, tmp_path):
+        pm = ProjectManager(tmp_path / "projects")
+        pm.create_project("demo")
+        pm.create_project_metadata("demo", "Demo", "Anime", "narration")
+        script = {"episode": 1, "title": "第一集", "content_mode": "narration", "segments": []}
+        pm.save_script("demo", script, "episode_1.json", validate=False)
+
+        def delete_episode_metadata(project: dict) -> None:
+            project["episodes"] = []
+            project["deleted_episode_script_files"] = ["scripts/episode_1.json"]
+
+        pm.update_project("demo", delete_episode_metadata)
+        service = ProjectEventService(tmp_path)
+
+        service._ensure_script_index_synced("demo")
+
+        project = pm.load_project("demo")
+        assert project["episodes"] == []
+        assert (pm.get_project_path("demo") / "scripts" / "episode_1.json").is_file()
+
+        # 受支持的脚本保存代表显式重新规划，应解除抑制并恢复剧集元数据。
+        pm.save_script("demo", script, "episode_1.json", validate=False)
+        project = pm.load_project("demo")
+        assert project["episodes"] == [{"episode": 1, "title": "第一集", "script_file": "scripts/episode_1.json"}]
+        assert "deleted_episode_script_files" not in project
+
+    @pytest.mark.unit
     @pytest.mark.asyncio
     async def test_emitted_batch_is_broadcast_without_waiting_for_snapshot_diff(self, tmp_path):
         pm = ProjectManager(tmp_path / "projects")
