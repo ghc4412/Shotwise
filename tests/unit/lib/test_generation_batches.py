@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 import pytest
 
 from lib.generation_batches import (
@@ -20,10 +23,10 @@ class _FakeTaskAdapter:
         self.cancelled: list[str] = []
         self._next_id = 1
 
-    async def validate(self, task: dict[str, object]) -> tuple[str, ...]:
+    async def validate(self, task: Mapping[str, Any]) -> tuple[str, ...]:
         return self.validation_issues.get(str(task["resource_id"]), ())
 
-    async def admit_all(self, tasks: tuple[dict[str, object], ...]) -> tuple[str, ...]:
+    async def admit_all(self, tasks: tuple[Mapping[str, Any], ...]) -> tuple[str, ...]:
         self.admitted_requests.append(tuple(dict(task) for task in tasks))
         task_ids = []
         for task in tasks:
@@ -33,10 +36,10 @@ class _FakeTaskAdapter:
             task_ids.append(task_id)
         return tuple(task_ids)
 
-    async def get_task(self, task_id: str) -> dict[str, object] | None:
+    async def get_task(self, task_id: str) -> Mapping[str, Any] | None:
         return self.tasks.get(task_id)
 
-    async def cancel_task(self, task_id: str) -> dict[str, object]:
+    async def cancel_task(self, task_id: str) -> Mapping[str, Any]:
         self.cancelled.append(task_id)
         task = self.tasks[task_id]
         if task["status"] not in {"succeeded", "failed", "cancelled"}:

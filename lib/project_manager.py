@@ -42,6 +42,7 @@ from lib.asset_types import (
     resolve_asset_key,
     validate_asset_name,
 )
+from lib.episode_duration_plan import DurationPlanningStrategy, read_episode_duration_plan
 from lib.episode_ledger import SOURCE_TEXT_SUFFIXES
 from lib.episode_paths import (
     REFERENCE_VIDEO_STEP1_FILENAME,
@@ -618,6 +619,46 @@ class ProjectManager:
         }
 
         return script
+
+    def save_episode_duration_plan(
+        self,
+        project_name: str,
+        script_filename: str,
+        *,
+        target_seconds: int,
+        strategy: str = DurationPlanningStrategy.EQUAL.value,
+        manual_allocations: Mapping[str, int] | None = None,
+    ) -> dict[str, Any]:
+        """Persist episode planning settings in script metadata, never shot durations.
+
+        The metadata field is additive and optional, so old ``project.json`` and script
+        files remain readable without a schema migration.  This method intentionally
+        stores only planning inputs; allocation and provider clamping happen when a
+        generation task is submitted against the current script state.
+        """
+        raw_plan = {
+            "target_seconds": target_seconds,
+            "strategy": strategy,
+            "manual_allocations": dict(manual_allocations or {}),
+        }
+        config = read_episode_duration_plan({}, {"metadata": {"episode_duration_plan": raw_plan}})
+        if config is None:
+            raise ValueError("invalid episode duration plan")
+
+        with self.locked_script(project_name, script_filename, validate=False) as script:
+            metadata = script.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+                script["metadata"] = metadata
+            metadata["episode_duration_plan"] = config.as_dict()
+        return config.as_dict()
+
+    def load_episode_duration_plan(self, project_name: str, script_filename: str) -> dict[str, Any] | None:
+        """Read an episode plan using canonical metadata and legacy compatibility fields."""
+        project = self.load_project(project_name)
+        script = self.load_script(project_name, script_filename)
+        config = read_episode_duration_plan(project, script)
+        return config.as_dict() if config is not None else None
 
     def save_script(
         self, project_name: str, script: dict, filename: str | None = None, *, validate: bool = True

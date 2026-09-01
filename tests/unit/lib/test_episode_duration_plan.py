@@ -4,6 +4,7 @@ from lib.episode_duration_plan import (
     DurationPlanningStrategy,
     EpisodeDurationPlanner,
     ShotDurationInput,
+    read_episode_duration_plan,
 )
 
 
@@ -107,3 +108,43 @@ def test_missing_provider_durations_fail_loudly() -> None:
             target_seconds=8,
             shots=[ShotDurationInput("open", current_seconds=8, supported_durations=())],
         )
+
+
+@pytest.mark.unit
+def test_read_episode_duration_plan_supports_script_metadata_and_legacy_ad_target() -> None:
+    configured = read_episode_duration_plan(
+        {"target_duration": 60},
+        {
+            "metadata": {
+                "episode_duration_plan": {
+                    "target_seconds": 24,
+                    "strategy": "manual",
+                    "manual_allocations": {"a": 10, "b": 14},
+                }
+            }
+        },
+    )
+    assert configured is not None
+    assert configured.target_seconds == 24
+    assert configured.strategy is DurationPlanningStrategy.MANUAL
+    assert configured.manual_allocations == {"a": 10, "b": 14}
+
+    legacy = read_episode_duration_plan({"target_duration": 60}, {})
+    assert legacy is not None
+    assert legacy.target_seconds == 60
+    assert legacy.strategy is DurationPlanningStrategy.EQUAL
+
+
+@pytest.mark.unit
+def test_request_for_item_ignores_generated_and_locked_items() -> None:
+    planner = EpisodeDurationPlanner()
+    shots = [
+        ShotDurationInput("open", 4, (4, 6, 8)),
+        ShotDurationInput("locked", 4, (4, 6, 8), locked=True),
+        ShotDurationInput("generated", 4, (4, 6, 8), generated=True),
+    ]
+    plan = planner.build_plan(target_seconds=20, shots=shots)
+
+    assert planner.requested_seconds_for("open", plan) == 8
+    assert planner.requested_seconds_for("locked", plan) == 4
+    assert planner.requested_seconds_for("generated", plan) == 4

@@ -7,8 +7,9 @@ requests.  Callers may preview a plan and apply it only after explicit confirmat
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 
 class DurationPlanningStrategy(StrEnum):
@@ -17,6 +18,120 @@ class DurationPlanningStrategy(StrEnum):
     EQUAL = "equal"
     PROPORTIONAL = "proportional"
     MANUAL = "manual"
+
+
+@dataclass(frozen=True, slots=True)
+class EpisodeDurationPlanConfig:
+    """Persistable episode planning settings, separate from shot durations."""
+
+    target_seconds: int
+    strategy: DurationPlanningStrategy = DurationPlanningStrategy.EQUAL
+    manual_allocations: Mapping[str, int] = field(default_factory=dict)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "target_seconds": self.target_seconds,
+            "strategy": self.strategy.value,
+            "manual_allocations": dict(self.manual_allocations),
+        }
+
+
+def read_episode_duration_plan(
+    project: Mapping[str, Any] | None,
+    script: Mapping[str, Any] | None,
+) -> EpisodeDurationPlanConfig | None:
+    """Read the compatible planning representation without changing either input.
+
+    The canonical representation lives in ``script.metadata.episode_duration_plan``.
+    ``episode_target_duration`` and the existing ad-only ``project.target_duration``
+    are accepted as compatibility fallbacks so older projects do not need a migration.
+    Malformed optional planning data is ignored and leaves the existing generation
+    duration path in charge.
+    """
+
+    project = project or {}
+    script = script or {}
+    metadata = script.get("metadata")
+    raw_plan = metadata.get("episode_duration_plan") if isinstance(metadata, Mapping) else None
+    if not isinstance(raw_plan, Mapping):
+        raw_plan = None
+
+    if raw_plan is None:
+        raw_plan = _find_legacy_plan(project, script, metadata)
+
+    if raw_plan is None:
+        return None
+    return _coerce_plan_config(raw_plan)
+
+
+def _find_legacy_plan(
+    project: Mapping[str, Any], script: Mapping[str, Any], metadata: Mapping[str, Any] | None
+) -> Mapping[str, Any] | None:
+    """Find non-migrating compatibility fields used by existing project data."""
+
+    episode = script.get("episode")
+    plans = project.get("episode_duration_plans")
+    if isinstance(plans, Mapping) and episode is not None:
+        candidate = plans.get(str(episode))
+        if isinstance(candidate, Mapping):
+            return candidate
+
+    for entry in project.get("episodes") or ():
+        if not isinstance(entry, Mapping) or entry.get("episode") != episode:
+            continue
+        if "episode_duration_plan" in entry and isinstance(entry["episode_duration_plan"], Mapping):
+            return entry["episode_duration_plan"]
+        if "episode_target_duration" in entry:
+            return {"target_seconds": entry["episode_target_duration"]}
+
+    if "episode_target_duration" in script:
+        return {"target_seconds": script["episode_target_duration"]}
+    if isinstance(metadata, Mapping) and "episode_target_duration" in metadata:
+        return {"target_seconds": metadata["episode_target_duration"]}
+    if "episode_target_duration" in project:
+        return {"target_seconds": project["episode_target_duration"]}
+    if "target_duration" in project:
+        return {"target_seconds": project["target_duration"]}
+    return None
+
+
+def _coerce_plan_config(raw: Mapping[str, Any]) -> EpisodeDurationPlanConfig | None:
+    target = raw.get("target_seconds", raw.get("episode_target_duration"))
+    if not isinstance(target, int) or isinstance(target, bool) or target <= 0:
+        return None
+
+    raw_strategy = raw.get("strategy", DurationPlanningStrategy.EQUAL.value)
+    try:
+        strategy = DurationPlanningStrategy(raw_strategy)
+    except (TypeError, ValueError):
+        return None
+
+    raw_manual = raw.get("manual_allocations", {})
+    if raw_manual is None:
+        raw_manual = {}
+    if not isinstance(raw_manual, Mapping):
+        return None
+    manual: dict[str, int] = {}
+    for shot_id, value in raw_manual.items():
+        if not isinstance(shot_id, str) or not shot_id:
+            return None
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            return None
+        manual[shot_id] = value
+    return EpisodeDurationPlanConfig(target, strategy, manual)
+
+
+def is_item_duration_locked(item: Mapping[str, Any]) -> bool:
+    """Return the additive duration-lock flag used by planning-aware callers."""
+    return item.get("duration_locked") is True or item.get("locked") is True
+
+
+def is_item_video_generated(item: Mapping[str, Any]) -> bool:
+    """Detect an existing video without treating the planned duration as an actual result."""
+    assets = item.get("generated_assets")
+    if not isinstance(assets, Mapping):
+        return False
+    return bool(assets.get("video_clip") or assets.get("video_uri") or assets.get("status") == "completed")
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +269,12 @@ class EpisodeDurationPlanner:
     ) -> dict[str, int]:
         """Return only user-confirmed, safe updates; the caller persists them atomically."""
         return {change.shot_id: change.to_seconds for change in self.preview_replan(shots, plan).changes}
+
+    @staticmethod
+    def requested_seconds_for(shot_id: str, plan: EpisodeDurationPlan) -> int | None:
+        """Return the provider-ready request for one item, if the plan contains it."""
+        allocation = plan.by_shot_id.get(shot_id)
+        return allocation.requested_seconds if allocation is not None else None
 
     @staticmethod
     def _validate_shots(shots: tuple[ShotDurationInput, ...]) -> None:
