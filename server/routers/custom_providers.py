@@ -33,10 +33,13 @@ from lib.custom_provider.capabilities import (
 )
 from lib.custom_provider.endpoints import (
     ENDPOINT_REGISTRY,
+    EndpointDeclarationValidationError,
+    endpoint_declaration_to_dict,
     endpoint_spec_to_dict,
     endpoint_to_image_capabilities,
     endpoint_to_media_type,
     get_endpoint_spec,
+    parse_endpoint_declaration,
 )
 from lib.db import get_async_session
 from lib.db.base import dt_to_iso
@@ -144,6 +147,17 @@ class ModelInput(BaseModel):
     # 稀疏覆盖字典，键名对齐 VideoCapabilities 字段名；None 或键缺席 = 跟随系统判定。
     # 保存模型列表是整体替换语义，本字段必须随列表回传，否则存量覆盖被清空。
     capability_overrides: dict[str, object] | None = None
+    endpoint_declaration: dict[str, object] | None = None
+
+    @field_validator("endpoint_declaration")
+    @classmethod
+    def _validate_endpoint_declaration(cls, value: dict[str, object] | None) -> dict[str, object] | None:
+        if value is None:
+            return None
+        try:
+            return endpoint_declaration_to_dict(parse_endpoint_declaration(value))
+        except EndpointDeclarationValidationError as exc:
+            raise ValueError(str(exc)) from exc
 
     @field_validator("capability_overrides")
     @classmethod
@@ -247,6 +261,7 @@ class ModelResponse(BaseModel):
     system_capabilities: dict[str, object] | None = None
     # 用户覆盖（稀疏字典），与 system_capabilities 平凡合并即为生效值。
     capability_overrides: dict[str, object] | None = None
+    endpoint_declaration: dict[str, object] | None = None
     # 正在引用该模型的全局 system_settings 键名（如 default_video_backend_i2v）；未被引用为
     # None。只查 DB 全局配置，不扫描项目文件（`docs/adr/0054`）；前端据此渲染非阻塞提示。
     global_bucket_refs: list[str] | None = None
@@ -369,6 +384,7 @@ async def _global_bucket_refs_for_provider(session: AsyncSession, provider_id: i
 def _model_to_response(m, global_bucket_refs: list[str] | None = None) -> ModelResponse:
     durations = json.loads(m.supported_durations) if m.supported_durations else None
     return ModelResponse(
+        endpoint_declaration=_model_declaration_for_response(m.endpoint_declaration),
         system_capabilities=_system_capabilities_for(m.endpoint, m.model_id),
         capability_overrides=_effective_overrides_for_response(m.endpoint, m.model_id, m.capability_overrides),
         id=m.id,
@@ -385,6 +401,16 @@ def _model_to_response(m, global_bucket_refs: list[str] | None = None) -> ModelR
         resolution=m.resolution,
         global_bucket_refs=global_bucket_refs or None,
     )
+
+
+def _model_declaration_for_response(raw: object) -> dict[str, object] | None:
+    if raw is None:
+        return None
+    try:
+        return endpoint_declaration_to_dict(parse_endpoint_declaration(raw))
+    except EndpointDeclarationValidationError:
+        logger.warning("自定义模型声明式 endpoint 数据无效，回显时忽略")
+        return None
 
 
 def _provider_to_response(provider, models, global_bucket_refs: dict[str, list[str]] | None = None) -> ProviderResponse:

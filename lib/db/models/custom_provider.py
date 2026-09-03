@@ -94,3 +94,6 @@ class CustomProviderModel(TimestampMixin, Base):
     # 跟随系统判定；写死的能力维度列表不进 schema，向新维度开放无需迁移。合成语义由
     # lib.custom_provider.capabilities 唯一承载。
     capability_overrides: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)
+    # Optional declarative transport contract. The parser in lib.custom_provider.endpoints
+    # is the single validation boundary for this JSON document.
+    endpoint_declaration: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True)

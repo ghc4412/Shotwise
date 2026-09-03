@@ -42,7 +42,17 @@ from lib.asset_types import (
     resolve_asset_key,
     validate_asset_name,
 )
-from lib.episode_duration_plan import DurationPlanningStrategy, read_episode_duration_plan
+from lib.episode_duration_plan import (
+    DurationPlanningStrategy,
+    EpisodeDurationPlanConfig,
+    EpisodeDurationPlanner,
+    EpisodeDurationRevisionConflict,
+    ShotDurationInput,
+    episode_duration_revision,
+    is_item_duration_locked,
+    is_item_video_generated,
+    read_episode_duration_plan,
+)
 from lib.episode_ledger import SOURCE_TEXT_SUFFIXES
 from lib.episode_paths import (
     REFERENCE_VIDEO_STEP1_FILENAME,
@@ -169,6 +179,45 @@ class EpisodeScriptReboundError(RuntimeError):
 
 class EmptySourceError(ValueError):
     """source 目录为空，无法生成概述；与「无可用文本供应商」等配置错误区分，避免路由层误判用户操作。"""
+
+
+def _duration_plan_config(
+    target_seconds: int,
+    strategy: str,
+    manual_allocations: Mapping[str, int] | None,
+) -> EpisodeDurationPlanConfig:
+    raw_plan = {
+        "target_seconds": target_seconds,
+        "strategy": strategy,
+        "manual_allocations": dict(manual_allocations or {}),
+    }
+    config = read_episode_duration_plan({}, {"metadata": {"episode_duration_plan": raw_plan}})
+    if config is None:
+        raise ValueError("invalid episode duration plan")
+    return config
+
+
+def _duration_shot_inputs(
+    script: dict[str, Any], supported_durations: tuple[int, ...]
+) -> tuple[tuple[ShotDurationInput, ...], str]:
+    items, id_field, _kind = resolve_items(script)
+    shots: list[ShotDurationInput] = []
+    for item in items:
+        resource_id = str(item.get(id_field, "")).strip()
+        raw_seconds = item.get("duration_seconds")
+        current_seconds = raw_seconds if isinstance(raw_seconds, int) and not isinstance(raw_seconds, bool) else None
+        weight = float(current_seconds) if current_seconds is not None and current_seconds > 0 else 1.0
+        shots.append(
+            ShotDurationInput(
+                shot_id=resource_id,
+                current_seconds=current_seconds,
+                supported_durations=supported_durations,
+                locked=is_item_duration_locked(item),
+                generated=is_item_video_generated(item),
+                weight=weight,
+            )
+        )
+    return tuple(shots), id_field
 
 
 # ==================== 数据模型 ====================
@@ -620,38 +669,213 @@ class ProjectManager:
 
         return script
 
+    @staticmethod
+    def _episode_duration_script_file(project: dict[str, Any], episode: int) -> str:
+        episode_meta = find_episode(project, episode)
+        if episode_meta is None:
+            raise KeyError(episode)
+        script_file = episode_meta.get("script_file")
+        if not isinstance(script_file, str) or not script_file.strip():
+            raise KeyError(episode)
+        return script_file
+
+    def _read_episode_duration_snapshot(self, project_name: str, episode: int) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Read one bound episode under both locks without writing the script."""
+
+        def resolver(project: dict[str, Any]) -> str:
+            return self._episode_duration_script_file(project, episode)
+
+        candidate = self.normalize_script_filename(resolver(self.load_project(project_name)))
+        with self._script_lock(project_name, candidate):
+            with self._project_lock(project_name):
+                project = self._read_project_raw_unlocked(project_name)
+                current = self.normalize_script_filename(resolver(project))
+                if current != candidate:
+                    raise EpisodeScriptReboundError(f"episode script binding changed: {candidate} -> {current}")
+                script, _migrated = self._read_script_unlocked(project_name, candidate)
+                return copy.deepcopy(project), copy.deepcopy(script)
+
+    @staticmethod
+    def _episode_duration_state(project: dict[str, Any], script: dict[str, Any]) -> dict[str, Any]:
+        config = read_episode_duration_plan(project, script)
+        items, id_field, _kind = resolve_items(script)
+        return {
+            "revision": episode_duration_revision(script),
+            "plan": config.as_dict() if config is not None else None,
+            "items": [
+                {
+                    "resource_id": str(item.get(id_field, "")),
+                    "duration_seconds": item.get("duration_seconds"),
+                    "locked": is_item_duration_locked(item),
+                    "generated": is_item_video_generated(item),
+                }
+                for item in items
+                if isinstance(item, dict)
+            ],
+        }
+
+    def load_episode_duration_state(self, project_name: str, episode: int) -> dict[str, Any]:
+        project, script = self._read_episode_duration_snapshot(project_name, episode)
+        return self._episode_duration_state(project, script)
+
     def save_episode_duration_plan(
         self,
         project_name: str,
-        script_filename: str,
+        episode: int,
         *,
+        expected_revision: str,
         target_seconds: int,
         strategy: str = DurationPlanningStrategy.EQUAL.value,
         manual_allocations: Mapping[str, int] | None = None,
     ) -> dict[str, Any]:
-        """Persist episode planning settings in script metadata, never shot durations.
+        """Persist planning settings without changing item durations."""
 
-        The metadata field is additive and optional, so old ``project.json`` and script
-        files remain readable without a schema migration.  This method intentionally
-        stores only planning inputs; allocation and provider clamping happen when a
-        generation task is submitted against the current script state.
-        """
-        raw_plan = {
-            "target_seconds": target_seconds,
-            "strategy": strategy,
-            "manual_allocations": dict(manual_allocations or {}),
-        }
-        config = read_episode_duration_plan({}, {"metadata": {"episode_duration_plan": raw_plan}})
-        if config is None:
-            raise ValueError("invalid episode duration plan")
+        config = _duration_plan_config(target_seconds, strategy, manual_allocations)
 
-        with self.locked_script(project_name, script_filename, validate=False) as script:
+        def resolver(project: dict[str, Any]) -> str:
+            return self._episode_duration_script_file(project, episode)
+
+        with self.locked_episode_script(project_name, resolver, validate=False) as script:
+            actual_revision = episode_duration_revision(script)
+            if actual_revision != expected_revision:
+                raise EpisodeDurationRevisionConflict(expected_revision, actual_revision)
             metadata = script.get("metadata")
             if not isinstance(metadata, dict):
                 metadata = {}
                 script["metadata"] = metadata
             metadata["episode_duration_plan"] = config.as_dict()
-        return config.as_dict()
+
+        return {"revision": episode_duration_revision(script), "plan": config.as_dict()}
+
+    def preview_episode_duration_plan(
+        self,
+        project_name: str,
+        episode: int,
+        *,
+        target_seconds: int,
+        strategy: str = DurationPlanningStrategy.EQUAL.value,
+        manual_allocations: Mapping[str, int] | None = None,
+        supported_durations: tuple[int, ...],
+    ) -> dict[str, Any]:
+        """Build a read-only duration preview from one current script revision."""
+
+        _project, script = self._read_episode_duration_snapshot(project_name, episode)
+        revision = episode_duration_revision(script)
+        config = _duration_plan_config(target_seconds, strategy, manual_allocations)
+        planner = EpisodeDurationPlanner()
+        shots, _id_field = _duration_shot_inputs(script, supported_durations)
+        plan = planner.build_plan(
+            target_seconds=config.target_seconds,
+            shots=shots,
+            strategy=config.strategy,
+            manual_allocations=config.manual_allocations,
+            source_revision=revision,
+        )
+        preview = planner.preview_replan(shots, plan)
+        return {
+            "revision": revision,
+            "plan": config.as_dict(),
+            "target_seconds": preview.target_seconds,
+            "changes": [
+                {
+                    "resource_id": change.shot_id,
+                    "from_seconds": change.from_seconds,
+                    "to_seconds": change.to_seconds,
+                    "clamp_reason": change.clamp_reason,
+                }
+                for change in preview.changes
+            ],
+        }
+
+    def apply_episode_duration_plan(
+        self,
+        project_name: str,
+        episode: int,
+        *,
+        expected_revision: str,
+        target_seconds: int,
+        strategy: str = DurationPlanningStrategy.EQUAL.value,
+        manual_allocations: Mapping[str, int] | None = None,
+        supported_durations: tuple[int, ...],
+    ) -> dict[str, Any]:
+        """Save and apply a duration plan after rechecking revision and item state under lock."""
+
+        config = _duration_plan_config(target_seconds, strategy, manual_allocations)
+        planner = EpisodeDurationPlanner()
+        applied: dict[str, int] = {}
+        skipped: list[str] = []
+
+        def resolver(project: dict[str, Any]) -> str:
+            return self._episode_duration_script_file(project, episode)
+
+        with self.locked_episode_script(project_name, resolver, validate=False) as script:
+            actual_revision = episode_duration_revision(script)
+            if actual_revision != expected_revision:
+                raise EpisodeDurationRevisionConflict(expected_revision, actual_revision)
+            shots, id_field = _duration_shot_inputs(script, supported_durations)
+            plan = planner.build_plan(
+                target_seconds=config.target_seconds,
+                shots=shots,
+                strategy=config.strategy,
+                manual_allocations=config.manual_allocations,
+                source_revision=actual_revision,
+            )
+            changes = planner.apply_confirmed_plan(shots, plan)
+            items, _resolved_id_field, _kind = resolve_items(script)
+            items_by_id = {str(item.get(id_field)): item for item in items if isinstance(item, dict)}
+            for resource_id, seconds in changes.items():
+                item = items_by_id.get(resource_id)
+                if item is None or is_item_duration_locked(item) or is_item_video_generated(item):
+                    skipped.append(resource_id)
+                    continue
+                item["duration_seconds"] = seconds
+                applied[resource_id] = seconds
+            metadata = script.get("metadata")
+            if not isinstance(metadata, dict):
+                metadata = {}
+                script["metadata"] = metadata
+            metadata["episode_duration_plan"] = config.as_dict()
+
+        return {
+            "revision": episode_duration_revision(script),
+            "plan": config.as_dict(),
+            "applied": applied,
+            "skipped": skipped,
+        }
+
+    def set_episode_duration_lock(
+        self,
+        project_name: str,
+        episode: int,
+        resource_id: str,
+        *,
+        locked: bool,
+        expected_revision: str,
+    ) -> dict[str, Any]:
+        """Toggle one duration lock under the script lock and optimistic revision check."""
+
+        def resolver(project: dict[str, Any]) -> str:
+            return self._episode_duration_script_file(project, episode)
+
+        with self.locked_episode_script(project_name, resolver, validate=False) as script:
+            actual_revision = episode_duration_revision(script)
+            if actual_revision != expected_revision:
+                raise EpisodeDurationRevisionConflict(expected_revision, actual_revision)
+            items, id_field, _kind = resolve_items(script)
+            target = next((item for item in items if str(item.get(id_field)) == resource_id), None)
+            if target is None:
+                raise KeyError(resource_id)
+            generated = is_item_video_generated(target)
+            current_locked = is_item_duration_locked(target)
+            if generated and current_locked != locked:
+                raise ValueError("generated item duration lock cannot be changed")
+            target["duration_locked"] = locked
+
+        return {
+            "revision": episode_duration_revision(script),
+            "resource_id": resource_id,
+            "locked": is_item_duration_locked(target),
+        }
 
     def load_episode_duration_plan(self, project_name: str, script_filename: str) -> dict[str, Any] | None:
         """Read an episode plan using canonical metadata and legacy compatibility fields."""

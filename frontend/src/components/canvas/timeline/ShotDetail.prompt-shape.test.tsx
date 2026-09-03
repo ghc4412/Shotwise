@@ -87,7 +87,10 @@ describe("ShotDetail Prompt Shape", () => {
 
     await waitFor(() => {
       expect(onUpdatePrompt).toHaveBeenCalledWith("E1S01", {
-        image_prompt: "A lantern glows in rain\nShot type: Medium Shot\nLighting: Warm\nAmbiance: Quiet",
+        image_prompt: {
+          scene: "A lantern glows in rain",
+          composition: { shot_type: "Medium Shot", lighting: "Warm", ambiance: "Quiet" },
+        },
       });
     });
     await waitFor(() => {
@@ -175,5 +178,20 @@ describe("ShotDetail Prompt Shape", () => {
     expect(textboxWithValue("free-form prompt with no structured fields")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveAttribute("data-prompt-error-field", "image_prompt");
     expect(onUpdatePrompt).not.toHaveBeenCalled();
+  });
+
+  it("父级返回 false 时保留本地草稿并显示保存错误", async () => {
+    const onUpdatePrompt = vi.fn().mockResolvedValue(false);
+    renderDetail({ onUpdatePrompt });
+
+    fireEvent.click(screen.getByTestId("image-prompt-shape-toggle"));
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "重试保存" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "重试保存" }));
+    expect(textboxWithValue("A lantern glows in rain\nShot type: Medium Shot\nLighting: Warm\nAmbiance: Quiet")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存" })).toBeInTheDocument();
   });
 });

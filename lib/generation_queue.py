@@ -530,9 +530,32 @@ class GenerationQueueBatchAdapter:
         payload = task.get("payload")
         if payload is not None and not isinstance(payload, dict):
             issues.append("payload must be an object")
+        if isinstance(payload, dict):
+            script_file = task.get("script_file") or payload.get("script_file")
+        else:
+            script_file = task.get("script_file")
+        if str(task.get("task_type") or "") in {"storyboard", "video", "tts"} and not str(script_file or "").strip():
+            issues.append(f"script_file is required for {task.get('task_type')} batch task")
         return tuple(issues)
 
     async def admit_all(self, tasks: tuple[Mapping[str, Any], ...]) -> tuple[str, ...]:
+        normalized = await self.prepare_all(tasks, user_id=DEFAULT_USER_ID)
+
+        try:
+            async with self._queue._task_repo() as repo:
+                admitted = await repo.enqueue_batch(normalized)
+        except IntegrityError as exc:
+            raise BatchAdmissionError("batch contains an active task conflict") from exc
+        return tuple(str(task["task_id"]) for task in admitted)
+
+    async def prepare_all(
+        self,
+        tasks: tuple[Mapping[str, Any], ...],
+        *,
+        user_id: str,
+    ) -> tuple[Mapping[str, Any], ...]:
+        """Normalize tasks while keeping persistence in the batch transaction."""
+
         if not tasks:
             raise BatchAdmissionError("batch must contain at least one task")
 
@@ -541,14 +564,10 @@ class GenerationQueueBatchAdapter:
             issues = await self.validate(task)
             if issues:
                 raise BatchAdmissionError("; ".join(issues))
-            normalized.append(await self._prepare_task(task))
-
-        try:
-            async with self._queue._task_repo() as repo:
-                admitted = await repo.enqueue_batch(normalized)
-        except IntegrityError as exc:
-            raise BatchAdmissionError("batch contains an active task conflict") from exc
-        return tuple(str(task["task_id"]) for task in admitted)
+            prepared = await self._prepare_task(task)
+            prepared["user_id"] = user_id
+            normalized.append(prepared)
+        return tuple(normalized)
 
     async def get_task(self, task_id: str) -> Mapping[str, Any] | None:
         return await self._queue.get_task(task_id)
@@ -570,14 +589,49 @@ class GenerationQueueBatchAdapter:
 
     async def _prepare_task(self, task: Mapping[str, Any]) -> dict[str, Any]:
         normalized = self._normalize_task(task)
-        payload = normalized.get("payload")
-        if payload is not None and not isinstance(payload, dict):
+        raw_payload = normalized.get("payload")
+        if raw_payload is not None and not isinstance(raw_payload, dict):
             raise BatchAdmissionError("payload must be an object")
+
+        payload = dict(raw_payload or {})
+        top_level_script_file = normalized.get("script_file")
+        payload_script_file = payload.get("script_file")
+        if (
+            top_level_script_file is not None
+            and payload_script_file is not None
+            and str(top_level_script_file) != str(payload_script_file)
+        ):
+            raise BatchAdmissionError("script_file differs between task and payload")
+
+        script_file = top_level_script_file if top_level_script_file is not None else payload_script_file
+        prompt = payload.get("prompt")
+        extra_payload = {key: value for key, value in payload.items() if key not in {"prompt", "script_file"}}
+
+        # Keep batch admission on the same structural guard as single-task WebUI and SDK
+        # enqueue paths. The worker requires prompt/script_file in payload even though the
+        # public batch DTO also exposes script_file as a task-level field.
+        from lib.generation_queue_client import TaskSpec, TaskSpecValidationError
+
+        try:
+            spec = TaskSpec.from_request(
+                task_type=str(normalized["task_type"]),
+                media_type=str(normalized["media_type"]),
+                resource_id=str(normalized["resource_id"]),
+                prompt=prompt,
+                script_file=str(script_file) if script_file is not None else None,
+                source=str(normalized.get("source") or "webui"),
+                extra_payload=extra_payload,
+            )
+        except (TaskSpecValidationError, ValueError) as exc:
+            raise BatchAdmissionError(str(exc)) from exc
+
+        normalized["payload"] = spec.payload
+        normalized["script_file"] = spec.script_file
 
         if normalized.get("provider_id") is None:
             derived = await _derive_execution_model_for_enqueue(
                 project_name=str(normalized["project_name"]),
-                payload=payload,
+                payload=spec.payload,
                 task_type=str(normalized["task_type"]),
                 media_type=str(normalized["media_type"]),
                 resource_id=str(normalized["resource_id"]),
@@ -586,7 +640,7 @@ class GenerationQueueBatchAdapter:
                 execution_model, video_capability = derived
                 normalized["provider_id"] = execution_model.provider_id
                 normalized["payload"] = _pin_video_execution_model(
-                    payload,
+                    spec.payload,
                     capability=video_capability,
                     execution_model=execution_model,
                 )

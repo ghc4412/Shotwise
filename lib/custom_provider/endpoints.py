@@ -9,10 +9,10 @@ server.routers.custom_providers 通过 GET /custom-providers/endpoints 把目录
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from typing import TYPE_CHECKING
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from lib.audio_backends.openai import OpenAIAudioBackend
 from lib.config.url_utils import ensure_google_base_url, ensure_openai_base_url
@@ -79,6 +79,259 @@ class EndpointSpec:
     # VideoGenerationRequest.reference_audio_files 并组装进供应商请求。仅 video 类有意义；
     # False 时把 reference_audio_mode 覆盖为 direct 只会让能力声明失真，执行层照旧不带音色输入。
     reference_audio_capable: bool = False
+
+
+class EndpointDeclarationValidationError(ValueError):
+    """Raised when a declarative endpoint contains an unsafe or invalid value."""
+
+    def __init__(self, message: str, *, field: str | None = None) -> None:
+        self.field = field
+        super().__init__(message)
+
+
+@dataclass(frozen=True)
+class EndpointDeclaration:
+    """A deliberately small, data-only description of one custom endpoint."""
+
+    method: str
+    path: str
+    headers: Mapping[str, str]
+    body_mapping: Mapping[str, str]
+    response_mapping: Mapping[str, str]
+    capability_overrides: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class RenderedEndpointRequest:
+    """The safe request produced from an :class:`EndpointDeclaration`."""
+
+    method: str
+    path: str
+    headers: dict[str, str]
+    body: dict[str, object]
+
+
+def endpoint_declaration_to_dict(declaration: EndpointDeclaration | None) -> dict[str, object] | None:
+    """Return the JSON-safe representation used by the custom-provider API and DB."""
+    if declaration is None:
+        return None
+    validate_endpoint_declaration(declaration)
+    return {
+        "method": declaration.method,
+        "path": declaration.path,
+        "headers": dict(declaration.headers),
+        "body": dict(declaration.body_mapping),
+        "response": dict(declaration.response_mapping),
+        "capability_overrides": dict(declaration.capability_overrides),
+    }
+
+
+_DECLARATION_FIELDS = frozenset({"method", "path", "headers", "body", "response", "capability_overrides"})
+_DECLARATION_METHODS = frozenset({"POST"})
+_DECLARATION_HEADERS = {"accept": "Accept", "content-type": "Content-Type"}
+_SIMPLE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+_PATH_PLACEHOLDER = re.compile(r"\{([^{}]+)\}")
+_JSON_POINTER_TOKEN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+_JSON_POINTER_INDEX = re.compile(r"^(0|[1-9][0-9]*)$")
+
+
+def _declaration_error(message: str, field: str) -> EndpointDeclarationValidationError:
+    return EndpointDeclarationValidationError(f"{field}: {message}", field=field)
+
+
+def _validate_path(path: object) -> str:
+    if not isinstance(path, str) or not path:
+        raise _declaration_error("must be a non-empty relative path", "path")
+    parsed = urlsplit(path)
+    if not path.startswith("/") or parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+        raise _declaration_error("must be an absolute-path reference without a URL or query", "path")
+    if any(part == ".." for part in path.split("/")):
+        raise _declaration_error("must not contain path traversal", "path")
+    for placeholder in _PATH_PLACEHOLDER.findall(path):
+        if placeholder != "model":
+            raise _declaration_error("only the {model} placeholder is allowed", "path")
+    return path
+
+
+def _validate_object_pointer(pointer: object, *, field: str, allow_array: bool) -> str:
+    if not isinstance(pointer, str) or not pointer.startswith("/"):
+        raise _declaration_error("must be a JSON Pointer-like path starting with '/'", field)
+    tokens = pointer[1:].split("/")
+    if not tokens or any(not token for token in tokens):
+        raise _declaration_error("must not contain empty path components", field)
+    for token in tokens:
+        if re.search(r"~(?![01])", token):
+            raise _declaration_error("contains an unsupported path component", field)
+        decoded = token.replace("~1", "/").replace("~0", "~")
+        if allow_array:
+            if not (_JSON_POINTER_TOKEN.fullmatch(decoded) or _JSON_POINTER_INDEX.fullmatch(decoded)):
+                raise _declaration_error("contains an unsupported response path component", field)
+        elif not _JSON_POINTER_TOKEN.fullmatch(decoded):
+            raise _declaration_error("body paths only support named object fields", field)
+    return pointer
+
+
+def _validate_headers(raw: object) -> dict[str, str]:
+    if not isinstance(raw, Mapping):
+        raise _declaration_error("must be an object", "header")
+    headers: dict[str, str] = {}
+    for name, value in raw.items():
+        canonical_name = _DECLARATION_HEADERS.get(name.lower()) if isinstance(name, str) else None
+        if canonical_name is None:
+            raise _declaration_error(f"header {name!r} is not declared in the allowlist", "header")
+        if not isinstance(value, str) or "\r" in value or "\n" in value:
+            raise _declaration_error("must be a static string without line breaks", "header")
+        headers[canonical_name] = value
+    return headers
+
+
+def _validate_mapping(raw: object, *, field: str, response: bool) -> dict[str, str]:
+    if not isinstance(raw, Mapping):
+        raise _declaration_error("must be an object", field)
+    result: dict[str, str] = {}
+    for key, value in raw.items():
+        if response:
+            if not isinstance(key, str) or not _SIMPLE_NAME.fullmatch(key):
+                raise _declaration_error("response names must be simple field names", field)
+            pointer = _validate_object_pointer(value, field=field, allow_array=True)
+        else:
+            pointer = _validate_object_pointer(key, field=field, allow_array=False)
+            if not isinstance(value, str) or not _SIMPLE_NAME.fullmatch(value):
+                raise _declaration_error("body values must be simple input names", field)
+        if pointer in result.values():
+            raise _declaration_error("contains duplicate mapping paths", field)
+        result[str(key)] = pointer if response else str(value)
+
+    if not response:
+        paths = sorted(result)
+        if any(child.startswith(parent + "/") for parent in paths for child in paths if child != parent):
+            raise _declaration_error("cannot map both a field and one of its children", field)
+    return result
+
+
+def validate_endpoint_declaration(declaration: EndpointDeclaration) -> EndpointDeclaration:
+    """Validate an already parsed declaration and return it unchanged."""
+    if not isinstance(declaration, EndpointDeclaration):
+        raise _declaration_error("must be an EndpointDeclaration", "declaration")
+    if declaration.method not in _DECLARATION_METHODS:
+        raise _declaration_error(f"method {declaration.method!r} is not allowed", "method")
+    _validate_path(declaration.path)
+    _validate_headers(declaration.headers)
+    _validate_mapping(declaration.body_mapping, field="body", response=False)
+    _validate_mapping(declaration.response_mapping, field="response", response=True)
+    if not isinstance(declaration.capability_overrides, Mapping):
+        raise _declaration_error("must be an object", "capability_overrides")
+    for key, value in declaration.capability_overrides.items():
+        if not isinstance(key, str) or not _SIMPLE_NAME.fullmatch(key):
+            raise _declaration_error("capability names must be simple field names", "capability_overrides")
+        if not isinstance(value, (str, int, float, bool, type(None))):
+            raise _declaration_error("values must be scalar JSON values", "capability_overrides")
+    return declaration
+
+
+def parse_endpoint_declaration(raw: object) -> EndpointDeclaration:
+    """Parse and validate a data-only endpoint declaration."""
+    if not isinstance(raw, Mapping):
+        raise _declaration_error("must be an object", "declaration")
+    unknown = set(raw) - _DECLARATION_FIELDS
+    if unknown:
+        raise _declaration_error(f"unknown fields: {sorted(unknown)!r}", "declaration")
+    method = raw.get("method", "POST")
+    if not isinstance(method, str):
+        raise _declaration_error("must be a string", "method")
+    method = method.upper()
+    if method not in _DECLARATION_METHODS:
+        raise _declaration_error(f"method {method!r} is not allowed", "method")
+    path = _validate_path(raw.get("path"))
+
+    declaration = EndpointDeclaration(
+        method=method,
+        path=path,
+        headers=_validate_headers(raw.get("headers", {})),
+        body_mapping=_validate_mapping(raw.get("body", {}), field="body", response=False),
+        response_mapping=_validate_mapping(raw.get("response", {}), field="response", response=True),
+        capability_overrides=dict(raw.get("capability_overrides", {}))
+        if isinstance(raw.get("capability_overrides", {}), Mapping)
+        else {},
+    )
+    if "capability_overrides" in raw and not isinstance(raw["capability_overrides"], Mapping):
+        raise _declaration_error("must be an object", "capability_overrides")
+    return validate_endpoint_declaration(declaration)
+
+
+def _render_path(path: str, inputs: Mapping[str, object]) -> str:
+    def replace(match: re.Match[str]) -> str:
+        if "model" not in inputs or not isinstance(inputs["model"], str) or not inputs["model"]:
+            raise _declaration_error("missing non-empty model value", "input")
+        return quote(inputs["model"], safe="-._~")
+
+    return _PATH_PLACEHOLDER.sub(replace, path)
+
+
+def _set_body_value(body: dict[str, object], pointer: str, value: object) -> None:
+    current = body
+    tokens = [token.replace("~1", "/").replace("~0", "~") for token in pointer[1:].split("/")]
+    for token in tokens[:-1]:
+        child = current.get(token)
+        if child is None:
+            child = {}
+            current[token] = child
+        if not isinstance(child, dict):
+            raise _declaration_error("body path collides with a scalar", "body")
+        current = child
+    current[tokens[-1]] = value
+
+
+def render_endpoint_declaration(
+    declaration: EndpointDeclaration, inputs: Mapping[str, object], runtime_headers: Mapping[str, str] | None = None
+) -> RenderedEndpointRequest:
+    """Render a request using only fields explicitly declared by the endpoint."""
+    validate_endpoint_declaration(declaration)
+    if not isinstance(inputs, Mapping):
+        raise _declaration_error("must be an object", "input")
+    if runtime_headers or "headers" in inputs:
+        raise _declaration_error("runtime headers are not permitted", "header")
+    body: dict[str, object] = {}
+    for pointer, input_name in declaration.body_mapping.items():
+        if input_name not in inputs:
+            raise _declaration_error(f"missing input {input_name!r}", "input")
+        _set_body_value(body, pointer, inputs[input_name])
+    return RenderedEndpointRequest(
+        method=declaration.method,
+        path=_render_path(declaration.path, inputs),
+        headers=dict(declaration.headers),
+        body=body,
+    )
+
+
+def _pointer_get(document: object, pointer: str) -> object:
+    current = document
+    for raw_token in pointer[1:].split("/"):
+        token = raw_token.replace("~1", "/").replace("~0", "~")
+        if isinstance(current, Mapping):
+            if token not in current:
+                raise KeyError(token)
+            current = current[token]
+        elif isinstance(current, list) and _JSON_POINTER_INDEX.fullmatch(token):
+            index = int(token)
+            if index >= len(current):
+                raise IndexError(index)
+            current = current[index]
+        else:
+            raise KeyError(token)
+    return current
+
+
+def normalize_endpoint_response(declaration: EndpointDeclaration, response: object) -> dict[str, object]:
+    """Extract the declared response fields from a provider JSON document."""
+    validate_endpoint_declaration(declaration)
+    normalized: dict[str, object] = {}
+    for name, pointer in declaration.response_mapping.items():
+        try:
+            normalized[name] = _pointer_get(response, pointer)
+        except (IndexError, KeyError, TypeError) as exc:
+            raise _declaration_error(f"missing response field at {pointer!r}", "response") from exc
+    return normalized
 
 
 # ── 各 endpoint 的 build_backend 闭包 ──────────────────────────────

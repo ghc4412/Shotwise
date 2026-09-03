@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 from uuid import uuid4
 
 
@@ -66,6 +66,9 @@ class GenerationBatch:
     items: tuple[GenerationBatchItem, ...]
     task_ids: tuple[str, ...]
     cancel_requested: bool = False
+    user_id: str = "default"
+    admission_state: str = "admitted"
+    error_message: str | None = None
 
 
 class BatchAdmissionError(RuntimeError):
@@ -93,12 +96,47 @@ class GenerationBatchTaskAdapter(Protocol):
     async def cancel_task(self, task_id: str) -> Mapping[str, Any]: ...
 
 
+@runtime_checkable
+class PreparedGenerationBatchTaskAdapter(Protocol):
+    """Production adapter that can normalize tasks before a DB transaction."""
+
+    async def prepare_all(
+        self,
+        tasks: tuple[Mapping[str, Any], ...],
+        *,
+        user_id: str,
+    ) -> tuple[Mapping[str, Any], ...]: ...
+
+
 class GenerationBatchRepository(Protocol):
     """Persistence seam for batch metadata, separate from the Task repository."""
 
     async def save(self, batch: GenerationBatch) -> None: ...
 
     async def get(self, batch_id: str) -> GenerationBatch | None: ...
+
+    async def begin_admission(self, batch: GenerationBatch) -> None: ...
+
+    async def complete_admission(self, batch: GenerationBatch) -> None: ...
+
+    async def fail_admission(self, batch: GenerationBatch, error_message: str) -> None: ...
+
+
+@runtime_checkable
+class AtomicGenerationBatchRepository(Protocol):
+    """Repository operations that persist batch and task changes together."""
+
+    async def admit_with_tasks(
+        self,
+        batch: GenerationBatch,
+        tasks: tuple[Mapping[str, Any], ...],
+    ) -> GenerationBatch: ...
+
+    async def replace_tasks(
+        self,
+        batch: GenerationBatch,
+        replacements: tuple[tuple[int, Mapping[str, Any]], ...],
+    ) -> GenerationBatch: ...
 
 
 class InMemoryGenerationBatchRepository:
@@ -113,13 +151,33 @@ class InMemoryGenerationBatchRepository:
     async def get(self, batch_id: str) -> GenerationBatch | None:
         return self._batches.get(batch_id)
 
+    async def begin_admission(self, batch: GenerationBatch) -> None:
+        self._batches[batch.batch_id] = replace(batch, admission_state="admitting")
+
+    async def complete_admission(self, batch: GenerationBatch) -> None:
+        self._batches[batch.batch_id] = replace(batch, admission_state="admitted")
+
+    async def fail_admission(self, batch: GenerationBatch, error_message: str) -> None:
+        self._batches[batch.batch_id] = replace(
+            batch,
+            admission_state="failed",
+            error_message=error_message,
+        )
+
 
 class BatchOrchestrator:
     """Small public interface for batch admission and task-backed lifecycle."""
 
-    def __init__(self, *, repository: GenerationBatchRepository, tasks: GenerationBatchTaskAdapter) -> None:
+    def __init__(
+        self,
+        *,
+        repository: GenerationBatchRepository,
+        tasks: GenerationBatchTaskAdapter,
+        user_id: str = "default",
+    ) -> None:
         self._repository = repository
         self._tasks = tasks
+        self._user_id = user_id
 
     async def validate(self, request: GenerationBatchRequest) -> BatchValidationReport:
         issues: list[str] = []
@@ -152,23 +210,60 @@ class BatchOrchestrator:
         if not report.is_valid:
             raise BatchAdmissionError("; ".join(report.issues))
 
-        task_ids = await self._tasks.admit_all(tuple(item.task for item in request.items))
-        if len(task_ids) != len(request.items):
-            raise BatchAdmissionError("task adapter returned an unexpected number of task IDs")
-
         batch = GenerationBatch(
             batch_id=uuid4().hex,
             project_name=request.project_name,
             items=request.items,
-            task_ids=task_ids,
+            task_ids=(),
+            user_id=self._user_id,
+            admission_state="admitting",
         )
-        await self._repository.save(batch)
-        return batch
+        if isinstance(self._repository, AtomicGenerationBatchRepository) and isinstance(
+            self._tasks, PreparedGenerationBatchTaskAdapter
+        ):
+            try:
+                prepared = await self._tasks.prepare_all(
+                    tuple(item.task for item in request.items),
+                    user_id=self._user_id,
+                )
+                if len(prepared) != len(request.items):
+                    raise BatchAdmissionError("task adapter returned an unexpected number of prepared tasks")
+                return await self._repository.admit_with_tasks(batch, prepared)
+            except Exception as exc:
+                if isinstance(exc, BatchAdmissionError):
+                    raise
+                raise BatchAdmissionError(str(exc)) from exc
+
+        await self._repository.begin_admission(batch)
+        try:
+            task_ids = await self._tasks.admit_all(tuple(item.task for item in request.items))
+            if len(task_ids) != len(request.items):
+                raise BatchAdmissionError("task adapter returned an unexpected number of task IDs")
+            admitted = replace(batch, task_ids=task_ids, admission_state="admitted")
+            await self._repository.complete_admission(admitted)
+            return admitted
+        except Exception as exc:
+            await self._repository.fail_admission(batch, str(exc))
+            if isinstance(exc, BatchAdmissionError):
+                raise
+            raise BatchAdmissionError(str(exc)) from exc
 
     async def get_status(self, batch_id: str) -> BatchStatus:
         batch = await self._get_batch(batch_id)
+        if batch.admission_state != "admitted":
+            raise BatchAdmissionError("batch is not admitted")
         statuses = [await self._task_status(task_id) for task_id in batch.task_ids]
         return self._derive_status(statuses, cancel_requested=batch.cancel_requested)
+
+    async def get_batch(self, batch_id: str) -> GenerationBatch:
+        """Return scoped batch metadata for API projections."""
+
+        return await self._get_batch(batch_id)
+
+    async def get_task(self, task_id: str) -> Mapping[str, Any] | None:
+        """Return one task through the configured execution adapter."""
+
+        return await self._tasks.get_task(task_id)
 
     async def cancel(self, batch_id: str) -> BatchStatus:
         batch = await self._get_batch(batch_id)
@@ -183,20 +278,32 @@ class BatchOrchestrator:
 
     async def retry_failed(self, batch_id: str) -> GenerationBatch:
         batch = await self._get_batch(batch_id)
-        failed_items: list[GenerationBatchItem] = []
-        for item, task_id in zip(batch.items, batch.task_ids, strict=True):
+        failed_items: list[tuple[int, GenerationBatchItem]] = []
+        for index, (item, task_id) in enumerate(zip(batch.items, batch.task_ids, strict=True)):
             task = await self._tasks.get_task(task_id)
             if task is not None and task.get("status") == "failed":
-                failed_items.append(item)
+                failed_items.append((index, item))
 
         if not failed_items:
             return batch
 
-        replacement_ids = await self._tasks.admit_all(tuple(item.task for item in failed_items))
+        if isinstance(self._repository, AtomicGenerationBatchRepository) and isinstance(
+            self._tasks, PreparedGenerationBatchTaskAdapter
+        ):
+            prepared = await self._tasks.prepare_all(
+                tuple(item.task for _, item in failed_items),
+                user_id=self._user_id,
+            )
+            if len(prepared) != len(failed_items):
+                raise BatchAdmissionError("task adapter returned an unexpected number of prepared retry tasks")
+            replacements = tuple((index, task) for (index, _item), task in zip(failed_items, prepared, strict=True))
+            return await self._repository.replace_tasks(batch, replacements)
+
+        replacement_ids = await self._tasks.admit_all(tuple(item.task for _, item in failed_items))
         if len(replacement_ids) != len(failed_items):
             raise BatchAdmissionError("task adapter returned an unexpected number of retry task IDs")
 
-        replacement_by_item = dict(zip((item.item_id for item in failed_items), replacement_ids, strict=True))
+        replacement_by_item = dict(zip((item.item_id for _, item in failed_items), replacement_ids, strict=True))
         task_ids = tuple(
             replacement_by_item.get(item.item_id, task_id)
             for item, task_id in zip(batch.items, batch.task_ids, strict=True)

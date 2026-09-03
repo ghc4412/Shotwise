@@ -14,6 +14,7 @@ from lib.db.models.creation_skill import (
 from lib.db.models.creative_board import CreativeBoard, CreativeBoardEdge, CreativeBoardItem
 from lib.db.models.credential import ProviderCredential
 from lib.db.models.custom_provider import CustomProvider, CustomProviderModel
+from lib.db.models.generation_batch import GenerationBatchRecord
 from lib.db.models.media_asset import MediaAsset, MediaBinding, MediaDerivation
 from lib.db.models.session import AgentSession
 from lib.db.models.session_event import AgentSessionEventLogEntry
@@ -40,6 +41,7 @@ from lib.db.models.workflow import (
 __all__ = [
     "Task",
     "WorkerLease",
+    "GenerationBatchRecord",
     "ApiCall",
     "AgentSession",
     "AgentSessionEventLogEntry",

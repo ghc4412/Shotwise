@@ -9,9 +9,13 @@ from lib.custom_provider.backends import (
     CustomImageBackend,
     CustomTextBackend,
     CustomVideoBackend,
+    DeclarativeAudioDelegate,
+    DeclarativeImageDelegate,
+    DeclarativeTextDelegate,
+    DeclarativeVideoDelegate,
 )
-from lib.custom_provider.capabilities import synthesize_video_capabilities_with_overrides
-from lib.custom_provider.endpoints import get_endpoint_spec
+from lib.custom_provider.capabilities import synthesize_video_capabilities_with_declaration
+from lib.custom_provider.endpoints import get_endpoint_spec, parse_endpoint_declaration
 
 if TYPE_CHECKING:
     from lib.db.models.custom_provider import CustomProvider
@@ -23,6 +27,7 @@ def create_custom_backend(
     model_id: str,
     endpoint: str,
     capability_overrides: object | None = None,
+    endpoint_declaration: object | None = None,
 ) -> CustomTextBackend | CustomImageBackend | CustomVideoBackend | CustomAudioBackend:
     """按 endpoint 查 ENDPOINT_REGISTRY 并构造 Backend。
 
@@ -39,10 +44,63 @@ def create_custom_backend(
         ValueError: endpoint 不在 ENDPOINT_REGISTRY 中
     """
     spec = get_endpoint_spec(endpoint)
-    backend = spec.build_backend(provider, model_id)
+    declaration = parse_endpoint_declaration(endpoint_declaration) if endpoint_declaration is not None else None
+    if declaration is None:
+        backend = spec.build_backend(provider, model_id)
+    elif spec.media_type == "text":
+        backend = CustomTextBackend(
+            provider_id=provider.provider_id,
+            delegate=DeclarativeTextDelegate(
+                provider_id=provider.provider_id,
+                base_url=provider.base_url,
+                api_key=provider.api_key,
+                model=model_id,
+                declaration=declaration,
+            ),
+            model=model_id,
+        )
+    elif spec.media_type == "image":
+        backend = CustomImageBackend(
+            provider_id=provider.provider_id,
+            delegate=DeclarativeImageDelegate(
+                provider_id=provider.provider_id,
+                base_url=provider.base_url,
+                api_key=provider.api_key,
+                model=model_id,
+                declaration=declaration,
+            ),
+            model=model_id,
+        )
+    elif spec.media_type == "video":
+        backend = CustomVideoBackend(
+            provider_id=provider.provider_id,
+            delegate=DeclarativeVideoDelegate(
+                provider_id=provider.provider_id,
+                base_url=provider.base_url,
+                api_key=provider.api_key,
+                model=model_id,
+                declaration=declaration,
+            ),
+            model=model_id,
+        )
+    else:
+        backend = CustomAudioBackend(
+            provider_id=provider.provider_id,
+            delegate=DeclarativeAudioDelegate(
+                provider_id=provider.provider_id,
+                base_url=provider.base_url,
+                api_key=provider.api_key,
+                model=model_id,
+                declaration=declaration,
+            ),
+            model=model_id,
+        )
     if isinstance(backend, CustomVideoBackend):
-        merged, applied = synthesize_video_capabilities_with_overrides(
-            endpoint=endpoint, model_id=model_id, overrides=capability_overrides
+        merged, applied = synthesize_video_capabilities_with_declaration(
+            endpoint=endpoint,
+            model_id=model_id,
+            declaration=declaration,
+            overrides=capability_overrides,
         )
         # 一并记住 endpoint：它是 backend 构造的真正输入粒度，已提交任务的续跑据此比对协议
         # 是否已被换掉（docs/adr/0054）。

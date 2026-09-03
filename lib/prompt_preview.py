@@ -118,7 +118,7 @@ def _prompt_text(value: object) -> tuple[str, str]:
             return _bounded_text(text, _MAX_PROMPT_CHARS), "structured"
         except (TypeError, ValueError):
             return "", "unknown"
-    return ("" if value is None else _bounded_text(_redact_url(value), _MAX_PROMPT_CHARS)), "unknown"
+    return ("" if value is None else _bounded_text(_redact_url(str(value)), _MAX_PROMPT_CHARS)), "unknown"
 
 
 def _provider_and_model(provider_id: str | None, payload: Mapping[str, Any]) -> tuple[str | None, str | None]:

@@ -73,7 +73,7 @@ interface ShotDetailProps {
     segmentId: string,
     fieldOrPatch: string | Record<string, unknown>,
     value?: unknown,
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
   /** ad 模式镜头顺序调整（向前/向后移动一位） */
   onMoveShot?: (shotId: string, direction: "earlier" | "later") => void | Promise<void>;
   /** 镜头重排请求在途，移动按钮禁用 */
@@ -656,13 +656,31 @@ export function ShotDetail({
   const handleSave = async () => {
     if (!dirty || saving) return;
     const saveDraft = draft;
-    const savePatch = dirtyPatch;
+    const savePatch: Record<string, unknown> = { ...dirtyPatch };
     const requestId = ++saveRequestId.current;
     const saveSignature = draftSig(saveDraft, isAd, isDrama);
     setSaving(true);
     setPromptError(null);
+
+    // Plain text is an editing projection; persist only the canonical structured
+    // prompt accepted by the script models. Keep the user's text untouched when
+    // it cannot be converted, so they can repair or copy it without data loss.
+    for (const field of ["image_prompt", "video_prompt"] as const) {
+      const value = savePatch[field];
+      if (typeof value !== "string") continue;
+      const result = field === "image_prompt" ? textToImagePrompt(value) : textToVideoPrompt(value);
+      if (result.error) {
+        setPromptError({ field, code: result.error, message: t("shot_detail_prompt_shape_invalid") });
+        setSaving(false);
+        return;
+      }
+      savePatch[field] = result.value;
+    }
     try {
-      await onUpdatePrompt?.(segmentId, savePatch);
+      const result = await onUpdatePrompt?.(segmentId, savePatch);
+      if (result === false) {
+        throw new Error(t("shot_detail_prompt_save_failed"));
+      }
       setCommittedDraft(saveDraft);
       setDraft((current) => (draftSig(current, isAd, isDrama) === saveSignature ? saveDraft : current));
       setFailedDraft(null);

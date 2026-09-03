@@ -339,3 +339,25 @@ class TestVideoEndpointRecorded:
         )
         assert isinstance(result, CustomVideoBackend)
         assert result.endpoint == "minimax-video"
+
+
+class TestDeclarativeEndpointRuntime:
+    @patch("lib.custom_provider.backends.httpx.AsyncClient")
+    def test_factory_consumes_declaration_for_video_backend(self, client_cls):
+        provider = _make_provider(base_url="https://relay.example.com")
+        declaration = {
+            "method": "POST",
+            "path": "/v1/videos/{model}",
+            "headers": {"Content-Type": "application/json"},
+            "body": {"/prompt": "prompt", "/duration": "duration"},
+            "response": {"result_url": "/url"},
+        }
+        result = create_custom_backend(
+            provider=provider,
+            model_id="relay-video",
+            endpoint="openai-video",
+            endpoint_declaration=declaration,
+        )
+        assert isinstance(result, CustomVideoBackend)
+        assert result.endpoint == "openai-video"
+        assert result.video_capabilities.max_reference_images == 1

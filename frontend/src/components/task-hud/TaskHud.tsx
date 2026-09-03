@@ -15,11 +15,16 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
+import { useNowTick } from "@/hooks/useNowTick";
 import { useAppStore } from "@/stores/app-store";
 import { isTerminalStatus, useTasksStore } from "@/stores/tasks-store";
 import { API } from "@/api";
-import type { TaskItem } from "@/types";
+import type { TaskItem, TaskPromptPreview } from "@/types";
 import { GlassPopover } from "@/components/ui/GlassPopover";
+import { formatElapsedDuration, formatTaskElapsed } from "@/utils/task-elapsed";
+import { PromptPreview, type PromptPreviewModel } from "@/components/canvas/timeline/PromptPreview";
+import { BatchPanel } from "@/components/task-hud/BatchPanel";
+import { useProjectsStore } from "@/stores/projects-store";
 
 // ---------------------------------------------------------------------------
 // Theme tokens — v3 cool oklch + accent purple
@@ -59,6 +64,32 @@ function taskWarnings(task: TaskItem): string[] {
   const warnings = task.result?.warnings;
   if (!Array.isArray(warnings)) return [];
   return warnings.filter((warning): warning is string => typeof warning === "string");
+}
+
+function promptPreviewModel(value: TaskPromptPreview | null | undefined): PromptPreviewModel | null {
+  if (!value?.requests?.length) return null;
+  return {
+    source: value.source,
+    requests: value.requests.map((request) => ({
+      id: request.id,
+      label: request.label,
+      originalPrompt: request.original_prompt,
+      effectivePrompt: request.effective_prompt,
+      shape: request.shape,
+      provider: request.provider,
+      model: request.model,
+      references: request.references?.map((reference) => ({
+        kind: reference.kind as "character" | "scene" | "prop" | "product" | "image" | "other",
+        label: reference.label,
+        value: reference.value,
+      })),
+      durationSeconds: request.duration_seconds,
+      resolution: request.resolution,
+      capabilityAdjustments: request.capability_adjustments,
+      warnings: request.warnings,
+      requestSummary: request.request_summary,
+    })),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -138,11 +169,13 @@ function TaskRow({
   expandedTaskId,
   onToggleDetail,
   onCancel,
+  nowMs,
 }: {
   task: TaskItem;
   expandedTaskId: string | null;
   onToggleDetail: (taskId: string) => void;
   onCancel?: (taskId: string) => void;
+  nowMs: number;
 }) {
   const { t } = useTranslation("dashboard");
   const statusLabel: Record<TaskItem["status"], string> = {
@@ -157,8 +190,10 @@ function TaskRow({
   const warnings = task.status === "succeeded" ? taskWarnings(task) : [];
   const hasWarnings = warnings.length > 0;
   const hasError = Boolean(task.status === "failed" && task.error_message);
+  const promptPreview = promptPreviewModel(task.prompt_preview);
+  const hasPromptPreview = promptPreview !== null;
   // 失败原因与生成警示走同一套展开交互：一行最多只有其中一种详情。
-  const isExpandable = hasError || hasWarnings;
+  const isExpandable = hasError || hasWarnings || hasPromptPreview;
   const isExpanded = expandedTaskId === task.task_id;
 
   // 底色标的是任务状态，与「有没有详情可展开」解耦：失败任务即使没有 error_message
@@ -224,6 +259,7 @@ function TaskRow({
         >
           {statusLabel[task.status]}
         </span>
+        <TaskElapsedLabel task={task} nowMs={nowMs} />
         {task.status === "queued" && onCancel && (
           <button
             type="button"
@@ -339,7 +375,7 @@ function TaskRow({
               >
                 {task.error_message}
               </div>
-            ) : (
+            ) : hasWarnings ? (
               <ul
                 id={`task-detail-${task.task_id}`}
                 className="mx-3 mb-1.5 space-y-1 rounded px-2 py-1.5 text-[10.5px]"
@@ -353,11 +389,44 @@ function TaskRow({
                   <li key={`${task.task_id}-warning-${index}`}>{warning}</li>
                 ))}
               </ul>
+            ) : null}
+            {hasPromptPreview && (
+              <div className="mx-3 mb-1.5">
+                <PromptPreview preview={promptPreview} />
+              </div>
             )}
           </motion.div>
         )}
       </AnimatePresence>
     </motion.div>
+  );
+}
+
+function TaskElapsedLabel({ task, nowMs }: { task: TaskItem; nowMs: number }) {
+  const { t } = useTranslation("dashboard");
+  const elapsed = formatTaskElapsed(task, nowMs);
+  const details: string[] = [];
+  if (task.status === "queued") {
+    details.push(t("task_waiting_time", { duration: formatElapsedDuration(elapsed.waitingSeconds) }));
+    details.push(t("task_total_time", { duration: formatElapsedDuration(elapsed.totalSeconds) }));
+  } else if (task.status === "running" || task.status === "cancelling") {
+    details.push(t("task_waiting_time", { duration: formatElapsedDuration(elapsed.waitingSeconds) }));
+    if (elapsed.runningSeconds !== null) {
+      details.push(t("task_running_time", { duration: formatElapsedDuration(elapsed.runningSeconds) }));
+    }
+    details.push(t("task_total_time", { duration: formatElapsedDuration(elapsed.totalSeconds) }));
+  } else {
+    details.push(t("task_total_time", { duration: formatElapsedDuration(elapsed.totalSeconds) }));
+  }
+  return (
+    <span
+      className="num hidden min-w-0 shrink-0 text-[9.5px] sm:inline"
+      style={{ color: "var(--color-text-4)" }}
+      title={details.join(" · ")}
+      aria-label={details.join(" · ")}
+    >
+      {formatElapsedDuration(elapsed.totalSeconds)}
+    </span>
   );
 }
 
@@ -371,12 +440,14 @@ function ChannelSection({
   tasks,
   filter,
   onCancel,
+  nowMs,
 }: {
   title: string;
   icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   tasks: TaskItem[];
   filter: TaskFilter;
   onCancel?: (taskId: string) => void;
+  nowMs: number;
 }) {
   const { t } = useTranslation("dashboard");
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
@@ -435,6 +506,7 @@ function ChannelSection({
             expandedTaskId={expandedTaskId}
             onToggleDetail={toggleDetail}
             onCancel={onCancel}
+            nowMs={nowMs}
           />
         ))}
       </AnimatePresence>
@@ -574,6 +646,9 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
   const { t } = useTranslation("dashboard");
   const { taskHudOpen, setTaskHudOpen } = useAppStore();
   const { tasks, stats } = useTasksStore();
+  const currentProjectName = useProjectsStore((state) => state.currentProjectName);
+  const hasActiveTasks = tasks.some((task) => !isTerminalStatus(task.status));
+  const nowMs = useNowTick(hasActiveTasks);
 
   const [cancelConfirm, setCancelConfirm] = useState<{
     taskId?: string;
@@ -730,6 +805,8 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
           )}
         </div>
 
+        <BatchPanel projectName={currentProjectName} />
+
         {/* Status filter */}
         <FilterPills tasks={tasks} value={filter} onChange={setFilter} />
 
@@ -744,6 +821,7 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
             tasks={imageTasks}
             filter={filter}
             onCancel={voidPromise(handleCancelSingle)}
+            nowMs={nowMs}
           />
           <div
             className="h-px"
@@ -755,6 +833,7 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
             tasks={videoTasks}
             filter={filter}
             onCancel={voidPromise(handleCancelSingle)}
+            nowMs={nowMs}
           />
           {audioTasks.length > 0 && (
             <>
@@ -768,6 +847,7 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
                 tasks={audioTasks}
                 filter={filter}
                 onCancel={voidPromise(handleCancelSingle)}
+                nowMs={nowMs}
               />
             </>
           )}

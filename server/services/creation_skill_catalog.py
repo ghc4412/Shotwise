@@ -261,6 +261,9 @@ async def sync_official_creation_skills(session: AsyncSession) -> int:
                     frozen_at=utc_now(),
                 )
             )
+            # These tables intentionally have no ORM relationship; flush the parent
+            # before adding its foreign-keyed compatibility row.
+            await session.flush()
             session.add(
                 CreationSkillCompatibilityRecord(
                     skill_version_id=skill.latest_version.id,

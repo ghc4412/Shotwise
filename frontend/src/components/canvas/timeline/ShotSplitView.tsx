@@ -20,7 +20,7 @@ interface ShotSplitViewProps {
     segmentId: string,
     fieldOrPatch: string | Record<string, unknown>,
     value?: unknown,
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
   /** ad 模式镜头顺序调整，resolve 为是否移动成功 */
   onMoveShot?: (shotId: string, direction: "earlier" | "later") => Promise<boolean>;
   onGenerateStoryboard?: (segmentId: string) => void;

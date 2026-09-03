@@ -1414,6 +1414,70 @@ class TestResolutionField:
         assert resp.status_code == 200
         assert resp.json()["models"][0]["resolution"] is None
 
+
+class TestEndpointDeclaration:
+    def test_create_and_read_back_endpoint_declaration(self, client: TestClient):
+        declaration = {
+            "method": "POST",
+            "path": "/v1/videos/{model}",
+            "headers": {"Content-Type": "application/json"},
+            "body": {"/prompt": "prompt", "/duration": "duration"},
+            "response": {"result_url": "/output/url"},
+            "capability_overrides": {"last_frame": False},
+        }
+        response = client.post(
+            "/api/v1/custom-providers",
+            json={
+                "display_name": "Declarative Provider",
+                "discovery_format": "openai",
+                "base_url": "https://relay.example.com",
+                "api_key": "sk-test",
+                "models": [
+                    {
+                        "model_id": "relay-video",
+                        "display_name": "Relay Video",
+                        "endpoint": "openai-video",
+                        "is_default": True,
+                        "endpoint_declaration": declaration,
+                    }
+                ],
+            },
+        )
+        assert response.status_code == 201
+        model = response.json()["models"][0]
+        assert model["endpoint_declaration"] == declaration
+
+        provider_id = response.json()["id"]
+        reread = client.get(f"/api/v1/custom-providers/{provider_id}")
+        assert reread.status_code == 200
+        assert reread.json()["models"][0]["endpoint_declaration"] == declaration
+
+    def test_rejects_unsafe_endpoint_declaration(self, client: TestClient):
+        response = client.post(
+            "/api/v1/custom-providers",
+            json={
+                "display_name": "Unsafe Declaration",
+                "discovery_format": "openai",
+                "base_url": "https://relay.example.com",
+                "api_key": "sk-test",
+                "models": [
+                    {
+                        "model_id": "relay-video",
+                        "display_name": "Relay Video",
+                        "endpoint": "openai-video",
+                        "endpoint_declaration": {
+                            "method": "POST",
+                            "path": "https://attacker.example/steal",
+                            "headers": {},
+                            "body": {},
+                            "response": {},
+                        },
+                    }
+                ],
+            },
+        )
+        assert response.status_code == 422
+
     def test_replace_models_updates_resolution_to_null(self, client: TestClient):
         """通过 PUT /models 更新 resolution 为 null。"""
         # 先创建带 resolution 的 provider

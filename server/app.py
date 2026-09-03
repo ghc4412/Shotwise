@@ -52,6 +52,7 @@ from server.routers import (
     api_keys,
     assets,
     assistant,
+    batches,
     character_relations,
     characters,
     cost_estimation,
@@ -60,7 +61,9 @@ from server.routers import (
     creative_boards,
     creative_context,
     custom_providers,
+    draft_promotions,
     end_frames,
+    episode_duration,
     features,
     files,
     generate,
@@ -620,6 +623,19 @@ async def request_logging_middleware(request: Request, call_next):
 # 不挂依赖的两组另有说明，见下方分组注释。
 app.include_router(projects.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["项目管理"])
 app.include_router(creative.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["创作稿"])
+app.include_router(
+    draft_promotions.router,
+    prefix="/api/v1",
+    dependencies=[Depends(get_current_user)],
+    tags=["剧本草稿晋升"],
+)
+app.include_router(batches.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["批量生成"])
+app.include_router(
+    episode_duration.router,
+    prefix="/api/v1",
+    dependencies=[Depends(get_current_user)],
+    tags=["分集目标时长"],
+)
 app.include_router(characters.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["角色管理"])
 app.include_router(
     character_relations.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["角色关系"]

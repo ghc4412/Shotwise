@@ -147,6 +147,16 @@ class MCPToolBroker:
         self._allowed_tools = frozenset(allowed_tools)
         self._audit_sink: MCPAuditSink = audit_sink or _NullAuditSink()
 
+    @property
+    def definitions(self) -> tuple[MCPToolDefinition, ...]:
+        """Return broker-owned definitions for a downstream manifest adapter."""
+        return tuple(self._tools.values())
+
+    @property
+    def tool_names(self) -> tuple[str, ...]:
+        """Return the names authorized by this broker."""
+        return tuple(self._tools)
+
     async def execute(
         self,
         tool_name: str,

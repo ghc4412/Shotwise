@@ -6,9 +6,11 @@ requests.  Callers may preview a plan and apply it only after explicit confirmat
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
+from hashlib import sha256
 from typing import Any
 
 
@@ -18,6 +20,22 @@ class DurationPlanningStrategy(StrEnum):
     EQUAL = "equal"
     PROPORTIONAL = "proportional"
     MANUAL = "manual"
+
+
+class EpisodeDurationRevisionConflict(ValueError):
+    """Raised when a duration mutation is based on an older script revision."""
+
+    def __init__(self, expected: str, actual: str) -> None:
+        self.expected = expected
+        self.actual = actual
+        super().__init__("episode duration revision is stale")
+
+
+def episode_duration_revision(script: Mapping[str, Any]) -> str:
+    """Return a stable optimistic-concurrency revision for one script snapshot."""
+
+    canonical = json.dumps(script, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return sha256(canonical.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)

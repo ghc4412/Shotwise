@@ -38,7 +38,7 @@ interface GridImageToVideoCanvasProps {
     fieldOrPatch: string | Record<string, unknown>,
     value?: unknown,
     scriptFile?: string,
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
   onGenerateStoryboard?: (segmentId: string, scriptFile?: string) => void;
   onGenerateVideo?: (segmentId: string, scriptFile?: string) => void;
   onGenerateNarration?: (segmentId: string, scriptFile?: string) => void;

@@ -14,7 +14,7 @@ from enum import Enum
 from types import UnionType
 from typing import get_args, get_type_hints
 
-from lib.custom_provider.endpoints import get_endpoint_spec
+from lib.custom_provider.endpoints import EndpointDeclaration, get_endpoint_spec, validate_endpoint_declaration
 from lib.video_backends.base import ReferenceAudioMode, VideoCapabilities
 
 logger = logging.getLogger(__name__)
@@ -208,6 +208,40 @@ def synthesize_video_capabilities_with_overrides(
     applied = filter_valid_overrides(endpoint=endpoint, model_id=model_id, overrides=overrides)
     merged = merge_overrides(caps, applied)
     return enforce_audio_capability_invariant(merged, endpoint=endpoint, model_id=model_id), applied
+
+
+def synthesize_video_capabilities_with_declaration(
+    *,
+    endpoint: str,
+    model_id: str,
+    declaration: EndpointDeclaration | None,
+    overrides: object | None,
+) -> tuple[VideoCapabilities, dict[str, object]]:
+    """Synthesize video capabilities with declaration hints as lower-priority defaults.
+
+    Declarations are transport metadata, so their capability hints are deliberately sparse and
+    do not replace the endpoint registry's system capabilities.  Both declaration hints and
+    explicit model overrides pass through the existing validation and transport guards; explicit
+    overrides win when the same field is supplied by both sources.
+    """
+    declaration_overrides: object | None = None
+    if declaration is not None:
+        validate_endpoint_declaration(declaration)
+        declaration_overrides = dict(declaration.capability_overrides)
+
+    combined: dict[str, object] = {}
+    if isinstance(declaration_overrides, dict):
+        combined.update(declaration_overrides)
+    if isinstance(overrides, dict):
+        combined.update(overrides)
+    elif overrides is not None:
+        combined = {}
+
+    return synthesize_video_capabilities_with_overrides(
+        endpoint=endpoint,
+        model_id=model_id,
+        overrides=combined,
+    )
 
 
 def merge_overrides(caps: VideoCapabilities, applied: dict[str, object]) -> VideoCapabilities:

@@ -32,6 +32,9 @@ vi.mock("./timeline/TimelineCanvas", () => ({
     onGenerateVideo,
     onGenerateNarration,
     onGenerateEpisodeNarration,
+    onBatchGenerateStoryboards,
+    onBatchGenerateVideos,
+    onBatchGenerateNarration,
     onSaveTitle,
     canEditTitle,
   }: {
@@ -48,6 +51,9 @@ vi.mock("./timeline/TimelineCanvas", () => ({
     onGenerateVideo?: (segmentId: string) => void;
     onGenerateNarration?: (segmentId: string) => void;
     onGenerateEpisodeNarration?: (scriptFile?: string) => void;
+    onBatchGenerateStoryboards?: () => Promise<void>;
+    onBatchGenerateVideos?: () => Promise<void>;
+    onBatchGenerateNarration?: () => Promise<void>;
     onSaveTitle?: (title: string) => Promise<void>;
     canEditTitle?: boolean;
   }) => (
@@ -85,6 +91,9 @@ vi.mock("./timeline/TimelineCanvas", () => ({
       <button onClick={() => onGenerateVideo?.("SEG-1")}>generate-video</button>
       <button onClick={() => onGenerateNarration?.("SEG-1")}>generate-narration</button>
       <button onClick={() => onGenerateEpisodeNarration?.()}>generate-episode-narration</button>
+      <button onClick={() => void onBatchGenerateStoryboards?.()}>batch-generate-storyboards</button>
+      <button onClick={() => void onBatchGenerateVideos?.()}>batch-generate-videos</button>
+      <button onClick={() => void onBatchGenerateNarration?.()}>batch-generate-narration</button>
       <button onClick={() => void onSaveTitle?.("新标题")?.catch(() => {})}>save-title</button>
     </div>
   ),
@@ -435,6 +444,45 @@ describe("StudioCanvasRouter", () => {
 
     await waitFor(() => {
       expect(screen.queryByText("加载中...")).not.toBeInTheDocument();
+    });
+  });
+
+  it("submits the ordinary timeline storyboard action through the durable batch API", async () => {
+    const createBatchSpy = vi.spyOn(API, "createBatch").mockResolvedValue({
+      batch_id: "batch-1",
+      project_name: "demo",
+      status: "admitted",
+      cancel_requested: false,
+      tasks: [{ item_id: "SEG-1", task_id: "task-1", status: "queued" }],
+    });
+    vi.spyOn(API, "getProviders").mockResolvedValue({ providers: [] });
+    vi.spyOn(API, "listCustomProviders").mockResolvedValue({ providers: [] });
+    vi.spyOn(API, "getSystemConfig").mockResolvedValue({
+      settings: {},
+    } as Awaited<ReturnType<typeof API.getSystemConfig>>);
+    useProjectsStore.setState({
+      currentProjectName: "demo",
+      currentProjectData: makeProjectData(),
+      currentScripts: { "episode_1.json": makeScript() },
+    });
+
+    renderAt("/episodes/1");
+
+    fireEvent.click(await screen.findByText("batch-generate-storyboards"));
+    await waitFor(() => expect(createBatchSpy).toHaveBeenCalledTimes(1));
+
+    expect(createBatchSpy).toHaveBeenCalledWith("demo", {
+      items: [{
+        item_id: "SEG-1",
+        task: {
+          task_type: "storyboard",
+          media_type: "image",
+          resource_id: "SEG-1",
+          payload: { prompt: "image prompt" },
+          script_file: "episode_1.json",
+          source: "webui",
+        },
+      }],
     });
   });
 

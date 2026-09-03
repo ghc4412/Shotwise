@@ -34,6 +34,8 @@ def _task(resource_id: str) -> dict[str, object]:
         "task_type": "storyboard",
         "media_type": "image",
         "resource_id": resource_id,
+        "payload": {"prompt": f"prompt for {resource_id}"},
+        "script_file": "episode_1.json",
         "provider_id": "test-provider",
     }
 
@@ -59,12 +61,56 @@ async def test_batch_adapter_admits_all_tasks_in_one_operation(queue) -> None:
     assert admitted[0]["prompt_preview"]["source"] == "enqueue_snapshot"
 
 
+async def test_batch_adapter_copies_script_file_into_worker_payload(queue) -> None:
+    task = _task("first")
+
+    task_ids = await queue.batch_adapter(project_name="demo").admit_all((task,))
+
+    admitted = await queue.get_task(task_ids[0])
+    assert admitted is not None
+    assert admitted["script_file"] == "episode_1.json"
+    assert admitted["payload"]["script_file"] == "episode_1.json"
+
+
+async def test_batch_adapter_rejects_conflicting_script_file_locations(queue) -> None:
+    task = _task("first")
+    task["payload"] = {"prompt": "prompt for first", "script_file": "episode_2.json"}
+
+    with pytest.raises(BatchAdmissionError, match="script_file differs"):
+        await queue.batch_adapter(project_name="demo").admit_all((task,))
+
+
+@pytest.mark.parametrize(
+    ("task_type", "media_type", "payload"),
+    [
+        ("storyboard", "image", {"prompt": "scene"}),
+        ("video", "video", {"prompt": "camera move"}),
+        ("tts", "audio", {"prompt": None}),
+    ],
+)
+async def test_batch_adapter_requires_script_file_for_script_backed_generation(
+    queue, task_type: str, media_type: str, payload: dict[str, object]
+) -> None:
+    task = {
+        "task_type": task_type,
+        "media_type": media_type,
+        "resource_id": "first",
+        "payload": payload,
+        "provider_id": "test-provider",
+    }
+
+    with pytest.raises(BatchAdmissionError, match="script_file is required"):
+        await queue.batch_adapter(project_name="demo").admit_all((task,))
+
+
 async def test_batch_adapter_rolls_back_every_insert_when_one_item_conflicts(queue) -> None:
     existing = await queue.enqueue_task(
         project_name="demo",
         task_type="storyboard",
         media_type="image",
         resource_id="existing",
+        script_file="episode_1.json",
+        payload={"prompt": "prompt for existing"},
         provider_id="test-provider",
     )
     adapter = queue.batch_adapter(project_name="demo")

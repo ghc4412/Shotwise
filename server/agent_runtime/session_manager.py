@@ -45,7 +45,7 @@ from server.agent_runtime.models import (
     SessionStreamEvent,
     SubscriptionReady,
 )
-from server.agent_runtime.options_assembler import OptionsAssembler
+from server.agent_runtime.options_assembler import OptionsAssembler, OptionsBuildResult
 from server.agent_runtime.result_status import resolve_result_status
 from server.agent_runtime.session_actor import SessionActor, SessionCommand
 from server.agent_runtime.session_store import SessionMetaStore
@@ -230,7 +230,7 @@ class ManagedSession:
     assistant_model: str = ""
     sdk_type: str = SDK_TYPE_CLAUDE  # 会话当前活跃的 Agent SDK 类型
     credential_stale: bool = False  # active credential changed while this actor was resident
-    _cleanup: Any = None  # 会话终结时释放 SDK 专属资源（当前为保留字段）
+    _cleanup: Any = None  # 会话终结时释放 SDK 专属资源
     interrupt_requested: bool = False
     last_activity: float | None = None  # updated on every send/receive
     _cleanup_task: asyncio.Task | None = None  # current cleanup timer (idle TTL or terminal delay)
@@ -413,6 +413,7 @@ class SessionManager:
             resolve_project_cwd=self._resolve_project_cwd,
             session_factory_provider=lambda: getattr(self, "_session_factory", None),
             user_id_provider=lambda: getattr(self, "_user_id", DEFAULT_USER_ID),
+            remote_mcp_profile_root=self._agent_profile_root,
         )
         # OpenAI Agents SDK 通道使用独立提示和统一事件日志历史导入。
         from server.agent_runtime.openai_agents_options import OpenAIAgentsOptionsAssembler
@@ -533,11 +534,17 @@ class SessionManager:
             stderr=startup_stderr,
             context_append=context_append,
         )
-        assistant_model = resolve_configured_assistant_model(getattr(options, "env", None))
+        if isinstance(options, OptionsBuildResult):
+            sdk_options = options.options
+            cleanup = options.cleanup
+        else:
+            sdk_options = options
+            cleanup = None
+        assistant_model = resolve_configured_assistant_model(getattr(sdk_options, "env", None))
         return (
-            lambda: ClaudeSDKClient(options=options),  # noqa: E731
+            lambda: ClaudeSDKClient(options=sdk_options),  # noqa: E731
             assistant_model,
-            None,
+            cleanup,
         )
 
     async def _load_session_event_entries(self, session_id: str) -> list[dict[str, Any]]:
@@ -706,28 +713,27 @@ class SessionManager:
                 sdk_stderr=sdk_stderr,
             ) from exc
 
-        actor = SessionActor(
-            client_factory=client_factory,
-            on_message=self._make_actor_message_callback(managed_ref),
-        )
-
-        managed = ManagedSession(
-            session_id=temp_id,
-            actor=actor,
-            status="running",
-            project_name=project_name,
-            assistant_model=assistant_model,
-            sdk_type=sdk_type,
-        )
-        managed._cleanup = cleanup
-        if user_entry is not None:
-            managed.pending_initial_user_entry = {"entry": user_entry, "client_key": client_key}
-        managed.entry_pipeline = self._build_entry_pipeline(managed)
-        managed_ref[0] = managed
-        managed.last_activity = time.monotonic()
-        self.sessions[temp_id] = managed
-
         try:
+            actor = SessionActor(
+                client_factory=client_factory,
+                on_message=self._make_actor_message_callback(managed_ref),
+            )
+
+            managed = ManagedSession(
+                session_id=temp_id,
+                actor=actor,
+                status="running",
+                project_name=project_name,
+                assistant_model=assistant_model,
+                sdk_type=sdk_type,
+            )
+            managed._cleanup = cleanup
+            if user_entry is not None:
+                managed.pending_initial_user_entry = {"entry": user_entry, "client_key": client_key}
+            managed.entry_pipeline = self._build_entry_pipeline(managed)
+            managed_ref[0] = managed
+            managed.last_activity = time.monotonic()
+            self.sessions[temp_id] = managed
             await actor.start()
         except Exception as exc:
             sdk_stderr = startup_stderr.render()
@@ -735,6 +741,9 @@ class SessionManager:
                 exc, project_name=project_name, session_id=None, sdk_stderr=sdk_stderr
             )
             self.sessions.pop(temp_id, None)
+            if cleanup is not None:
+                with contextlib.suppress(Exception):
+                    await self._run_cleanup(cleanup)
             startup_stderr.stop()
             raise startup_error from exc
         # Register done callback BEFORE spawning processor to avoid a race
@@ -1032,31 +1041,30 @@ class SessionManager:
                     sdk_stderr=sdk_stderr,
                 ) from exc
 
-            actor = SessionActor(
-                client_factory=client_factory,
-                on_message=self._make_actor_message_callback(managed_ref),
-            )
-
-            resumed_status: SessionStatus = (
-                meta.status if meta.status in ("idle", "running", "interrupted", "error", "closed") else "idle"
-            )
-            managed = ManagedSession(
-                session_id=meta.id,  # 现在就是 sdk_session_id
-                actor=actor,
-                status=resumed_status,
-                project_name=meta.project_name,
-                assistant_model=assistant_model,
-                sdk_type=sdk_type,
-                resolved_sdk_id=meta.id,  # 标记为已注册，防止重复创建 DB 记录
-            )
-            managed._cleanup = cleanup
-            managed.sdk_id_event.set()  # 已有会话不需要等待 sdk_id
-            managed.entry_pipeline = self._build_entry_pipeline(managed)
-            managed_ref[0] = managed
-            managed.last_activity = time.monotonic()
-            self.sessions[session_id] = managed
-
             try:
+                actor = SessionActor(
+                    client_factory=client_factory,
+                    on_message=self._make_actor_message_callback(managed_ref),
+                )
+
+                resumed_status: SessionStatus = (
+                    meta.status if meta.status in ("idle", "running", "interrupted", "error", "closed") else "idle"
+                )
+                managed = ManagedSession(
+                    session_id=meta.id,  # 现在就是 sdk_session_id
+                    actor=actor,
+                    status=resumed_status,
+                    project_name=meta.project_name,
+                    assistant_model=assistant_model,
+                    sdk_type=sdk_type,
+                    resolved_sdk_id=meta.id,  # 标记为已注册，防止重复创建 DB 记录
+                )
+                managed._cleanup = cleanup
+                managed.sdk_id_event.set()  # 已有会话不需要等待 sdk_id
+                managed.entry_pipeline = self._build_entry_pipeline(managed)
+                managed_ref[0] = managed
+                managed.last_activity = time.monotonic()
+                self.sessions[session_id] = managed
                 await actor.start()
             except Exception as exc:
                 sdk_stderr = startup_stderr.render()
@@ -1067,6 +1075,9 @@ class SessionManager:
                     sdk_stderr=sdk_stderr,
                 )
                 self.sessions.pop(session_id, None)
+                if cleanup is not None:
+                    with contextlib.suppress(Exception):
+                        await self._run_cleanup(cleanup)
                 raise startup_error from exc
             finally:
                 startup_stderr.stop()
@@ -1466,7 +1477,7 @@ class SessionManager:
                 logger.exception("actor 关停异常 session_id=%s", session_id)
                 managed.status = "error"
 
-            # SDK 专属资源释放（当前无 openai/claude 通道需要，保留扩展点）
+            # 释放会话持有的 SDK 专属资源（例如 Remote MCP transports）。
             cleanup = getattr(managed, "_cleanup", None)
             if cleanup is not None:
                 try:
