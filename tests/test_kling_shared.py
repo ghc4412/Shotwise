@@ -227,6 +227,22 @@ class TestResponseParsing:
         }
         assert extract_kling_image_urls(payload) == ["https://x/0.png", "https://x/1.png"]
 
+    def test_extract_omni_series_image_urls(self):
+        payload = {
+            "code": 0,
+            "data": {
+                "task_status": "succeed",
+                "task_result": {
+                    "result_type": "series",
+                    "series_images": [
+                        {"index": 0, "url": "https://x/series-0.png"},
+                        {"index": 1, "url": "https://x/series-1.png"},
+                    ],
+                },
+            },
+        }
+        assert extract_kling_image_urls(payload) == ["https://x/series-0.png", "https://x/series-1.png"]
+
     def test_extract_image_urls_skips_blank(self):
         payload = {
             "code": 0,

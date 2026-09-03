@@ -98,7 +98,7 @@ describe("stores", () => {
     app.clearToast();
     useAppStore.setState({ workspaceNotifications: [] });
 
-    app.pushWorkspaceNotification({
+    const notificationId = app.pushWorkspaceNotification({
       text: "AI 刚更新了角色「hero」，点击查看",
       target: {
         type: "character",
@@ -106,9 +106,15 @@ describe("stores", () => {
         route: "/characters",
       },
     });
+    expect(notificationId).toBeTruthy();
     expect(useAppStore.getState().toast).toBeNull();
     const notification = useAppStore.getState().workspaceNotifications[0];
+    expect(notification.id).toBe(notificationId);
     expect(notification.target?.id).toBe("hero");
+    app.updateWorkspaceNotification(notificationId, { text: "正在处理角色「hero」", tone: "success" });
+    expect(useAppStore.getState().workspaceNotifications[0]).toEqual(
+      expect.objectContaining({ text: "正在处理角色「hero」", tone: "success" }),
+    );
     app.markWorkspaceNotificationRead(notification.id);
     expect(useAppStore.getState().workspaceNotifications[0].read).toBe(true);
     app.removeWorkspaceNotification(notification.id);

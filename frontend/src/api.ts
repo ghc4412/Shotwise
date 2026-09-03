@@ -2572,6 +2572,17 @@ class API {
     });
   }
 
+  /** 更新连接测试发现的未登记模型媒体类型覆盖。 */
+  static async patchProviderModelTypes(
+    id: string,
+    modelTypes: Record<string, string | null>,
+  ): Promise<{ model_type_overrides: Record<string, string>; discovered_models: string[] }> {
+    return this.request(`/providers/${encodeURIComponent(id)}/model-types`, {
+      method: "PATCH",
+      body: JSON.stringify({ model_types: modelTypes }),
+    });
+  }
+
   /** 测试指定 provider 的连接。 */
   static async testProviderConnection(id: string, credentialId?: number): Promise<ProviderTestResult> {
     const params = credentialId != null ? `?credential_id=${credentialId}` : "";

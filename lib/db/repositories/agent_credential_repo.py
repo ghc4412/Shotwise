@@ -34,11 +34,13 @@ class AgentCredentialRepository(BaseRepository):
         subagent_model: str | None = None,
         model_map: list | None = None,
         sdk_type: str = SDK_TYPE_CLAUDE,
+        protocol: str | None = None,
         user_id: str = DEFAULT_USER_ID,
     ) -> AgentAnthropicCredential:
         cred = AgentAnthropicCredential(
             user_id=user_id,
             sdk_type=sdk_type,
+            protocol=protocol or ("anthropic_messages" if sdk_type == SDK_TYPE_CLAUDE else "chat_completions"),
             preset_id=preset_id,
             display_name=display_name,
             base_url=base_url,

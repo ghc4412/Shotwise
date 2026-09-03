@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from lib.agent_protocol import normalize_protocol
 from lib.agent_provider_catalog import CUSTOM_SENTINEL_ID, get_preset, list_presets
 from lib.config.anthropic_probe import DiagnosisCode
 from lib.config.anthropic_probe import ProbeResult as ProbeResultDC
@@ -115,6 +116,7 @@ class ModelMapEntry(BaseModel):
 class CredentialResponse(BaseModel):
     id: int
     sdk_type: str
+    protocol: str
     preset_id: str
     display_name: str
     icon_key: str | None
@@ -136,6 +138,7 @@ class CredentialListResponse(BaseModel):
 
 class CreateCredentialRequest(BaseModel):
     sdk_type: str = SDK_TYPE_CLAUDE
+    protocol: str | None = None
     preset_id: str
     display_name: str | None = None
     base_url: str | None = None
@@ -150,6 +153,7 @@ class CreateCredentialRequest(BaseModel):
 
 
 class UpdateCredentialRequest(BaseModel):
+    protocol: str | None = None
     display_name: str | None = None
     base_url: str | None = None
     api_key: str | None = None
@@ -166,6 +170,7 @@ def _cred_to_response(cred) -> CredentialResponse:
     return CredentialResponse(
         id=cred.id,
         sdk_type=cred.sdk_type,
+        protocol=cred.protocol,
         preset_id=cred.preset_id,
         display_name=cred.display_name,
         icon_key=preset.icon_key if preset else None,
@@ -206,6 +211,10 @@ async def create_credential(
 ) -> CredentialResponse:
     if body.sdk_type not in SDK_TYPES:
         raise HTTPException(status_code=422, detail=_t("agent_sdk_type_unknown", sdk_type=body.sdk_type))
+    try:
+        protocol = normalize_protocol(body.sdk_type, body.protocol)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=_t("agent_protocol_invalid", error=str(exc))) from exc
     if body.preset_id != CUSTOM_SENTINEL_ID:
         preset = get_preset(body.preset_id)
         if preset is None:
@@ -238,6 +247,7 @@ async def create_credential(
         subagent_model=body.subagent_model,
         model_map=[item.model_dump() for item in body.model_map] if body.model_map is not None else None,
         sdk_type=body.sdk_type,
+        protocol=protocol,
     )
     # 自动 active 策略：activate=True，或 (activate=None 且该 sdk_type 当前无 active)
     should_activate = body.activate is True
@@ -263,9 +273,17 @@ async def update_credential(
     session: AsyncSession = Depends(get_async_session),
 ) -> CredentialResponse:
     repo = AgentCredentialRepository(session)
+    cred = await repo.get(cred_id)
+    if cred is None:
+        raise HTTPException(status_code=404, detail=_t("agent_credential_not_found"))
     # exclude_unset 保留客户端显式传入的 None（用于清空 model/haiku_model 等可选覆盖项）
     # 必需字段 (display_name/base_url/api_key) 仍过滤 None：传 null 给它们没有意义
     fields = body.model_dump(exclude_unset=True)
+    if "protocol" in fields:
+        try:
+            fields["protocol"] = normalize_protocol(cred.sdk_type, fields["protocol"])
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=_t("agent_protocol_invalid", error=str(exc))) from exc
     for required in ("display_name", "base_url", "api_key"):
         if fields.get(required) is None:
             fields.pop(required, None)
@@ -355,6 +373,7 @@ class TestConnectionResponseModel(BaseModel):
 
 class TestConnectionRequest(BaseModel):
     sdk_type: str = SDK_TYPE_CLAUDE
+    protocol: str | None = None
     preset_id: str | None = None
     base_url: str | None = None
     api_key: str
@@ -388,11 +407,22 @@ async def _run_and_serialize(
     base_url: str | None,
     api_key: str,
     model: str | None,
+    protocol: str | None,
     _t: Translator,
 ) -> TestConnectionResponseModel:
     try:
+        try:
+            effective_protocol = normalize_protocol(sdk_type, protocol)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=_t("agent_protocol_invalid", error=str(exc))) from exc
         if sdk_type == SDK_TYPE_OPENAI:
-            result = await run_openai_test(preset_id=preset_id, base_url=base_url, api_key=api_key, model=model)
+            result = await run_openai_test(
+                preset_id=preset_id,
+                base_url=base_url,
+                api_key=api_key,
+                model=model,
+                protocol=effective_protocol,
+            )
         else:
             result = await run_anthropic_test(preset_id=preset_id, base_url=base_url, api_key=api_key, model=model)
     except ValueError as exc:
@@ -412,6 +442,7 @@ async def test_connection_draft(
         base_url=body.base_url,
         api_key=body.api_key,
         model=body.model,
+        protocol=body.protocol,
         _t=_t,
     )
 
@@ -433,5 +464,6 @@ async def test_credential(
         base_url=cred.base_url,
         api_key=cred.api_key,
         model=cred.model,
+        protocol=cred.protocol,
         _t=_t,
     )

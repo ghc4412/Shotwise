@@ -171,7 +171,7 @@ def test_default_models_match_table() -> None:
         "tencent-tokenhub-coding-openai": "",
         "openrouter-openai": "anthropic/claude-sonnet-4",
         "siliconflow-openai": "Pro/zai-org/GLM-4.7",
-        "agnes-openai": "agnes-2.0-flash",
+        "agnes-openai": "agnes-2.5-flash",
     }
     actual = {p.id: p.default_model for p in list_presets()}
     assert actual == expected

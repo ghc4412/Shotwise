@@ -12,6 +12,7 @@ import {
   ChevronDown,
   Activity,
   AlertTriangle,
+  Square,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
@@ -645,7 +646,7 @@ function StatPill({
 export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null> }) {
   const { t } = useTranslation("dashboard");
   const { taskHudOpen, setTaskHudOpen } = useAppStore();
-  const { tasks, stats } = useTasksStore();
+  const { tasks, stats, refreshTasks } = useTasksStore();
   const currentProjectName = useProjectsStore((state) => state.currentProjectName);
   const hasActiveTasks = tasks.some((task) => !isTerminalStatus(task.status));
   const nowMs = useNowTick(hasActiveTasks);
@@ -672,16 +673,16 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
   }, []);
 
   const handleCancelAll = useCallback(async () => {
-    const queuedTask = tasks.find((task) => task.status === "queued");
-    if (!queuedTask) return;
-    const projectName = queuedTask.project_name;
+    if (!currentProjectName || stats.queued <= 0) return;
     try {
-      const { queued_count } = await API.cancelAllPreview(projectName);
-      setCancelConfirm({ allCount: queued_count, projectName });
+      const { queued_count } = await API.cancelAllPreview(currentProjectName);
+      if (queued_count > 0) {
+        setCancelConfirm({ allCount: queued_count, projectName: currentProjectName });
+      }
     } catch {
-      // no queued tasks
+      // The task list will reconcile on its next refresh if the preview races with completion.
     }
-  }, [tasks]);
+  }, [currentProjectName, stats.queued]);
 
   const confirmCancel = useCallback(async () => {
     if (!cancelConfirm) return;
@@ -691,12 +692,13 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
         await API.cancelTask(cancelConfirm.taskId);
       } else if (cancelConfirm.projectName) {
         await API.cancelAllQueued(cancelConfirm.projectName);
+        await refreshTasks();
       }
     } finally {
       setCancelling(false);
       setCancelConfirm(null);
     }
-  }, [cancelConfirm]);
+  }, [cancelConfirm, refreshTasks]);
 
   useEscapeClose(() => setCancelConfirm(null), Boolean(cancelConfirm));
 
@@ -735,7 +737,7 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
           >
             <Activity className="h-3.5 w-3.5" />
           </span>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div
               className="display-serif text-[14px] font-semibold tracking-tight"
               style={{ color: "var(--color-text)" }}
@@ -752,6 +754,21 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
               {t("task_hud_subtitle")}
             </div>
           </div>
+          <button
+            type="button"
+            onClick={voidPromise(handleCancelAll)}
+            disabled={!currentProjectName || stats.queued <= 0 || cancelling}
+            className="focus-ring inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+            style={{
+              color: stats.queued > 0 ? "oklch(0.72 0.18 25)" : "var(--color-text-4)",
+              borderColor: stats.queued > 0 ? "oklch(0.72 0.18 25 / 0.4)" : "var(--color-hairline-soft)",
+              background: stats.queued > 0 ? "oklch(0.72 0.18 25 / 0.08)" : "transparent",
+            }}
+            aria-label={t("task_radar_stop_all_aria")}
+            title={t("task_radar_stop_all")}
+          >
+            {cancelling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5 fill-current" />}
+          </button>
         </div>
 
         {/* Stats bar */}
@@ -785,23 +802,6 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
               value={stats.cancelled}
               color={STATUS_COLORS.cancelled}
             />
-          )}
-          {stats.queued > 0 && (
-            <button
-              type="button"
-              onClick={voidPromise(handleCancelAll)}
-              className="focus-ring ml-auto rounded px-1.5 py-0.5 text-[10.5px] transition-colors"
-              style={{ color: "var(--color-text-4)" }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = "oklch(0.72 0.18 25)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = "var(--color-text-4)";
-              }}
-              aria-label={t("cancel_all_queued_aria")}
-            >
-              {t("cancel_all")}
-            </button>
           )}
         </div>
 

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, ChevronRight, Plus, Search } from "lucide-react";
@@ -25,6 +25,8 @@ interface ShotListProps {
   onToggleCollapse: () => void;
   /** 接收滚动容器 ref，外部可挂载 useScrollTarget */
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
+  /** 原始分镜索引；目标不在当前搜索结果时只更新选中态，不强制改变搜索条件。 */
+  scrollToIndex?: number | null;
 }
 
 function getImagePromptScene(seg: Segment): string {
@@ -69,6 +71,7 @@ export function ShotList({
   collapsed,
   onToggleCollapse,
   scrollContainerRef,
+  scrollToIndex,
 }: ShotListProps) {
   const { t } = useTranslation("dashboard");
   const [search, setSearch] = useState("");
@@ -96,6 +99,14 @@ export function ShotList({
     estimateSize: () => 96,
     overscan: 6,
   });
+
+  useEffect(() => {
+    if (scrollToIndex === null || scrollToIndex === undefined) return;
+    const filteredIndex = filtered.findIndex(({ originalIndex }) => originalIndex === scrollToIndex);
+    if (filteredIndex !== -1) {
+      virtualizer.scrollToIndex(filteredIndex, { align: "center" });
+    }
+  }, [filtered, scrollToIndex, virtualizer]);
 
   if (collapsed) {
     return (

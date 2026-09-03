@@ -21,6 +21,7 @@ import { TodoListPanel } from "./TodoListPanel";
 import { MessageRow } from "./chat/MessageRow";
 import { AgentFailureCard } from "./chat/AgentFailureCard";
 import { canEditUserTurn, composeAllTurns } from "./chat/utils";
+import { MessageRail, messageAnchorId } from "./MessageRail";
 import { uid } from "@/utils/id";
 import { formatShortDateTime } from "@/utils/date-format";
 
@@ -788,7 +789,8 @@ export function AgentCopilot() {
       <ContextBanner />
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 min-w-0 space-y-3 overflow-y-auto overflow-x-hidden px-3 py-3">
+      <div className="relative min-h-0 min-w-0 flex-1">
+        <div ref={scrollRef} className="h-full min-h-0 min-w-0 space-y-3 overflow-y-auto overflow-x-hidden px-3 py-3 pr-10">
         {allTurns.length === 0 && !messagesLoading && !startupFailure && (
           <div className="flex h-full flex-col items-center justify-center text-center">
             <div
@@ -822,6 +824,7 @@ export function AgentCopilot() {
         {allTurns.map((turn, i) => (
           <MessageRow
             key={turn.uuid || `turn-${i}`}
+            anchorId={messageAnchorId(turn, i)}
             turn={turn}
             streaming={turn === draftTurn}
             editable={canEditUserTurn(turn, {
@@ -844,6 +847,8 @@ export function AgentCopilot() {
             onRetry={startupFailureOrigin === "rewrite" ? undefined : handleSend}
           />
         )}
+        </div>
+        <MessageRail turns={allTurns} scrollContainerRef={scrollRef} />
       </div>
 
       {pendingQuestion && (

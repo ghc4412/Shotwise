@@ -67,6 +67,7 @@ function makeCredential(overrides?: Partial<AgentCredential>): AgentCredential {
   return {
     id: 1,
     sdk_type: "claude",
+    protocol: "anthropic_messages",
     preset_id: "anthropic",
     display_name: "Anthropic 主号",
     icon_key: "anthropic",

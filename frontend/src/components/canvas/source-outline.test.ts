@@ -51,6 +51,49 @@ describe("source outline extraction helpers", () => {
     ]);
   });
 
+  it("keeps the exact source title when AI rewrites a chapter title", () => {
+    const sourceChapters = parseSourceChapters("第242章 思想落后的张羽（求月票）\n本章正文");
+
+    expect(
+      mergeOutlineWithSourceChapters(sourceChapters, [
+        { chapter: 242, title: "有钱的张羽", summary: "张羽遇到新的冲突" },
+      ]),
+    ).toEqual([
+      { chapter: 242, title: "思想落后的张羽（求月票）", summary: "张羽遇到新的冲突" },
+    ]);
+  });
+
+  it("normalizes a saved AI outline against the current source headings", () => {
+    const sourceChapters = parseSourceChapters("第242章 思想落后的张羽（求月票）\n本章正文");
+    const savedItems = parseSavedCreativeOutline(JSON.stringify({
+      version: 1,
+      volumes: [{
+        id: "volume-1",
+        title: "source.txt",
+        chapters: [{ id: "chapter-242", title: "第242章 有钱的张羽", summary: "已保存摘要", hook: "" }],
+      }],
+    }));
+
+    expect(mergeOutlineWithSourceChapters(sourceChapters, savedItems)).toEqual([
+      { chapter: 242, title: "思想落后的张羽（求月票）", summary: "已保存摘要" },
+    ]);
+  });
+
+  it("does not add hallucinated numbered chapters when source headings exist", () => {
+    const sourceChapters = parseSourceChapters("第1章 开始\n甲\n\n第2章 转折\n乙");
+
+    expect(
+      mergeOutlineWithSourceChapters(sourceChapters, [
+        { chapter: 1, title: "开始", summary: "人物登场" },
+        { chapter: 99, title: "不存在的章节", summary: "模型臆测" },
+        { title: "一层巨变之始", summary: "模型改写的标题" },
+      ]),
+    ).toEqual([
+      { chapter: 1, title: "开始", summary: "人物登场" },
+      { chapter: 2, title: "转折" },
+    ]);
+  });
+
   it("finds the source offset by chapter number and falls back to the title", () => {
     const source = "引子\n\n第2章 转折\n发现线索\n\n雨夜\n冲突升级";
 
@@ -67,6 +110,21 @@ describe("source outline extraction helpers", () => {
       { chapter: 15, title: "新的开始" },
     ]);
     expect(findOutlineItemOffset(source, { chapter: 14, title: "极度低温" })).toBe(source.indexOf("第十四章"));
+  });
+
+  it("does not treat numeric prose lines as chapters when explicit headings exist", () => {
+    const source = [
+      "第242章 思想落后的张羽（求月票）",
+      "张羽迎来新的冲突。",
+      "250万?!",
+      "285 诞生地",
+      "350 肉体第三关",
+    ].join("\n");
+
+    expect(parseSourceChapters(source)).toEqual([
+      { chapter: 242, title: "思想落后的张羽（求月票）" },
+    ]);
+    expect(splitSourceIntoChunks(source, 20_000)).toEqual([source]);
   });
 
   it("parses zero-padded numeric headings and locates chapter one without matching chapter seventy", () => {

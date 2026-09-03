@@ -257,6 +257,66 @@ describe("ProjectSettingsPage – style picker", () => {
     });
   });
 
+  it("saves a template change when using the page-level save button", async () => {
+    vi.spyOn(API, "getProject")
+      .mockResolvedValueOnce({
+        project: {
+          title: "Demo",
+          style_template_id: "live_premium_drama",
+          style: "...",
+          episodes: [],
+          characters: {},
+          clues: {},
+        },
+        scripts: {},
+      } as unknown as Awaited<ReturnType<typeof API.getProject>>)
+      .mockResolvedValueOnce({
+        project: {
+          title: "Demo",
+          style_template_id: "live_zhang_yimou",
+          style: "...",
+          episodes: [],
+          characters: {},
+          clues: {},
+        },
+        scripts: {},
+      } as unknown as Awaited<ReturnType<typeof API.getProject>>);
+    const updateSpy = vi.spyOn(API, "updateProject").mockResolvedValue({
+      success: true,
+      project: { title: "Demo", style_template_id: "live_zhang_yimou" } as unknown as Awaited<ReturnType<typeof API.updateProject>>["project"],
+    });
+
+    renderAt("/app/projects/demo/settings");
+
+    fireEvent.click(await screen.findByRole("button", { name: /张艺谋/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^(保存|Save)$/i }));
+
+    await waitFor(() => {
+      expect(updateSpy).toHaveBeenCalledWith("demo", { style_template_id: "live_zhang_yimou" });
+      expect(screen.getByRole("button", { name: /张艺谋/, pressed: true })).toBeInTheDocument();
+    });
+  });
+
+  it("disables page-level save for an incomplete template selection", async () => {
+    vi.spyOn(API, "getProject").mockResolvedValue({
+      project: {
+        title: "Demo",
+        style_image: "style_reference.png",
+        episodes: [],
+        characters: {},
+        clues: {},
+      },
+      scripts: {},
+    } as unknown as Awaited<ReturnType<typeof API.getProject>>);
+
+    renderAt("/app/projects/demo/settings");
+
+    await screen.findByAltText(/上传风格参考图|Upload style reference/);
+    fireEvent.click(screen.getByRole("button", { name: /AI 真人剧|Live-action drama/ }));
+
+    expect(screen.getByRole("button", { name: /^(保存|Save)$/i })).toBeDisabled();
+  });
+
   it("shows the generation route read-only, with no control to change it", async () => {
     vi.spyOn(API, "getProject").mockResolvedValue({
       project: {

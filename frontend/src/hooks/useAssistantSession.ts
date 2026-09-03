@@ -42,6 +42,15 @@ function deletingKey(projectName: string, sessionId: string): string {
   return `${projectName}\n${sessionId}`;
 }
 
+interface WorkspaceAgentTask {
+  notificationId: string;
+  description: string;
+}
+
+function agentTaskKey(projectName: string, sessionId: string, taskId: string): string {
+  return `${projectName}\n${sessionId}\n${taskId}`;
+}
+
 // ---------------------------------------------------------------------------
 // localStorage helpers — 记住每个项目最后使用的会话
 // ---------------------------------------------------------------------------
@@ -90,6 +99,9 @@ export function useAssistantSession(projectName: string | null) {
   // 失败重试复用同一幂等键（同内容签名），成功后清除
   const failedSendRef = useRef<{ clientKey: string; signature: string } | null>(null);
   const failedRewriteRef = useRef<{ clientKey: string; signature: string } | null>(null);
+  // 工作区通知按项目/会话/任务聚合。映射放在 hook 内而不是 store 中，避免把
+  // 智能体运行时的临时关联暴露成全局持久状态；通知本身仍由 app store 保留。
+  const workspaceAgentTasksRef = useRef<Map<string, WorkspaceAgentTask>>(new Map());
 
   const syncPendingQuestion = useCallback((question: PendingQuestion | null) => {
     store.getState().setPendingQuestion(question);
@@ -190,6 +202,84 @@ export function useAssistantSession(projectName: string | null) {
     refreshSessions();
   }, [projectName, refreshSessions]);
 
+  const updateWorkspaceTaskNotification = useCallback(
+    (sessionId: string, entry: TimelineEntry) => {
+      if (!projectName || entry.type !== "system" || !entry.task_id) return;
+      if (
+        entry.subtype !== "task_started" &&
+        entry.subtype !== "task_progress" &&
+        entry.subtype !== "task_notification"
+      ) {
+        return;
+      }
+
+      const taskId = entry.task_id;
+      const key = agentTaskKey(projectName, sessionId, taskId);
+      const description = entry.description?.trim() || t("task_in_progress_default");
+      const summary = entry.summary?.trim() || description;
+      const taskStatus = entry.task_status;
+      const isCompleted = entry.subtype === "task_notification" && taskStatus === "completed";
+      const isFailed = entry.subtype === "task_notification" && taskStatus === "failed";
+
+      let text: string;
+      let tone: "info" | "success" | "error" | "warning" = "info";
+      if (entry.subtype === "task_started") {
+        text = t("task_progress_started", { description });
+      } else if (entry.subtype === "task_progress") {
+        text = description;
+        const tokens = entry.usage?.total_tokens;
+        if (tokens != null) text += ` ${t("subagent_tokens", { count: tokens })}`;
+      } else {
+        const label = isCompleted
+          ? t("task_progress_completed")
+          : isFailed
+            ? t("task_progress_failed")
+            : t("task_progress_ended");
+        text = `${label}: ${summary}`;
+        tone = isCompleted ? "success" : isFailed ? "error" : "warning";
+      }
+
+      const app = useAppStore.getState();
+      const current = workspaceAgentTasksRef.current.get(key);
+      if (current) {
+        app.updateWorkspaceNotification(current.notificationId, { text, tone });
+      } else {
+        const notificationId = app.pushWorkspaceNotification({ text, tone });
+        workspaceAgentTasksRef.current.set(key, { notificationId, description });
+      }
+
+      // 终态事件后不再需要关联；通知仍保留在工作区通知中心。
+      if (entry.subtype === "task_notification") {
+        workspaceAgentTasksRef.current.delete(key);
+      }
+    },
+    [projectName, t],
+  );
+
+  const finishWorkspaceTasks = useCallback(
+    (sessionId: string, sessionStatus: string) => {
+      if (!projectName) return;
+      const app = useAppStore.getState();
+      const prefix = `${projectName}\n${sessionId}\n`;
+      for (const [key, task] of workspaceAgentTasksRef.current) {
+        if (!key.startsWith(prefix)) continue;
+        const interrupted = sessionStatus === "interrupted";
+        const failed = sessionStatus === "error";
+        const text = interrupted
+          ? t("task_progress_cancelled", { description: task.description })
+          : failed
+            ? `${t("task_progress_failed")}: ${task.description}`
+            : `${t("task_progress_completed")}: ${task.description}`;
+        app.updateWorkspaceNotification(task.notificationId, {
+          text,
+          tone: interrupted ? "warning" : failed ? "error" : "success",
+        });
+        workspaceAgentTasksRef.current.delete(key);
+      }
+    },
+    [projectName, t],
+  );
+
   // 关闭流
   const closeStream = useCallback(() => {
     if (reconnectRef.current) {
@@ -232,7 +322,11 @@ export function useAssistantSession(projectName: string | null) {
         if (!isActiveStream()) return;
         const entry = parseSsePayload(event);
         if (typeof entry.seq === "number" && typeof entry.type === "string") {
-          store.getState().appendEntry(entry as unknown as TimelineEntry);
+          const previousLastSeq = lastEntrySeq(store.getState().entries);
+          if (entry.seq <= previousLastSeq) return;
+          const timelineEntry = entry as unknown as TimelineEntry;
+          store.getState().appendEntry(timelineEntry);
+          updateWorkspaceTaskNotification(sessionId, timelineEntry);
         }
       });
 
@@ -261,6 +355,7 @@ export function useAssistantSession(projectName: string | null) {
         store.getState().setSessionStatus(status as "idle");
 
         if (TERMINAL.has(status)) {
+          finishWorkspaceTasks(sessionId, status);
           store.getState().setSending(false);
           store.getState().setInterrupting(false);
           clearPendingQuestion();
@@ -302,7 +397,16 @@ export function useAssistantSession(projectName: string | null) {
         }
       };
     },
-    [clearPendingQuestion, projectName, closeStream, refreshSessions, store, syncPendingQuestion],
+    [
+      clearPendingQuestion,
+      finishWorkspaceTasks,
+      projectName,
+      closeStream,
+      refreshSessions,
+      store,
+      syncPendingQuestion,
+      updateWorkspaceTaskNotification,
+    ],
   );
 
   // 加载指定会话时间线：非 running 冷读日志；running 交给 entry 流回放。
@@ -588,7 +692,14 @@ export function useAssistantSession(projectName: string | null) {
     // 草稿会话无加载过程，复位被作废加载链遗留的 loading
     store.getState().setMessagesLoading(false);
     statusRef.current = "idle";
-  }, [projectName, abortSessionLoad, clearPendingQuestion, closeStream, invalidatePendingSend, store]);
+  }, [
+    projectName,
+    abortSessionLoad,
+    clearPendingQuestion,
+    closeStream,
+    invalidatePendingSend,
+    store,
+  ]);
 
   // 切换到指定会话
   const switchSession = useCallback(async (sessionId: string) => {
@@ -624,7 +735,16 @@ export function useAssistantSession(projectName: string | null) {
       // 被作废时 loading 归接管方管理，此处复位会踩到其正在进行的加载
       if (!signal.aborted) store.getState().setMessagesLoading(false);
     }
-  }, [projectName, beginSessionLoad, clearPendingQuestion, closeStream, invalidatePendingSend, loadSession, store, t]);
+  }, [
+    projectName,
+    beginSessionLoad,
+    clearPendingQuestion,
+    closeStream,
+    invalidatePendingSend,
+    loadSession,
+    store,
+    t,
+  ]);
 
   // 改写历史用户消息。返回是否受理成功——失败时调用方保留编辑态与草稿内容。
   //

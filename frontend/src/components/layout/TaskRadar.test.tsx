@@ -1,15 +1,21 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { API } from "@/api";
 import { TaskRadar, isReviewTask, matchesRadarFilter, taskProgress } from "@/components/layout/TaskRadar";
+import { useProjectsStore } from "@/stores/projects-store";
 import { useTasksStore } from "@/stores/tasks-store";
 import { makeTask } from "@/test/factories";
 
 describe("TaskRadar", () => {
   beforeEach(() => {
+    useProjectsStore.setState({ currentProjectName: null, currentProjectData: null });
     useTasksStore.setState({ tasks: [], stats: { queued: 0, running: 0, cancelling: 0, succeeded: 0, failed: 0, cancelled: 0, total: 0 } });
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   it("summarizes live counts and filters the shared task store", () => {
     useTasksStore.setState({
@@ -38,5 +44,56 @@ describe("TaskRadar", () => {
     expect(taskProgress(makeTask({ status: "succeeded" }))).toBe(100);
     expect(isReviewTask(makeTask({ payload: { workflow_status: "waiting_review" } }))).toBe(true);
     expect(matchesRadarFilter(makeTask({ status: "failed" }), "failed")).toBe(true);
+  });
+
+  it("enables stopping queued tasks for the current project and previews the cancellation", async () => {
+    useProjectsStore.setState({ currentProjectName: "proj" });
+    useTasksStore.setState({
+      tasks: [makeTask({ project_name: "proj", status: "queued" })],
+      stats: { queued: 1, running: 0, cancelling: 0, succeeded: 0, failed: 0, cancelled: 0, total: 1 },
+    });
+    const preview = vi.spyOn(API, "cancelAllPreview").mockResolvedValue({ queued_count: 2 });
+
+    render(<TaskRadar />);
+    fireEvent.click(screen.getByRole("button", { name: "Open task radar" }));
+
+    const stopButton = screen.getByRole("button", { name: "停止当前项目所有排队任务" });
+    expect(stopButton).toBeEnabled();
+    fireEvent.click(stopButton);
+
+    await waitFor(() => expect(preview).toHaveBeenCalledWith("proj"));
+    expect(screen.getByText("确定停止当前项目的 2 个排队任务？")).toBeInTheDocument();
+  });
+
+  it("cancels the previewed queued tasks and refreshes the radar", async () => {
+    useProjectsStore.setState({ currentProjectName: "proj" });
+    useTasksStore.setState({
+      tasks: [makeTask({ project_name: "proj", status: "queued" })],
+      stats: { queued: 1, running: 0, cancelling: 0, succeeded: 0, failed: 0, cancelled: 0, total: 1 },
+    });
+    const cancelAll = vi.spyOn(API, "cancelAllQueued").mockResolvedValue({ cancelled_count: 1, skipped_running_count: 0 });
+    const refreshTasks = vi.fn().mockResolvedValue(undefined);
+    useTasksStore.setState({ refreshTasks });
+    vi.spyOn(API, "cancelAllPreview").mockResolvedValue({ queued_count: 1 });
+
+    render(<TaskRadar />);
+    fireEvent.click(screen.getByRole("button", { name: "Open task radar" }));
+    fireEvent.click(screen.getByRole("button", { name: "停止当前项目所有排队任务" }));
+    await screen.findByText("确定停止当前项目的 1 个排队任务？");
+
+    fireEvent.click(screen.getByRole("button", { name: "确认停止" }));
+
+    await waitFor(() => {
+      expect(cancelAll).toHaveBeenCalledWith("proj");
+      expect(refreshTasks).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("disables stopping when the current project has no queued tasks", () => {
+    useProjectsStore.setState({ currentProjectName: "proj" });
+    render(<TaskRadar />);
+    fireEvent.click(screen.getByRole("button", { name: "Open task radar" }));
+
+    expect(screen.getByRole("button", { name: "停止当前项目所有排队任务" })).toBeDisabled();
   });
 });

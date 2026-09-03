@@ -160,6 +160,7 @@ MESSAGES = {
     "connection_success": "Connection successful",
     "connection_timeout": "Connection timeout, please check your network or API configuration",
     "connection_failed": "Connection failed: {err_msg}",
+    "model_type_override_registered": "Registered models cannot have their type changed manually: {models}",
     "unsupported_test": "Provider {provider_id} does not support connection testing yet",
     "missing_credentials": "Missing credential configuration, please add a key first",
     "credential_group_ambiguous": (
@@ -360,6 +361,7 @@ MESSAGES = {
     # Agent credentials
     "agent_preset_unknown": "Unknown preset provider: {preset_id}",
     "agent_sdk_type_unknown": "Unknown Agent SDK type: {sdk_type}",
+    "agent_protocol_invalid": "Invalid Agent transport protocol: {error}",
     "agent_preset_sdk_type_mismatch": "Preset {preset_id} does not belong to the {sdk_type} Agent",
     "agent_base_url_required_custom": "base_url is required for custom configuration",
     "agent_no_fields_to_update": "No fields to update",

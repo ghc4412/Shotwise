@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { API } from "@/api";
 import { DEMO_PROJECT_NAME } from "@/onboarding/demo-project";
@@ -91,6 +91,25 @@ describe("TimelineCanvas", () => {
     );
 
     expect(screen.getByTestId("shot-split-view")).toBeInTheDocument();
+  });
+
+  it("submits the batch image generation action from the timeline toolbar", () => {
+    const onBatchGenerateStoryboards = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <TimelineCanvas
+        projectName="demo"
+        episode={1}
+        hasDraft
+        episodeScript={makeScript()}
+        projectData={makeProjectData()}
+        onBatchGenerateStoryboards={onBatchGenerateStoryboards}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "批量生成图片" }));
+
+    expect(onBatchGenerateStoryboards).toHaveBeenCalledOnce();
   });
 
   it("shows a script-not-ready hint instead of a blank screen when the script reverts while the timeline tab stays active", () => {

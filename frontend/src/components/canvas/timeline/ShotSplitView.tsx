@@ -34,6 +34,7 @@ interface ShotSplitViewProps {
   durationOptions?: number[];
   /** 已保存时长越界的成因判定；缺省时 ShotDetail 退回不区分成因的通用警告文案。 */
   durationWarningReason?: (seconds: number) => DurationOutOfRangeReason | null;
+  focusSegment?: { id: string; requestId: number } | null;
 }
 
 
@@ -59,12 +60,14 @@ export function ShotSplitView({
   generatingNarration,
   durationOptions,
   durationWarningReason,
+  focusSegment,
 }: ShotSplitViewProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [collapsed, setCollapsed] = useState(
     () => typeof window !== "undefined" && window.innerWidth < 1100,
   );
   const [movePending, setMovePending] = useState(false);
+  const [focusIndex, setFocusIndex] = useState<number | null>(null);
   const listScrollRef = useRef<HTMLDivElement>(null);
 
   // 镜头重排：请求在途时丢弃后续点击（快速连点会基于过期顺序计算出相同排列），
@@ -93,6 +96,16 @@ export function ShotSplitView({
       setSelectedIndex(segments.length - 1);
     }
   }, [segments.length, selectedIndex]);
+
+  useEffect(() => {
+    if (!focusSegment) return;
+    const idx = segments.findIndex((s) => getScriptItemId(s, contentMode) === focusSegment.id);
+    if (idx === -1) return;
+    // 通过请求序号支持连续点击同一个顶部镜头；ShotList 负责虚拟列表滚动。
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 顶部时长规划与分镜编辑区是兄弟组件，此处同步外部导航请求到选中态
+    setSelectedIndex(idx);
+    setFocusIndex(idx);
+  }, [contentMode, focusSegment, segments]);
 
   // SSE 自动定位：分屏布局只需切换 selectedIndex，不做 DOM 滚动
   const scrollTarget = useAppStore((s) => s.scrollTarget);
@@ -135,6 +148,7 @@ export function ShotSplitView({
         collapsed={collapsed}
         onToggleCollapse={() => setCollapsed((c) => !c)}
         scrollContainerRef={listScrollRef}
+        scrollToIndex={focusIndex}
       />
       <ShotDetail
         key={segmentId}

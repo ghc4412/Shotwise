@@ -14,7 +14,7 @@ from lib.providers import PROVIDER_AGNES
 from lib.text_backends.base import TextCapability
 from lib.text_backends.openai import OpenAITextBackend
 
-DEFAULT_MODEL = "agnes-2.0-flash"
+DEFAULT_MODEL = "agnes-2.5-flash"
 
 
 class AgnesTextBackend(OpenAITextBackend):
@@ -35,5 +35,5 @@ class AgnesTextBackend(OpenAITextBackend):
             base_url=agnes_base_url(base_url),
             provider_name=PROVIDER_AGNES,
         )
-        # agnes-2.0-flash 仅声明文本生成与结构化输出；vision 未实测，不纳入能力集（父类默认含 VISION）。
+        # Agnes 文本模型仅声明文本生成与结构化输出；vision 未实测，不纳入能力集（父类默认含 VISION）。
         self._capabilities = {TextCapability.TEXT_GENERATION, TextCapability.STRUCTURED_OUTPUT}

@@ -365,6 +365,34 @@ class TestGetProviderConfig:
         assert veo["voice_consistency"] in {"native", "soft", "none"}
 
     @pytest.mark.unit
+    def test_response_includes_persisted_discovered_models(self):
+        svc = self._mock_svc_ready()
+        svc.get_provider_config_masked = AsyncMock(
+            return_value={
+                "discovered_models": {
+                    "is_set": True,
+                    "value": '["vendor-image", "vendor-video", "vendor-image"]',
+                },
+                "model_type_overrides": {
+                    "is_set": True,
+                    "value": '{"vendor-image": "image"}',
+                },
+            }
+        )
+        app, _ = _make_session_app()
+        with (
+            patch("server.routers.providers.ConfigService", return_value=svc),
+            patch("server.routers.providers.CredentialRepository", return_value=self._mock_cred_repo_active()),
+        ):
+            with TestClient(app) as client:
+                resp = client.get("/api/v1/providers/gemini-aistudio/config")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["discovered_models"] == ["vendor-image", "vendor-video"]
+        assert body["model_type_overrides"] == {"vendor-image": "image"}
+
+    @pytest.mark.unit
     def test_credential_fields_not_in_response(self):
         """api_key / base_url / credentials_path 不应出现在 fields 中。"""
         app, _ = _make_session_app()
@@ -546,6 +574,39 @@ def _make_mock_svc() -> ConfigService:
     svc.set_provider_config = AsyncMock()
     svc.delete_provider_config = AsyncMock()
     return svc  # type: ignore[return-value]
+
+
+class TestPatchProviderModelTypes:
+    @pytest.mark.unit
+    def test_persists_model_type_and_discovered_model(self):
+        svc = MagicMock(spec=ConfigService)
+        svc.get_provider_config = AsyncMock(return_value={})
+        svc.set_provider_config = AsyncMock()
+        app, session = _make_session_app()
+
+        with patch("server.routers.providers.ConfigService", return_value=svc):
+            with TestClient(app) as client:
+                resp = client.patch(
+                    "/api/v1/providers/gemini-aistudio/model-types",
+                    json={"model_types": {"vendor-image": "image"}},
+                )
+
+        assert resp.status_code == 200
+        assert resp.json() == {
+            "model_type_overrides": {"vendor-image": "image"},
+            "discovered_models": ["vendor-image"],
+        }
+        assert svc.set_provider_config.await_args_list[0].args == (
+            "gemini-aistudio",
+            "model_type_overrides",
+            '{"vendor-image": "image"}',
+        )
+        assert svc.set_provider_config.await_args_list[1].args == (
+            "gemini-aistudio",
+            "discovered_models",
+            '["vendor-image"]',
+        )
+        session.commit.assert_awaited_once()
 
 
 class TestPatchProviderConfig:
@@ -775,9 +836,10 @@ class TestTestProviderConnection:
     @pytest.mark.unit
     def test_success_true_when_configured(self):
         app, _ = _make_session_app()
+        svc = self._mock_svc()
         with (
             patch("server.routers.providers.CredentialRepository", return_value=self._mock_cred_repo_configured()),
-            patch("server.routers.providers.ConfigService", return_value=self._mock_svc()),
+            patch("server.routers.providers.ConfigService", return_value=svc),
             patch.dict(providers._TEST_DISPATCH, {"gemini-aistudio": self._fake_test_fn}),
         ):
             with TestClient(app) as client:
@@ -785,7 +847,14 @@ class TestTestProviderConnection:
         body = resp.json()
         assert body["success"] is True
         assert body["available_models"] == ["model-a"]
+        assert body["model_types"] == {"model-a": "text"}
         assert body["message"] == "连接成功"
+        svc.set_provider_config.assert_awaited_once_with(
+            "gemini-aistudio",
+            "discovered_models",
+            '["model-a"]',
+            flush=False,
+        )
 
     @pytest.mark.unit
     def test_success_false_when_no_credential(self):
@@ -923,7 +992,11 @@ class TestTestProviderConnection:
                 return SimpleNamespace(
                     data=[
                         SimpleNamespace(id="agnes-2.0-flash"),
+                        SimpleNamespace(id="agnes-2.5-flash"),
                         SimpleNamespace(id="agnes-image-2.1-flash"),
+                        SimpleNamespace(id="agnes-image-2.5-flash"),
+                        SimpleNamespace(id="agnes-video-2.5"),
+                        SimpleNamespace(id="agnes-video-2.5-flash"),
                         SimpleNamespace(id="embedding-3"),
                     ]
                 )
@@ -941,7 +1014,22 @@ class TestTestProviderConnection:
         assert captured["base_url"] == "https://apihub.agnes-ai.com/v1"
         assert captured["api_key"] == "sk"
         # 仅暴露 agnes 模型，过滤掉 embedding 等
-        assert resp.available_models == ["agnes-2.0-flash", "agnes-image-2.1-flash"]
+        assert resp.available_models == [
+            "agnes-2.0-flash",
+            "agnes-2.5-flash",
+            "agnes-image-2.1-flash",
+            "agnes-image-2.5-flash",
+            "agnes-video-2.5",
+            "agnes-video-2.5-flash",
+        ]
+        assert providers._model_types_for("agnes", resp.available_models) == {
+            "agnes-2.0-flash": "text",
+            "agnes-2.5-flash": "text",
+            "agnes-image-2.1-flash": "image",
+            "agnes-image-2.5-flash": "image",
+            "agnes-video-2.5": "video",
+            "agnes-video-2.5-flash": "video",
+        }
         assert resp.success is True
 
     @pytest.mark.unit

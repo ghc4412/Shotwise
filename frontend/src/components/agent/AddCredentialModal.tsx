@@ -26,6 +26,7 @@ import { useAppStore } from "@/stores/app-store";
 import type {
   AgentDiscoveredModel,
   AgentSdkType,
+  AgentProtocol,
   CreateAgentCredentialRequest,
   PresetProvider,
   TestConnectionResponse,
@@ -65,7 +66,7 @@ export function AddCredentialModal({
   const { t } = useTranslation("dashboard");
   const panelRef = useRef<HTMLDivElement>(null);
   useFocusTrap(panelRef, open);
-  const form = useCredentialForm(initial, customSentinelId, presets);
+  const form = useCredentialForm(initial, customSentinelId, presets, sdkType);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
@@ -453,6 +454,31 @@ export function AddCredentialModal({
               onChange={(e) => form.setDisplayName(e.target.value)}
               className={INPUT_CLS}
             />
+          </Field>
+
+          <Field label={t("agent_protocol")} htmlFor="cred-protocol">
+            {sdkType === "openai" ? (
+              <select
+                id="cred-protocol"
+                value={form.protocol}
+                onChange={(e) => {
+                  form.setProtocol(e.target.value as AgentProtocol);
+                  invalidateDraftTest();
+                }}
+                className={INPUT_CLS}
+              >
+                <option value="chat_completions">{t("protocol_chat_completions")}</option>
+                <option value="responses">{t("protocol_responses")}</option>
+              </select>
+            ) : (
+              <div
+                id="cred-protocol"
+                className="rounded-[6px] border border-hairline-soft bg-bg-grad-a/35 px-3 py-2 text-[12px] text-text-2"
+              >
+                {t("protocol_anthropic_messages")}
+              </div>
+            )}
+            <div className="mt-1 text-[10.5px] text-text-4">{t("agent_protocol_hint")}</div>
           </Field>
 
           <Field label={t("api_base_url")} htmlFor="cred-url">

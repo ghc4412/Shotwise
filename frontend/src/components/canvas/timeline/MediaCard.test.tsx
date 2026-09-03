@@ -66,6 +66,28 @@ describe("MediaCard upload", () => {
     const { getByRole } = renderCard({ onGenerate: vi.fn(), uploadDisabled: true });
     expect(getByRole("button", { name: /生成分镜/ })).toBeDisabled();
   });
+
+  it("shows a regenerate image button for an existing storyboard", () => {
+    const onGenerate = vi.fn();
+    const { getByRole } = renderCard({
+      assetPath: "storyboards/E1S01_v1.png",
+      onGenerate,
+    });
+
+    fireEvent.click(getByRole("button", { name: "重新生成图片" }));
+
+    expect(onGenerate).toHaveBeenCalledOnce();
+  });
+
+  it("disables the regenerate image button while the storyboard is generating", () => {
+    const { getByRole } = renderCard({
+      assetPath: "storyboards/E1S01_v1.png",
+      onGenerate: vi.fn(),
+      generating: true,
+    });
+
+    expect(getByRole("button", { name: "重新生成图片" })).toBeDisabled();
+  });
 });
 
 describe("MediaCard in the demo workbench", () => {

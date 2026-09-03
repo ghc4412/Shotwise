@@ -187,6 +187,7 @@ export function StudioCanvasRouter() {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [customProviders, setCustomProviders] = useState<CustomProviderInfo[]>([]);
   const [globalVideoBackend, setGlobalVideoBackend] = useState("");
+  const [durationFocus, setDurationFocus] = useState<{ id: string; requestId: number } | null>(null);
 
   // 目录侧与服务端侧听同一个失效信号：本组件跨路由原地复用，改完全局默认后端 / 自定义供应商
   // 回到工作台不会重挂载，只重取服务端能力而留着旧目录的话，时长仍按旧配置解析。
@@ -827,6 +828,9 @@ export function StudioCanvasRouter() {
                   projectName={currentProjectName}
                   episode={epNum}
                   onApplied={() => refreshProject().then(() => undefined)}
+                  onSelectShot={(resourceId) =>
+                    setDurationFocus({ id: resourceId, requestId: Date.now() })
+                  }
                 />
               )}
               <div className="min-h-0 min-w-0 w-full flex-1 overflow-hidden">
@@ -893,6 +897,7 @@ export function StudioCanvasRouter() {
                     onGenerateVideo={voidPromise(handleGenerateVideo)}
                     onGenerateNarration={voidPromise(handleGenerateNarration)}
                     onGenerateEpisodeNarration={voidPromise(handleGenerateEpisodeNarration)}
+                    onBatchGenerateStoryboards={() => createEpisodeDurableBatch("storyboard")}
                     onGenerateGrid={handleGenerateGrid}
                     onRestoreStoryboard={handleRestoreAsset}
                     onRestoreVideo={handleRestoreAsset}
@@ -915,6 +920,7 @@ export function StudioCanvasRouter() {
                     projectData={currentProjectData}
                     durationOptions={durationOptions}
                     durationWarningReason={durationWarningReason}
+                    focusSegment={durationFocus}
                     onUpdatePrompt={awaitedUpdatePrompt}
                     onMoveShot={isAd ? handleMoveShot : undefined}
                     onGenerateStoryboard={voidPromise(handleGenerateStoryboard)}

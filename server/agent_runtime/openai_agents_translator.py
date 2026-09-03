@@ -40,6 +40,31 @@ class OpenAIAgentsTranslator:
         self._text_buf: list[str] = []
         # tool_use 块累积：call_id → (block_index, name, input)
         self._tool_uses: dict[str, dict[str, Any]] = {}
+        self._has_assistant_output = False
+
+    @property
+    def has_assistant_output(self) -> bool:
+        return self._has_assistant_output
+
+    def flush_partial_assistant(self) -> dict[str, Any] | None:
+        """把已收到但尚未收到 ``message_output_item`` 的文本定型。
+
+        流式连接可能在文本 delta 之后、权威消息条目之前断开。调用方应只在
+        失败收尾路径调用此方法；工具调用的半成品不在这里伪造成完整 assistant
+        消息，只有已经可见的文本会被保留下来。
+        """
+        text = "".join(self._text_buf)
+        if not text.strip():
+            return None
+        message_id = self._message_id or None
+        self._message_id = None
+        self._blocks = {}
+        self._text_buf = []
+        return {
+            "type": "assistant",
+            "message_id": message_id,
+            "content": [{"type": "text", "text": text}],
+        }
 
     # ── 事件入口 ────────────────────────────────────────────────────
 
@@ -80,6 +105,7 @@ class OpenAIAgentsTranslator:
                     messages.append(self._message_start(""))
                     messages.append(self._content_block_start(0, {"type": "text", "text": ""}))
                 self._text_buf.append(delta)
+                self._has_assistant_output = True
                 messages.append(self._content_block_delta(0, "text_delta", {"text": delta}))
             return messages
 
@@ -155,6 +181,8 @@ class OpenAIAgentsTranslator:
         self._message_id = None
         self._blocks = {}
         self._text_buf = []
+        if text.strip():
+            self._has_assistant_output = True
         return [
             {
                 "type": "assistant",

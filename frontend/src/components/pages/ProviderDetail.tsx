@@ -11,7 +11,7 @@ import { CredentialList } from "@/components/pages/CredentialList";
 import { formatDurationsLabel } from "@/utils/duration_format";
 import { ACCENT_BTN_CLS, ACCENT_BUTTON_STYLE, CARD_STYLE, GHOST_BTN_CLS, INPUT_CLS } from "@/components/ui/darkroom-tokens";
 import { FieldLabel } from "@/components/ui/FieldLabel";
-import type { ProviderConfigDetail, ProviderField } from "@/types";
+import type { ModelMediaType, ProviderConfigDetail, ProviderField, ProviderTestResult } from "@/types";
 
 // ---------------------------------------------------------------------------
 // Status badge — Darkroom OKLCH tokens
@@ -237,7 +237,8 @@ function FieldEditor({ field, draft, setDraft }: FieldEditorProps) {
 
 // 能力徽标展示顺序：图片→视频→文本→音频，未列出的类型排到末尾。
 // media_types 由后端按注册顺序返回，前端统一排序避免 audio 等新类型插到队首。
-const CAPABILITY_PILL_ORDER = ["image", "video", "text", "audio"];
+const CAPABILITY_PILL_ORDER = ["image", "video", "text", "audio", "unknown"];
+const EDITABLE_MEDIA_TYPES: ModelMediaType[] = ["image", "video", "text", "audio", "unknown"];
 
 function capabilityPillRank(kind: string): number {
   const idx = CAPABILITY_PILL_ORDER.indexOf(kind);
@@ -253,7 +254,9 @@ function mediaTypeLabel(kind: string, t: (key: string) => string): string {
         ? t("media_type_text")
         : kind === "audio"
           ? t("media_type_audio")
-          : kind;
+          : kind === "unknown"
+            ? t("media_type_unknown")
+            : kind;
 }
 
 function CapabilityPill({ kind }: { kind: string }) {
@@ -313,23 +316,74 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
   const [togglingEnabled, setTogglingEnabled] = useState(false);
   // 模型列表的媒体类型筛选；null = 全部
   const [modelTypeFilter, setModelTypeFilter] = useState<string | null>(null);
+  // 最近一次连接测试从供应商 API 发现的模型及其媒体类型。
+  const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
+  const [discoveredModelTypes, setDiscoveredModelTypes] = useState<Record<string, ModelMediaType>>({});
 
   const hasDraft = Object.keys(draft).length > 0;
   useWarnUnsaved(hasDraft);
 
   // 模型列表可选筛的媒体类型（该供应商实际存在，按 图片→视频→文本→音频 排序）
   const availableTypes = useMemo(() => {
-    if (!detail?.models) return [];
-    return [...new Set(Object.values(detail.models).map((m) => m.media_type))].sort(
+    if (!detail?.models && discoveredModels.length === 0) return [];
+    const registeredTypes = detail?.models ? Object.values(detail.models).map((m) => m.media_type) : [];
+    const discoveredTypes = discoveredModels.map((modelId) => discoveredModelTypes[modelId] ?? "unknown");
+    return [...new Set([...registeredTypes, ...discoveredTypes])].sort(
       (a, b) => capabilityPillRank(a) - capabilityPillRank(b),
     );
-  }, [detail]);
+  }, [detail, discoveredModels, discoveredModelTypes]);
+
+  const registeredModels = useMemo(() => detail?.models ?? {}, [detail?.models]);
+  const discoveredOnlyModels = useMemo(
+    () => discoveredModels.filter((modelId) => !(modelId in registeredModels)),
+    [discoveredModels, registeredModels],
+  );
 
   const handleCredentialChanged = useCallback(async () => {
     const updated = await API.getProviderConfig(providerId);
     setDetail(updated);
     onSaved?.();
   }, [providerId, onSaved]);
+
+  const handleCredentialTested = useCallback(
+    (result: ProviderTestResult) => {
+      // 失败时保留上一次成功发现的结果，避免一次临时网络错误清空模型列表。
+      if (result.success) {
+        const registered = detail?.models ?? {};
+        const discoveredTypes: Record<string, ModelMediaType> = {};
+        for (const [modelId, mediaType] of Object.entries(result.model_types ?? {})) {
+          if (EDITABLE_MEDIA_TYPES.includes(mediaType as ModelMediaType)) {
+            discoveredTypes[modelId] = mediaType as ModelMediaType;
+          }
+        }
+        for (const [modelId, mediaType] of Object.entries(detail?.model_type_overrides ?? {})) {
+          if (!(modelId in registered) && result.available_models.includes(modelId)) {
+            discoveredTypes[modelId] = mediaType;
+          }
+        }
+        setDiscoveredModels(result.available_models);
+        setDiscoveredModelTypes(discoveredTypes);
+      }
+    },
+    [detail],
+  );
+
+  const handleDiscoveredTypeChange = useCallback(
+    async (modelId: string, mediaType: ModelMediaType) => {
+      try {
+        const response = await API.patchProviderModelTypes(providerId, { [modelId]: mediaType });
+        setDiscoveredModelTypes((previous) => ({ ...previous, [modelId]: mediaType }));
+        setDetail((previous) =>
+          previous
+            ? { ...previous, model_type_overrides: response.model_type_overrides as Record<string, ModelMediaType> }
+            : previous,
+        );
+      } catch (err) {
+        useAppStore.getState().pushToast(errMsg(err), "error");
+      }
+    },
+    [providerId],
+  );
 
   // 用户编辑草稿时同步清掉上一次保存失败的错误，避免旧文案滞留误导
   const handleDraftEdit = useCallback<React.Dispatch<React.SetStateAction<Record<string, string>>>>((action) => {
@@ -346,10 +400,16 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
     setLoadError(null);
     setSaveError(null);
     setModelTypeFilter(null);
+    setDiscoveredModels([]);
+    setDiscoveredModelTypes({});
     voidCall(
       API.getProviderConfig(providerId)
         .then((res) => {
-          if (!disposed) setDetail(res);
+          if (!disposed) {
+            setDetail(res);
+            setDiscoveredModels(res.discovered_models ?? Object.keys(res.model_type_overrides ?? {}));
+            setDiscoveredModelTypes(res.model_type_overrides ?? {});
+          }
         })
         .catch((err: unknown) => {
           if (!disposed) setLoadError(errMsg(err));
@@ -485,16 +545,20 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
         secretFields={detail.secret_fields}
         secretFieldGroups={detail.secret_field_groups}
         onChanged={voidPromise(handleCredentialChanged)}
+        onTested={handleCredentialTested}
       />
 
       {/* Models — 注册表声明的模型清单（只读，真相源 PROVIDER_REGISTRY，不可编辑）。
           位于密钥管理下方；顶部类型标签筛选下方列表（默认全部）。 */}
-      {detail.models && Object.keys(detail.models).length > 0 && (
+      {(Object.keys(registeredModels).length > 0 || discoveredOnlyModels.length > 0) && (
         <div>
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <span className="font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-accent-2">
               {t("model_list")}
             </span>
+            {discoveredOnlyModels.some((modelId) => (discoveredModelTypes[modelId] ?? "unknown") === "unknown") && (
+              <span className="text-[11px] text-text-4">{t("manual_media_type_hint")}</span>
+            )}
             <div role="group" aria-label={t("model_list")} className="flex flex-wrap gap-1">
               <FilterChip active={modelTypeFilter === null} onClick={() => setModelTypeFilter(null)}>
                 {t("all")}
@@ -511,7 +575,7 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
             </div>
           </div>
           <div className="space-y-1.5">
-            {Object.entries(detail.models)
+            {Object.entries(registeredModels)
               .filter(([, m]) => modelTypeFilter === null || m.media_type === modelTypeFilter)
               .map(([modelId, m]) => (
                 <div
@@ -530,6 +594,37 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
                   <CapabilityPill kind={m.media_type} />
                 </div>
               ))}
+            {discoveredOnlyModels
+              .filter(
+                (modelId) =>
+                  modelTypeFilter === null ||
+                  (discoveredModelTypes[modelId] ?? "unknown") === modelTypeFilter,
+              )
+              .map((modelId) => (
+              <div
+                key={modelId}
+                className="flex flex-wrap items-center gap-2 rounded-[8px] border border-hairline px-3 py-2 text-[12.5px] text-text"
+                style={CARD_STYLE}
+              >
+                <span className="min-w-0 flex-1 truncate font-mono text-[11.5px]">{modelId}</span>
+                <label className="sr-only" htmlFor={`media-type-${modelId}`}>
+                  {t("set_media_type")} {modelId}
+                </label>
+                <select
+                  id={`media-type-${modelId}`}
+                  aria-label={`${t("set_media_type")}: ${modelId}`}
+                  value={discoveredModelTypes[modelId] ?? "unknown"}
+                  onChange={(event) => void handleDiscoveredTypeChange(modelId, event.target.value as ModelMediaType)}
+                  className="rounded-full border border-hairline-soft bg-bg-grad-a/55 px-2.5 py-0.5 font-mono text-[10px] font-bold tracking-[0.08em] text-text-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  {EDITABLE_MEDIA_TYPES.map((mediaType) => (
+                    <option key={mediaType} value={mediaType}>
+                      {mediaTypeLabel(mediaType, t)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
           </div>
         </div>
       )}

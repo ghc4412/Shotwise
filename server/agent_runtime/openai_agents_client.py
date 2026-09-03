@@ -178,14 +178,55 @@ class OpenAIAgentsSessionClient:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            # stream_events 可能已经发出文本 delta，但在 message_output_item
+            # 到达前断开。先把可见文本定型为普通 assistant 条目，避免下面的
+            # error result 触发 entry pipeline 清理 draft 后用户看不到任何回复。
+            flush_partial = getattr(self._translator, "flush_partial_assistant", None)
+            if callable(flush_partial):
+                try:
+                    partial = flush_partial()
+                except Exception:
+                    logger.exception("OpenAI Agents 部分 assistant 消息定型失败")
+                else:
+                    if partial is not None:
+                        await self._emit_message(outbox, partial)
             logger.error("OpenAI Agents run stream 异常: %s", exc)
-            await outbox.put(self._build_result(status="error", error=str(exc)))
+            await outbox.put(
+                self._build_result(
+                    status="error",
+                    error="provider_stream_interrupted",
+                    error_detail=str(exc),
+                )
+            )
         else:
-            await outbox.put(self._build_result(status="interrupted" if self._interrupted else "completed"))
+            if self._interrupted:
+                status = "interrupted"
+                error = None
+            elif not self._translator.has_assistant_output:
+                status = "error"
+                error = "provider_empty_response"
+            else:
+                status = "completed"
+                error = None
+            await outbox.put(self._build_result(status=status, error=error))
         finally:
             await outbox.put(_EOS)
 
-    def _build_result(self, *, status: str, error: str | None = None) -> dict[str, Any]:
+    async def _emit_message(self, outbox: asyncio.Queue[Any], message: Any) -> None:
+        await outbox.put(message)
+        if self._on_message is not None:
+            try:
+                self._on_message(message)
+            except Exception:
+                logger.exception("OpenAI Agents on_message 回调失败")
+
+    def _build_result(
+        self,
+        *,
+        status: str,
+        error: str | None = None,
+        error_detail: str | None = None,
+    ) -> dict[str, Any]:
         usage: dict[str, Any] = {}
         if self._result is not None:
             ctx_usage = getattr(getattr(self._result, "context_wrapper", None), "usage", None)
@@ -202,6 +243,8 @@ class OpenAIAgentsSessionClient:
         }
         if error is not None:
             result["error"] = error
+        if error_detail:
+            result["error_detail"] = error_detail
         return result
 
 

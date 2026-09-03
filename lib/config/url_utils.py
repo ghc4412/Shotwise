@@ -46,6 +46,23 @@ def ensure_openai_base_url(url: str | None) -> str | None:
     return stripped
 
 
+def ensure_kling_base_url(url: str | None) -> str | None:
+    """自动补全 Kling API 的 /v1 路径后缀。
+
+    Kling 的图像和视频端点都相对于 ``/v1`` 构建。用户配置可能只填写
+    ``https://api-beijing.klingai.com``，因此需要在请求路径拼接前补上版本前缀。
+    已经带有版本路径的地址保持不变。
+    """
+    if not url:
+        return url
+    stripped = url.strip().rstrip("/")
+    if not stripped:
+        return None
+    if not re.search(r"/v\d+$", stripped):
+        stripped += "/v1"
+    return stripped
+
+
 def normalize_base_url(url: str | None) -> str | None:
     """确保 base_url 以 / 结尾。
 

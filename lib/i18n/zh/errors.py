@@ -151,6 +151,7 @@ MESSAGES = {
     "connection_success": "连接成功",
     "connection_timeout": "连接超时，请检查网络或 API 配置",
     "connection_failed": "连接失败: {err_msg}",
+    "model_type_override_registered": "已登记模型不可手动修改类型：{models}",
     "unsupported_test": "供应商 {provider_id} 暂不支持连接测试",
     "missing_credentials": "缺少凭证配置，请先添加密钥",
     "credential_group_ambiguous": "本次提交包含多组互斥凭证的字段，无法判断切换方向，请仅填写其中一组",
@@ -316,6 +317,7 @@ MESSAGES = {
     # Agent credentials
     "agent_preset_unknown": "未知预设供应商: {preset_id}",
     "agent_sdk_type_unknown": "未知 Agent SDK 类型: {sdk_type}",
+    "agent_protocol_invalid": "无效的 Agent 传输协议：{error}",
     "agent_preset_sdk_type_mismatch": "预设 {preset_id} 不属于 {sdk_type} Agent",
     "agent_base_url_required_custom": "自定义配置需要填写 base_url",
     "agent_no_fields_to_update": "没有需要更新的字段",

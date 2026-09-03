@@ -86,10 +86,13 @@ export function parseSavedCreativeOutline(content: string): OutlineItem[] {
   }
 }
 
+// A bare numeric heading is accepted only when it is zero-padded (for example,
+// `001 Title`). Ordinary three-digit numbers are common in prose (`250万?!`),
+// so treating every line starting with three digits as a chapter creates false chapters.
 const CHAPTER_HEADING_PATTERN =
-  /^\s*(?:第\s*([0-9]+|[零〇一二三四五六七八九十百千万两]+)\s*[章节回卷部]|(?:chapter|ch\.?|part)\s*([0-9]+)|([0-9]{3,}))\s*(?:[:：.、-]\s*)?(.*)$/i;
+  /^\s*(?:第\s*([0-9]+|[零〇一二三四五六七八九十百千万两]+)\s*[章节回卷部]|(?:chapter|ch\.?|part)\s*([0-9]+)|(0[0-9]{2,}))\s*(?:[:：.、-]\s*)?(.*)$/i;
 const CHAPTER_HEADING_GLOBAL_PATTERN =
-  /^\s*(?:第\s*([0-9]+|[零〇一二三四五六七八九十百千万两]+)\s*[章节回卷部]|(?:chapter|ch\.?|part)\s*([0-9]+)|([0-9]{3,}))\s*(?:[:：.、-]\s*)?(.*)$/gim;
+  /^\s*(?:第\s*([0-9]+|[零〇一二三四五六七八九十百千万两]+)\s*[章节回卷部]|(?:chapter|ch\.?|part)\s*([0-9]+)|(0[0-9]{2,}))\s*(?:[:：.、-]\s*)?(.*)$/gim;
 
 function parseChineseChapterNumber(value: string): number | undefined {
   const digits: Record<string, number> = {
@@ -223,14 +226,6 @@ function normalizeOutlineTitle(value: string): string {
     .toLocaleLowerCase();
 }
 
-function stripChapterHeading(value: string, chapter?: number): string {
-  const match = value.match(CHAPTER_HEADING_PATTERN);
-  if (!match) return value.trim();
-  const parsedChapter = parseChapterNumber(match[1] ?? match[2] ?? match[3]);
-  if (chapter !== undefined && parsedChapter !== chapter) return value.trim();
-  return match[4]?.trim() || (parsedChapter !== undefined ? "第" + parsedChapter + "章" : value.trim());
-}
-
 /**
  * Builds the deterministic chapter skeleton from explicit headings in the source.
  * AI extraction enriches this skeleton but cannot remove source chapters.
@@ -256,8 +251,9 @@ function compareOutlineItems(left: OutlineItem, right: OutlineItem): number {
 }
 
 /**
- * Merges AI-generated details into the source chapter skeleton, retaining every
- * explicit source heading and appending only AI chapters absent from the source.
+ * Merges AI-generated details into the source chapter skeleton. Explicit source
+ * headings are authoritative: AI may add summaries, but it cannot rename or
+ * invent numbered chapters that are not present in the source.
  */
 export function mergeOutlineWithSourceChapters(
   sourceChapters: OutlineItem[],
@@ -289,13 +285,15 @@ export function mergeOutlineWithSourceChapters(
     }
 
     const sourceItem = merged[match.index];
-    const aiTitleWithPrefix = stripChapterHeading(aiItem.title, aiItem.chapter);
-    if (aiTitleWithPrefix) sourceItem.title = aiTitleWithPrefix;
     if (aiItem.summary?.trim()) sourceItem.summary = aiItem.summary.trim();
     matchedSourceIndexes.add(match.index);
   }
 
-  return [...merged, ...unmatchedAi].sort(compareOutlineItems);
+  // Once the source exposes explicit chapter headings, it is the only source
+  // of chapter identity. Unmatched AI items are summaries/titles invented from
+  // the batch and must not create duplicate or renamed chapters in the sidebar.
+  const allowedUnmatchedAi = sourceChapters.length === 0 ? unmatchedAi : [];
+  return [...merged, ...allowedUnmatchedAi].sort(compareOutlineItems);
 }
 
 /**

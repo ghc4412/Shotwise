@@ -149,8 +149,10 @@ vi.mock("./reference/AdReferenceVideoCanvas", () => ({
 
 vi.mock("./grid/GridImageToVideoCanvas", () => ({
   GridImageToVideoCanvas: ({
+    onBatchGenerateStoryboards,
     onGenerateGrid,
   }: {
+    onBatchGenerateStoryboards?: () => void | Promise<void>;
     onGenerateGrid?: (
       episode: number,
       scriptFile: string,
@@ -158,6 +160,7 @@ vi.mock("./grid/GridImageToVideoCanvas", () => ({
     ) => void | Promise<void>;
   }) => (
     <div data-testid="grid-canvas">
+      <button onClick={() => void onBatchGenerateStoryboards?.()}>batch-generate-storyboards</button>
       <button onClick={() => void onGenerateGrid?.(1, "episode_1.json")}>generate-grid</button>
     </div>
   ),

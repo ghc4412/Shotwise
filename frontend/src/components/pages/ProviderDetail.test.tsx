@@ -106,6 +106,85 @@ describe("pages/ProviderDetail preset model list", () => {
     expect(screen.getByText("gemini-3-flash-preview")).toBeInTheDocument();
   });
 
+  it("updates the model list with models discovered by connection testing", async () => {
+    const testResult = {
+      success: true,
+      available_models: ["veo-3.1-generate-preview", "vendor-new-model"],
+      model_types: {
+        "veo-3.1-generate-preview": "video",
+        "vendor-new-model": "image",
+      },
+      message: "连接成功",
+    };
+    vi.spyOn(API, "getProviderConfig").mockResolvedValue(mockDetail());
+    vi.spyOn(API, "listCredentials").mockResolvedValue({ credentials: [
+      {
+        id: 1,
+        provider: "gemini-aistudio",
+        name: "默认账号",
+        api_key_masked: "sk-x…abcd",
+        credentials_filename: null,
+        base_url: null,
+        is_active: true,
+        created_at: "2026-06-01T00:00:00Z",
+      },
+    ] });
+    vi.spyOn(API, "testProviderConnection").mockResolvedValue(testResult);
+
+    render(<ProviderDetail providerId="gemini-aistudio" />);
+    await screen.findByText("模型列表");
+    fireEvent.click(await screen.findByRole("button", { name: /测试 默认账号 连接/ }));
+
+    await waitFor(() => expect(screen.getByText("vendor-new-model")).toBeInTheDocument());
+    const newModelRow = screen.getByText("vendor-new-model").parentElement;
+    expect(within(newModelRow!).getByText("图片")).toBeInTheDocument();
+    expect(screen.queryByText("已发现模型")).not.toBeInTheDocument();
+    expect(screen.getAllByText("veo-3.1-generate-preview")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "图片" }));
+    expect(screen.getByText("vendor-new-model")).toBeInTheDocument();
+    expect(screen.queryByText("veo-3.1-generate-preview")).not.toBeInTheDocument();
+  });
+
+  it("restores persisted discovered models after loading the provider config", async () => {
+    await renderDetail({
+      models: undefined,
+      discovered_models: ["vendor-video"],
+      model_type_overrides: { "vendor-video": "video" },
+    });
+
+    expect(screen.getByText("vendor-video")).toBeInTheDocument();
+    const modelRow = screen.getByText("vendor-video").parentElement;
+    expect(within(modelRow!).getByText("视频")).toBeInTheDocument();
+  });
+
+  it("persists a manually selected type for a discovered model", async () => {
+    vi.spyOn(API, "patchProviderModelTypes").mockResolvedValue({
+      model_type_overrides: { "vendor-unknown": "video" },
+      discovered_models: ["vendor-unknown"],
+    });
+
+    await renderDetail({
+      models: undefined,
+      discovered_models: ["vendor-unknown"],
+      model_type_overrides: {},
+    });
+
+    const modelRow = screen.getByText("vendor-unknown").parentElement;
+    const typeSelect = within(modelRow!).getByRole("combobox", { name: /设置模型类型: vendor-unknown/ });
+    expect(typeSelect).toHaveValue("unknown");
+
+    fireEvent.change(typeSelect, { target: { value: "video" } });
+
+    await waitFor(() => {
+      expect(API.patchProviderModelTypes).toHaveBeenCalledWith("gemini-aistudio", {
+        "vendor-unknown": "video",
+      });
+    });
+    expect(typeSelect).toHaveValue("video");
+    expect(within(modelRow!).getByText("视频")).toBeInTheDocument();
+  });
+
   it("renders no model section when detail has no models", async () => {
     vi.spyOn(API, "getProviderConfig").mockResolvedValue(mockDetail({ models: undefined }));
     vi.spyOn(API, "listCredentials").mockResolvedValue({ credentials: [] });

@@ -49,6 +49,7 @@ interface TimelineCanvasProps {
   durationOptions?: number[];
   /** 已保存时长越界的成因判定；缺省时 ShotDetail 退回不区分成因的通用警告文案。 */
   durationWarningReason?: (seconds: number) => DurationOutOfRangeReason | null;
+  focusSegment?: { id: string; requestId: number } | null;
   onRestoreStoryboard?: () => Promise<void> | void;
   onRestoreVideo?: () => Promise<void> | void;
   onSaveTitle?: (next: string) => Promise<void>;
@@ -389,6 +390,7 @@ export function TimelineCanvas(props: TimelineCanvasProps) {
                 generatingNarration={generatingNarration}
                 durationOptions={durationOptions}
                 durationWarningReason={durationWarningReason}
+                focusSegment={props.focusSegment}
               />
             </div>
           </div>

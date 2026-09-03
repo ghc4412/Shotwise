@@ -64,15 +64,15 @@ class TestCapabilities:
     def test_t2i_and_i2i(self):
         from lib.image_backends.agnes import AgnesImageBackend
 
-        b = AgnesImageBackend(api_key="sk", model="agnes-image-2.1-flash")
+        b = AgnesImageBackend(api_key="sk", model="agnes-image-2.5-flash")
         assert b.name == PROVIDER_AGNES
-        assert b.model == "agnes-image-2.1-flash"
+        assert b.model == "agnes-image-2.5-flash"
         assert b.capabilities == {ImageCapability.TEXT_TO_IMAGE, ImageCapability.IMAGE_TO_IMAGE}
 
     def test_default_model_when_unset(self):
         from lib.image_backends.agnes import AgnesImageBackend
 
-        assert AgnesImageBackend(api_key="sk").model == "agnes-image-2.1-flash"
+        assert AgnesImageBackend(api_key="sk").model == "agnes-image-2.5-flash"
 
     def test_registered_in_factory(self):
         from lib.image_backends import create_backend, get_registered_backends
@@ -90,23 +90,22 @@ class TestTextToImage:
         with p1, p2:
             from lib.image_backends.agnes import AgnesImageBackend
 
-            b = AgnesImageBackend(api_key="sk", model="agnes-image-2.1-flash", base_url="https://apihub.agnes-ai.com")
+            b = AgnesImageBackend(api_key="sk", model="agnes-image-2.5-flash", base_url="https://apihub.agnes-ai.com")
             result = await b.generate(ImageGenerationRequest(prompt="a fox", output_path=tmp_path / "o.png"))
 
         body = client.post.call_args.kwargs["json"]
-        assert body["model"] == "agnes-image-2.1-flash"
+        assert body["model"] == "agnes-image-2.5-flash"
         assert body["prompt"] == "a fox"
-        assert body["n"] == 1
-        # 上游 litellm 网关拒绝 response_format（UnsupportedParamsError）——不得下发
-        assert "response_format" not in body
+        assert "n" not in body
+        assert body["size"] == "2K"
+        assert body["ratio"] == "9:16"
+        assert body["extra_body"] == {"response_format": "url"}
         assert "image" not in body
-        # 默认 aspect_ratio=9:16 精确算、受单边 2048 收口
-        assert body["size"] == "1152x2048"
         # 端点：base host 派生 /v1 + /images/generations
         assert client.post.call_args.args[0] == "https://apihub.agnes-ai.com/v1/images/generations"
         assert client.post.call_args.kwargs["headers"]["Authorization"] == "Bearer sk"
         assert result.provider == PROVIDER_AGNES
-        assert result.model == "agnes-image-2.1-flash"
+        assert result.model == "agnes-image-2.5-flash"
         assert result.image_uri == "https://x/out.png"
         download.assert_called_once()
 
@@ -124,7 +123,7 @@ class TestTextToImage:
 
 
 class TestDimensions:
-    async def _size(self, tmp_path: Path, **req_kwargs) -> str:
+    async def _body(self, tmp_path: Path, **req_kwargs) -> dict:
         client = _mock_client(_img_response())
         download = AsyncMock()
         p1, p2 = _patches(client, download)
@@ -133,29 +132,35 @@ class TestDimensions:
 
             b = AgnesImageBackend(api_key="sk")
             await b.generate(ImageGenerationRequest(prompt="x", output_path=tmp_path / "o.png", **req_kwargs))
-        return client.post.call_args.kwargs["json"]["size"]
+        return client.post.call_args.kwargs["json"]
 
-    async def test_landscape_picks_wide(self, tmp_path: Path):
-        assert await self._size(tmp_path, aspect_ratio="16:9") == "2048x1152"
+    async def test_landscape_uses_ratio_with_default_2k(self, tmp_path: Path):
+        body = await self._body(tmp_path, aspect_ratio="16:9")
+        assert body["size"] == "2K"
+        assert body["ratio"] == "16:9"
 
-    async def test_square(self, tmp_path: Path):
-        assert await self._size(tmp_path, aspect_ratio="1:1") == "1440x1440"
+    async def test_square_uses_ratio_with_default_2k(self, tmp_path: Path):
+        body = await self._body(tmp_path, aspect_ratio="1:1")
+        assert body["size"] == "2K"
+        assert body["ratio"] == "1:1"
 
     async def test_explicit_1k_tier(self, tmp_path: Path):
-        assert await self._size(tmp_path, aspect_ratio="9:16", image_size="1K") == "1008x1792"
+        body = await self._body(tmp_path, aspect_ratio="9:16", image_size="1K")
+        assert body["size"] == "1K"
+        assert body["ratio"] == "9:16"
 
     async def test_custom_pixel_strips_embedded_ratio(self, tmp_path: Path):
         # 自定义像素 16:9 的 1920*1080 只贡献 min=1080 当短边，比例仍由项目 aspect_ratio=9:16 决定
-        size = await self._size(tmp_path, aspect_ratio="9:16", image_size="1920*1080")
-        w, h = (int(v) for v in size.split("x"))
+        body = await self._body(tmp_path, aspect_ratio="9:16", image_size="1920*1080")
+        w, h = (int(v) for v in body["size"].split("x"))
         assert w * 16 == h * 9 and w < h
+        assert "ratio" not in body
 
-    @pytest.mark.parametrize("aspect", ["9:16", "16:9", "1:1", "3:4", "4:3", "2:3", "3:2"])
-    async def test_dims_multiple_of_8(self, tmp_path: Path, aspect: str):
-        size = await self._size(tmp_path, aspect_ratio=aspect)
-        w, h = (int(v) for v in size.split("x"))
-        assert w % 8 == 0 and h % 8 == 0
-        assert max(w, h) <= 2048
+    @pytest.mark.parametrize("tier", ["1K", "2K", "3K", "4K"])
+    async def test_supported_tiers_use_ratio(self, tmp_path: Path, tier: str):
+        body = await self._body(tmp_path, aspect_ratio="3:2", image_size=tier)
+        assert body["size"] == tier
+        assert body["ratio"] == "3:2"
 
 
 class TestImageToImage:
@@ -172,12 +177,14 @@ class TestImageToImage:
                 ImageGenerationRequest(prompt="hero", output_path=tmp_path / "o.png", reference_images=refs)
             )
 
-        images = client.post.call_args.kwargs["json"]["image"]
+        body = client.post.call_args.kwargs["json"]
+        images = body["extra_body"]["image"]
         assert isinstance(images, list)
         assert len(images) == 2
         assert all(item.startswith("data:image/png;base64,") for item in images)
         # I2I 仍显式下发 size
-        assert "size" in client.post.call_args.kwargs["json"]
+        assert "size" in body
+        assert "image" not in body
 
     async def test_missing_ref_raises_unreadable(self, tmp_path: Path):
         from lib.image_backends.agnes import AgnesImageBackend
@@ -351,8 +358,8 @@ class TestPricing:
         from lib.pricing.strategies import PricingParams, calculate_pricing
         from lib.pricing.types import PerImageFlat
 
-        pricing = lookup_pricing(PROVIDER_AGNES, "agnes-image-2.1-flash", "image")
+        pricing = lookup_pricing(PROVIDER_AGNES, "agnes-image-2.5-flash", "image")
         assert isinstance(pricing, PerImageFlat)
-        amount, currency = calculate_pricing(pricing, PricingParams(call_type="image", model="agnes-image-2.1-flash"))
+        amount, currency = calculate_pricing(pricing, PricingParams(call_type="image", model="agnes-image-2.5-flash"))
         assert amount == pytest.approx(0.003)
         assert currency == "USD"

@@ -53,7 +53,11 @@ describe("EpisodeDurationPlanPanel", () => {
     const onApplied = vi.fn();
     render(<EpisodeDurationPlanPanel projectName="demo" episode={1} onApplied={onApplied} />);
 
+    await screen.findByText("展开时长规划");
+    fireEvent.click(screen.getByRole("button", { name: /展开时长规划/ }));
     await screen.findByDisplayValue(20);
+    expect(screen.getByText("当前规划时长：")).toBeInTheDocument();
+    expect(screen.getByText("10s")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "预览调整" }));
     expect(await screen.findByText("应用时长调整？")).toBeInTheDocument();
     expect(screen.getByText("4s → 8s")).toBeInTheDocument();
@@ -68,7 +72,9 @@ describe("EpisodeDurationPlanPanel", () => {
   it("toggles a per-shot duration lock with the current revision", async () => {
     render(<EpisodeDurationPlanPanel projectName="demo" episode={1} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /S1/ }));
+    await screen.findByText("展开时长规划");
+    fireEvent.click(screen.getByRole("button", { name: /展开时长规划/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "锁定分镜 S1 的时长" }));
     await waitFor(() =>
       expect(API.setEpisodeDurationLock).toHaveBeenCalledWith("demo", 1, "S1", "rev-1", true),
     );

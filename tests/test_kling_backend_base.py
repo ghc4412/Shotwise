@@ -62,6 +62,14 @@ class TestDualModeAuthViaBase:
         claims = jwt.decode(token, _SECRET, algorithms=["HS256"], options={"verify_exp": False})
         assert claims["iss"] == "ak-1"
 
+    @pytest.mark.parametrize(
+        "base_url",
+        ["https://api-beijing.klingai.com", "https://api-beijing.klingai.com/"],
+    )
+    def test_host_only_base_url_includes_kling_v1_path(self, base_url):
+        backend = KlingImageBackend(auth_mode="bearer", api_key="static-key", base_url=base_url)
+        assert backend._base_url == "https://api-beijing.klingai.com/v1"
+
     def test_bearer_mode_uses_static_key(self):
         backend = KlingVideoBackend(auth_mode="bearer", api_key="static-key")
         assert backend._headers()["Authorization"] == "Bearer static-key"

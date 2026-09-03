@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ContentBlock } from "@/types";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
@@ -143,18 +143,37 @@ function extractSkillArgs(input: Record<string, unknown> | undefined): string {
 
 function StandaloneToolResult({ block }: Readonly<{ block: ContentBlock }>) {
   const { t } = useTranslation("dashboard");
+  const [isExpanded, setIsExpanded] = useState(false);
+  const detailsId = useId();
+  const label = block.is_error ? t("tool_call_error_label") : t("tool_call_result_label");
+  const toggleLabel = isExpanded ? t("tool_call_collapse") : t("tool_call_expand");
   return (
-    <div className="my-1.5 rounded-lg border border-white/10 bg-ink-800/30 px-3 py-2">
-      <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">
-        {block.is_error ? t("tool_call_error_label") : t("tool_call_result_label")}
-      </div>
-      <pre className="text-xs text-slate-300 overflow-x-auto whitespace-pre-wrap">
-        {typeof block.content === "string"
-          ? block.content
-          : block.content
-            ? JSON.stringify(block.content, null, 2)
-            : ""}
-      </pre>
+    <div className="my-1.5 overflow-hidden rounded-lg border border-white/10 bg-ink-800/30">
+      <button
+        type="button"
+        aria-expanded={isExpanded}
+        aria-controls={detailsId}
+        aria-label={toggleLabel}
+        title={toggleLabel}
+        onClick={() => setIsExpanded((expanded) => !expanded)}
+        className="flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-white/5"
+      >
+        <span className="text-[10px] uppercase tracking-wide text-slate-500">{label}</span>
+        <span aria-hidden="true" className="text-[10px] text-slate-500">
+          {isExpanded ? "▼" : "▶"}
+        </span>
+      </button>
+      {isExpanded && (
+        <div id={detailsId} className="border-t border-white/10 px-3 py-2">
+          <pre className="max-h-48 overflow-x-auto overflow-y-auto whitespace-pre-wrap text-xs text-slate-300">
+            {typeof block.content === "string"
+              ? block.content
+              : block.content
+                ? JSON.stringify(block.content, null, 2)
+                : ""}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }

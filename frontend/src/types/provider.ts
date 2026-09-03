@@ -4,6 +4,8 @@
  */
 export type VoiceConsistencyTier = "native" | "soft" | "none";
 
+export type ModelMediaType = "image" | "video" | "text" | "audio" | "unknown";
+
 export interface ModelInfoResponse {
   display_name: string;
   media_type: string;
@@ -80,11 +82,17 @@ export interface ProviderConfigDetail {
   // 注册表声明的模型清单（model_id -> 模型信息；只读展示，真相源：PROVIDER_REGISTRY）。
   // 与 /providers 目录端点同构；预置供应商模型不落 DB、不可编辑，可编辑模型走自定义供应商。
   models?: Record<string, ModelInfoResponse>;
+  // Persisted display-only type overrides for discovered, unregistered models.
+  model_type_overrides?: Record<string, ModelMediaType>;
+  // Persisted model IDs discovered by the provider connection test.
+  discovered_models?: string[];
 }
 
 export interface ProviderTestResult {
   success: boolean;
   available_models: string[];
+  // Optional for compatibility with older backend responses.
+  model_types?: Record<string, string>;
   message: string;
 }
 

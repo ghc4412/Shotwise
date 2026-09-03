@@ -49,22 +49,22 @@ class TestRegistryHit:
         assert pricing.currency == "CNY"
 
     def test_agnes_text_per_token(self):
-        pricing = lookup_pricing("agnes", "agnes-2.0-flash", "text")
+        pricing = lookup_pricing("agnes", "agnes-2.5-flash", "text")
         assert isinstance(pricing, PerToken)
         assert pricing.currency == "USD"
         # 输入 $0.03 / 输出 $0.15 每 1M tokens
-        assert pricing.rates["agnes-2.0-flash"] == {"input": 0.03, "output": 0.15}
+        assert pricing.rates["agnes-2.5-flash"] == {"input": 0.03, "output": 0.15}
 
     def test_agnes_video_flat_per_second(self):
         from lib.pricing.strategies import PricingParams, calculate_pricing
 
-        pricing = lookup_pricing("agnes", "agnes-video-v2.0", "video")
+        pricing = lookup_pricing("agnes", "agnes-video-2.5", "video")
         assert isinstance(pricing, PerSecondMatrix)
         assert pricing.dimensions == "flat"
         assert pricing.currency == "USD"
         # flat 按秒 $0.005/s，与分辨率/音频无关
         amount, currency = calculate_pricing(
-            pricing, PricingParams(call_type="video", model="agnes-video-v2.0", duration_seconds=10)
+            pricing, PricingParams(call_type="video", model="agnes-video-2.5", duration_seconds=10)
         )
         assert amount == pytest.approx(0.05)
         assert currency == "USD"
@@ -124,7 +124,7 @@ class TestUnknownModelFallback:
         with caplog.at_level(logging.WARNING, logger="lib.pricing.lookup"):
             pricing = lookup_pricing("agnes", "agnes-image-2.0-unregistered", "image")
         assert isinstance(pricing, PerImageFlat)
-        assert pricing.rates["agnes-image-2.1-flash"] == 0.003
+        assert pricing.rates["agnes-image-2.5-flash"] == 0.003
         assert pricing.currency == "USD"
         assert any("agnes-image-2.0-unregistered" in r.getMessage() for r in caplog.records)
 
@@ -134,7 +134,7 @@ class TestUnknownModelFallback:
         with caplog.at_level(logging.WARNING, logger="lib.pricing.lookup"):
             pricing = lookup_pricing("agnes", "agnes-2.0-unregistered", "text")
         assert isinstance(pricing, PerToken)
-        assert pricing.rates["agnes-2.0-flash"] == {"input": 0.03, "output": 0.15}
+        assert pricing.rates["agnes-2.5-flash"] == {"input": 0.03, "output": 0.15}
         assert pricing.currency == "USD"
         assert any("agnes-2.0-unregistered" in r.getMessage() for r in caplog.records)
 

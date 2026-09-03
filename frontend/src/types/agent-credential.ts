@@ -7,6 +7,8 @@
 
 export type AgentSdkType = "claude" | "openai";
 
+export type AgentProtocol = "chat_completions" | "responses" | "anthropic_messages";
+
 export interface PresetProvider {
   id: string;
   sdk_type: AgentSdkType;
@@ -53,6 +55,7 @@ export interface AgentDiscoveredModel {
 export interface AgentCredential {
   id: number;
   sdk_type: AgentSdkType;
+  protocol: AgentProtocol;
   preset_id: string;
   display_name: string;
   icon_key: string | null;
@@ -70,6 +73,7 @@ export interface AgentCredential {
 
 export interface CreateAgentCredentialRequest {
   sdk_type?: AgentSdkType;
+  protocol?: AgentProtocol;
   preset_id: string;
   display_name?: string | null;
   base_url?: string | null;
@@ -120,6 +124,7 @@ export interface TestConnectionResponse {
 
 export interface TestConnectionRequest {
   sdk_type?: AgentSdkType;
+  protocol?: AgentProtocol;
   preset_id?: string | null;
   base_url?: string | null;
   api_key: string;

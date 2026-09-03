@@ -5,6 +5,7 @@ import type {
   WorkspaceNotification,
   WorkspaceNotificationInput,
   WorkspaceNotificationTarget,
+  WorkspaceNotificationUpdate,
 } from "@/types";
 import { DEFAULT_ASSISTANT_SKIN_ID, isAssistantSkinId } from "@/utils/assistant-skins";
 
@@ -177,7 +178,8 @@ interface AppState {
   ) => void;
   clearToast: () => void;
   workspaceNotifications: WorkspaceNotification[];
-  pushWorkspaceNotification: (input: WorkspaceNotificationInput) => void;
+  pushWorkspaceNotification: (input: WorkspaceNotificationInput) => string;
+  updateWorkspaceNotification: (id: string, updates: WorkspaceNotificationUpdate) => void;
   markWorkspaceNotificationRead: (id: string) => void;
   markAllWorkspaceNotificationsRead: () => void;
   removeWorkspaceNotification: (id: string) => void;
@@ -339,12 +341,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
   clearToast: () => set({ toast: null }),
   workspaceNotifications: [],
-  pushWorkspaceNotification: (input) =>
+  pushWorkspaceNotification: (input) => {
+    const notification = buildWorkspaceNotification(input);
     set((s) => ({
       workspaceNotifications: [
-        buildWorkspaceNotification(input),
+        notification,
         ...s.workspaceNotifications,
       ].slice(0, MAX_WORKSPACE_NOTIFICATIONS),
+    }));
+    return notification.id;
+  },
+  updateWorkspaceNotification: (id, updates) =>
+    set((s) => ({
+      workspaceNotifications: s.workspaceNotifications.map((item) =>
+        item.id === id ? { ...item, ...updates } : item
+      ),
     })),
   markWorkspaceNotificationRead: (id) =>
     set((s) => ({

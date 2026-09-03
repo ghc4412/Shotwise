@@ -142,6 +142,20 @@ class TestApiModelNameResolution:
         payload = _jwt_backend()._build_payload(_request(tmp_path))
         assert payload["model_name"] == "kling-image-o1"
 
+    def test_omni_model_uses_omni_payload_fields(self, tmp_path):
+        refs = [_ref(tmp_path, "a.png"), _ref(tmp_path, "b.png")]
+        backend = _jwt_backend("kling-v3-omni-image", api_model_name="kling-v3-omni")
+        payload = backend._build_payload(_request(tmp_path, reference_images=refs, image_size="2K"))
+
+        assert payload["model_name"] == "kling-v3-omni"
+        assert payload["resolution"] == "2k"
+        assert "image" not in payload
+        assert len(payload["image_list"]) == 2
+        assert all(item.keys() == {"image"} for item in payload["image_list"])
+        assert all(
+            isinstance(item["image"], str) and not item["image"].startswith("data:") for item in payload["image_list"]
+        )
+
 
 class TestPayloadBuilding:
     def test_text2image_no_reference(self, tmp_path):
@@ -214,6 +228,22 @@ class TestGenerateHappyPath:
         dl.assert_awaited_once()
         # images/generations 提交端点
         assert post.await_args.args[0].endswith("/images/generations")
+
+    async def test_omni_submit_poll_uses_omni_endpoint(self, tmp_path):
+        post = AsyncMock(return_value=_resp(_submit("omni-task")))
+        get = AsyncMock(return_value=_resp(_query("succeed", urls=["https://x/omni.png"])))
+        client = _client(post=post, get=get)
+        backend = _jwt_backend("kling-v3-omni-image", api_model_name="kling-v3-omni")
+        with (
+            patch("lib.image_backends.kling.httpx.AsyncClient", return_value=client),
+            patch("lib.image_backends.kling._POLL_INTERVAL_SECONDS", 0),
+            patch("lib.image_backends.kling.download_image_to_path", new=AsyncMock()),
+        ):
+            result = await backend.generate(_request(tmp_path, image_size="1K"))
+
+        assert result.image_uri == "https://x/omni.png"
+        assert post.await_args.args[0].endswith("/images/omni-image")
+        assert get.await_args.args[0].endswith("/images/omni-image/omni-task")
 
     async def test_multiple_images_takes_first(self, tmp_path):
         post = AsyncMock(return_value=_resp(_submit()))

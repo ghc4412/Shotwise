@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentFailureError, API } from "@/api";
+import { useAppStore } from "@/stores/app-store";
 import { useAssistantStore } from "@/stores/assistant-store";
 import type { EntriesResponse, PendingQuestion, SessionMeta, SkillInfo, TimelineEntry } from "@/types";
 import { useAssistantSession } from "./useAssistantSession";
@@ -98,6 +99,7 @@ function mockIdleSession(entries: TimelineEntry[] = []) {
 
 describe("useAssistantSession", () => {
   beforeEach(() => {
+    useAppStore.setState(useAppStore.getInitialState(), true);
     useAssistantStore.setState(useAssistantStore.getInitialState(), true);
     MockEventSource.instances = [];
     localStorage.clear();
@@ -146,6 +148,87 @@ describe("useAssistantSession", () => {
     const state = useAssistantStore.getState();
     expect(state.entries.map((e) => e.seq)).toEqual([0, 1]);
     expect(state.turns.map((t) => t.type)).toEqual(["user", "assistant"]);
+  });
+
+  it("mirrors agent task progress into one workspace notification and updates its tone", async () => {
+    vi.spyOn(API, "listAssistantSessions").mockResolvedValue({
+      sessions: [makeSession("session-1", "running")],
+    });
+    vi.spyOn(API, "getAssistantSession").mockResolvedValue({ session: makeSession("session-1", "running") });
+
+    renderHook(() => useAssistantSession("demo"));
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
+
+    act(() => {
+      MockEventSource.instances[0].emit("entry", {
+        seq: 0,
+        type: "system",
+        subtype: "task_started",
+        task_id: "task-1",
+        description: "分析剧本",
+      });
+      MockEventSource.instances[0].emit("entry", {
+        seq: 1,
+        type: "system",
+        subtype: "task_progress",
+        task_id: "task-1",
+        description: "分析第 2 章",
+        usage: { total_tokens: 128 },
+      });
+    });
+
+    expect(useAppStore.getState().workspaceNotifications).toHaveLength(1);
+    expect(useAppStore.getState().workspaceNotifications[0]).toEqual(
+      expect.objectContaining({ text: expect.stringContaining("分析第 2 章"), tone: "info" }),
+    );
+
+    act(() => {
+      MockEventSource.instances[0].emit("entry", {
+        seq: 2,
+        type: "system",
+        subtype: "task_notification",
+        task_id: "task-1",
+        description: "分析第 2 章",
+        summary: "已完成章节分析",
+        task_status: "completed",
+      });
+    });
+
+    expect(useAppStore.getState().workspaceNotifications).toHaveLength(1);
+    expect(useAppStore.getState().workspaceNotifications[0]).toEqual(
+      expect.objectContaining({ text: expect.stringContaining("已完成章节分析"), tone: "success" }),
+    );
+  });
+
+  it("keeps agent task notifications separate by task id and closes unfinished tasks on session error", async () => {
+    vi.spyOn(API, "listAssistantSessions").mockResolvedValue({
+      sessions: [makeSession("session-1", "running")],
+    });
+    vi.spyOn(API, "getAssistantSession").mockResolvedValue({ session: makeSession("session-1", "running") });
+
+    renderHook(() => useAssistantSession("demo"));
+    await waitFor(() => expect(MockEventSource.instances).toHaveLength(1));
+
+    act(() => {
+      MockEventSource.instances[0].emit("entry", {
+        seq: 0,
+        type: "system",
+        subtype: "task_started",
+        task_id: "task-1",
+        description: "读取素材",
+      });
+      MockEventSource.instances[0].emit("entry", {
+        seq: 1,
+        type: "system",
+        subtype: "task_started",
+        task_id: "task-2",
+        description: "整理素材",
+      });
+      MockEventSource.instances[0].emit("status", { status: "error" });
+    });
+
+    expect(useAppStore.getState().workspaceNotifications).toHaveLength(2);
+    expect(useAppStore.getState().workspaceNotifications.every((item) => item.tone === "error")).toBe(true);
   });
 
   it("applies draft snapshot and rev-gated deltas, then replaces draft by message_id identity", async () => {
@@ -2122,6 +2205,7 @@ describe("useAssistantSession", () => {
         {
           id: 1,
           sdk_type: "openai",
+          protocol: "chat_completions",
           preset_id: "deepseek-openai",
           display_name: "DeepSeek (OpenAI)",
           icon_key: "DeepSeek",
@@ -2183,6 +2267,7 @@ describe("useAssistantSession", () => {
         {
           id: 1,
           sdk_type: "openai",
+          protocol: "chat_completions",
           preset_id: "deepseek-openai",
           display_name: "DeepSeek (OpenAI)",
           icon_key: "DeepSeek",
