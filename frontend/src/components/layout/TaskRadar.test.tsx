@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { API } from "@/api";
 import { TaskRadar, isReviewTask, matchesRadarFilter, taskProgress } from "@/components/layout/TaskRadar";
+import { useAppStore } from "@/stores/app-store";
 import { useProjectsStore } from "@/stores/projects-store";
 import { useTasksStore } from "@/stores/tasks-store";
 import { makeTask } from "@/test/factories";
@@ -9,6 +10,7 @@ import { makeTask } from "@/test/factories";
 describe("TaskRadar", () => {
   beforeEach(() => {
     useProjectsStore.setState({ currentProjectName: null, currentProjectData: null });
+    useAppStore.setState({ toast: null });
     useTasksStore.setState({ tasks: [], stats: { queued: 0, running: 0, cancelling: 0, succeeded: 0, failed: 0, cancelled: 0, total: 0 } });
   });
 
@@ -87,13 +89,15 @@ describe("TaskRadar", () => {
       expect(cancelAll).toHaveBeenCalledWith("proj");
       expect(refreshTasks).toHaveBeenCalledTimes(1);
     });
+    expect(useAppStore.getState().toast?.text).toBe("已停止 1 个排队任务");
+    expect(useAppStore.getState().toast?.tone).toBe("success");
   });
 
-  it("disables stopping when the current project has no queued tasks", () => {
+  it("hides stopping when the current project has no queued tasks", () => {
     useProjectsStore.setState({ currentProjectName: "proj" });
     render(<TaskRadar />);
     fireEvent.click(screen.getByRole("button", { name: "Open task radar" }));
 
-    expect(screen.getByRole("button", { name: "停止当前项目所有排队任务" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "停止当前项目所有排队任务" })).not.toBeInTheDocument();
   });
 });

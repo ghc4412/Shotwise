@@ -124,6 +124,7 @@ export function TaskRadar() {
   const { tasks, stats, refreshTasks } = useTasksStore();
   const { currentProjectData, currentProjectName } = useProjectsStore();
   const setTaskHudOpen = useAppStore((s) => s.setTaskHudOpen);
+  const pushToast = useAppStore((s) => s.pushToast);
   const triggerScrollTo = useAppStore((s) => s.triggerScrollTo);
 
   useEscapeClose(() => {
@@ -148,21 +149,38 @@ export function TaskRadar() {
         setStopConfirm({ count: queued_count, projectName: currentProjectName });
       }
     } catch {
-      // The task list will reconcile on its next refresh if the preview races with completion.
+      pushToast(t("task_radar_stop_error"), "error");
     }
-  }, [currentProjectName, stats.queued, stopping]);
+  }, [currentProjectName, pushToast, stats.queued, stopping, t]);
 
   const confirmStopAll = useCallback(async () => {
     if (!stopConfirm) return;
     setStopping(true);
     try {
-      await API.cancelAllQueued(stopConfirm.projectName);
-      await refreshTasks();
+      const result = await API.cancelAllQueued(stopConfirm.projectName);
+      if (result.skipped_running_count > 0) {
+        pushToast(
+          t("task_radar_stop_partial", {
+            cancelled: result.cancelled_count,
+            skipped: result.skipped_running_count,
+          }),
+          "warning",
+        );
+      } else {
+        pushToast(t("task_radar_stop_success", { count: result.cancelled_count }), "success");
+      }
+    } catch {
+      pushToast(t("task_radar_stop_error"), "error");
     } finally {
+      try {
+        await refreshTasks();
+      } catch {
+        // The cancellation result is already reported; the next task refresh will reconcile the list.
+      }
       setStopping(false);
       setStopConfirm(null);
     }
-  }, [refreshTasks, stopConfirm]);
+  }, [pushToast, refreshTasks, stopConfirm, t]);
 
   const openTask = (task: TaskItem) => {
     setOpen(false);
@@ -204,17 +222,19 @@ export function TaskRadar() {
             <div className="grid min-w-0 flex-1 grid-cols-5 gap-1">
               {filters.map((item) => <button key={item.id} type="button" className="rounded px-1 py-1.5 text-[10px] transition-colors focus-ring" style={{ color: filter === item.id ? "var(--color-text-1)" : "var(--color-text-4)", background: filter === item.id ? "var(--color-accent-dim)" : "transparent" }} onClick={() => setFilter(item.id)} aria-pressed={filter === item.id}><span className="block truncate">{item.label}</span><span className="mt-0.5 block tabular-nums">{item.count}</span></button>)}
             </div>
-            <button
-              type="button"
-              className="focus-ring inline-flex w-8 shrink-0 items-center justify-center rounded border transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-              style={{ color: "oklch(0.72 0.18 25)", borderColor: "oklch(0.72 0.18 25 / 0.35)", background: "oklch(0.72 0.18 25 / 0.06)" }}
-              onClick={() => void handleStopAll()}
-              disabled={!currentProjectName || stats.queued <= 0 || stopping}
-              aria-label={t("task_radar_stop_all_aria")}
-              title={t("task_radar_stop_all")}
-            >
-              {stopping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5 fill-current" />}
-            </button>
+            {currentProjectName && stats.queued > 0 && (
+              <button
+                type="button"
+                className="focus-ring inline-flex w-8 shrink-0 items-center justify-center rounded border transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                style={{ color: "oklch(0.72 0.18 25)", borderColor: "oklch(0.72 0.18 25 / 0.35)", background: "oklch(0.72 0.18 25 / 0.06)" }}
+                onClick={() => void handleStopAll()}
+                disabled={stopping}
+                aria-label={t("task_radar_stop_all_aria")}
+                title={t("task_radar_stop_all")}
+              >
+                {stopping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5 fill-current" />}
+              </button>
+            )}
           </div>
           {stopConfirm && (
             <div className="mt-2 rounded-md px-2.5 py-2" role="alertdialog" aria-label={t("task_radar_stop_confirm_aria")} style={{ background: "oklch(0.72 0.18 25 / 0.08)", border: "1px solid oklch(0.72 0.18 25 / 0.22)" }}>

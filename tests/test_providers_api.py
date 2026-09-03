@@ -847,7 +847,7 @@ class TestTestProviderConnection:
         body = resp.json()
         assert body["success"] is True
         assert body["available_models"] == ["model-a"]
-        assert body["model_types"] == {"model-a": "text"}
+        assert body["model_types"] == {"model-a": "unknown"}
         assert body["message"] == "连接成功"
         svc.set_provider_config.assert_awaited_once_with(
             "gemini-aistudio",

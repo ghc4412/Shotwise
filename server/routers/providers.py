@@ -885,10 +885,6 @@ def _infer_model_media_type(provider_id: str, model_id: str) -> str:
     if any(token in name for token in ("imagen", "image", "dall-e", "dall", "flux", "stable-diffusion")):
         return "image"
 
-    # The three providers expose text models without a media token in their
-    # IDs. Their remaining discovered models are therefore text models.
-    if provider_id in {"agnes", "gemini-aistudio", "gemini-vertex", "openai"}:
-        return "text"
     return "unknown"
 
 

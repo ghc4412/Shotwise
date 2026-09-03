@@ -316,7 +316,7 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
   const [togglingEnabled, setTogglingEnabled] = useState(false);
   // 模型列表的媒体类型筛选；null = 全部
   const [modelTypeFilter, setModelTypeFilter] = useState<string | null>(null);
-  // 最近一次连接测试从供应商 API 发现的模型及其媒体类型。
+  // 连接测试从供应商 API 发现的模型及其媒体类型。
   const [discoveredModels, setDiscoveredModels] = useState<string[]>([]);
   const [discoveredModelTypes, setDiscoveredModelTypes] = useState<Record<string, ModelMediaType>>({});
 
@@ -347,7 +347,7 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
 
   const handleCredentialTested = useCallback(
     (result: ProviderTestResult) => {
-      // 失败时保留上一次成功发现的结果，避免一次临时网络错误清空模型列表。
+      // 失败时保留已有发现结果，避免临时网络错误清空模型列表。
       if (result.success) {
         const registered = detail?.models ?? {};
         const discoveredTypes: Record<string, ModelMediaType> = {};
@@ -385,7 +385,7 @@ export function ProviderDetail({ providerId, onSaved }: Props) {
     [providerId],
   );
 
-  // 用户编辑草稿时同步清掉上一次保存失败的错误，避免旧文案滞留误导
+  // 用户编辑草稿时清掉保存失败的错误，避免旧文案滞留误导
   const handleDraftEdit = useCallback<React.Dispatch<React.SetStateAction<Record<string, string>>>>((action) => {
     setSaveError(null);
     setDraft(action);
