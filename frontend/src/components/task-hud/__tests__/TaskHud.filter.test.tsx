@@ -286,5 +286,3 @@ describe("TaskHud status filter", () => {
     }
   });
 });
-
-

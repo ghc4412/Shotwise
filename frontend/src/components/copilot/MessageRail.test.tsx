@@ -76,4 +76,3 @@ describe("MessageRail", () => {
     expect(node.querySelector("span")).toHaveStyle({ background: "var(--color-text)" });
   });
 });
-
