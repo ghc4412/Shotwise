@@ -41,8 +41,12 @@ import { useCostStore } from "@/stores/cost-store";
 import { useProjectsStore } from "@/stores/projects-store";
 import { errMsg } from "@/utils/async";
 import {
+  imagePromptToText,
   isStructuredImagePrompt,
   isStructuredVideoPrompt,
+  textToImagePrompt,
+  textToVideoPrompt,
+  videoPromptToText,
 } from "@/utils/prompt-shape";
 import { isContinuousIntegerRange } from "@/utils/duration_format";
 
@@ -69,7 +73,7 @@ interface ShotDetailProps {
     segmentId: string,
     fieldOrPatch: string | Record<string, unknown>,
     value?: unknown,
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
   /** ad 模式镜头顺序调整（向前/向后移动一位） */
   onMoveShot?: (shotId: string, direction: "earlier" | "later") => void | Promise<void>;
   /** 镜头重排请求在途，移动按钮禁用 */
@@ -101,6 +105,24 @@ interface DraftState {
   section?: string;
   /** 仅 drama 模式：场景级有序发声序列草稿（台词 + 画外音） */
   utterances?: Utterance[];
+}
+
+interface PromptSaveError {
+  field?: string;
+  code?: string;
+  message: string;
+}
+
+function promptErrorFromUnknown(error: unknown): PromptSaveError {
+  if (error && typeof error === "object" && "message" in error) {
+    const value = error as Record<string, unknown>;
+    return {
+      field: typeof value.field === "string" ? value.field : undefined,
+      code: typeof value.code === "string" ? value.code : undefined,
+      message: typeof value.message === "string" ? value.message : String(value.message),
+    };
+  }
+  return { message: error instanceof Error ? error.message : String(error) };
 }
 
 // 字段集合稳定（ImagePrompt/VideoPrompt/string），JSON.stringify 即可作等值签名：
@@ -459,6 +481,12 @@ export function ShotDetail({
   const [draft, setDraft] = useState<DraftState>(() =>
     baselineDraft(ip, vp, isAd, upstreamVoiceover, upstreamSection, isDrama, upstreamUtterances),
   );
+  const [committedDraft, setCommittedDraft] = useState<DraftState>(() =>
+    baselineDraft(ip, vp, isAd, upstreamVoiceover, upstreamSection, isDrama, upstreamUtterances),
+  );
+  const [failedDraft, setFailedDraft] = useState<DraftState | null>(null);
+  const [promptError, setPromptError] = useState<PromptSaveError | null>(null);
+  const saveRequestId = useRef(0);
   const [saving, setSaving] = useState(false);
   const [uploadingKind, setUploadingKind] = useState<"storyboard" | "video" | null>(null);
   const [endFrameSubmitting, setEndFrameSubmitting] = useState(false);
@@ -497,16 +525,18 @@ export function ShotDetail({
       ),
     [isAd, ip, vp, upstreamVoiceover, upstreamSection, isDrama, upstreamUtterances],
   );
-  // 上游发声序列签名单独记忆化：dirtyPatch 随每次 keystroke 重算，
-  // 但上游极少变，避免逐键重复序列化整个 upstreamUtterances。
-  const upstreamUtterancesSig = useMemo(() => utterancesSig(upstreamUtterances), [upstreamUtterances]);
   // 上游变更（保存完成 / agent 编辑）：草稿干净时静默跟随；脏时保留用户输入。
   // 渲染阶段状态同步（React 推荐）：本次渲染内直接比对上游签名并校正草稿，
   // 免去 useEffect 的额外渲染周期与依赖项管理。draft 直接读当前渲染值，无需 ref 镜像。
   const [syncedUpstreamSig, setSyncedUpstreamSig] = useState(upstreamSig);
   if (syncedUpstreamSig !== upstreamSig) {
-    if (draftSig(draft, isAd, isDrama) === syncedUpstreamSig) {
-      setDraft(baselineDraft(ip, vp, isAd, upstreamVoiceover, upstreamSection, isDrama, upstreamUtterances));
+    const currentSig = draftSig(draft, isAd, isDrama);
+    if (currentSig === syncedUpstreamSig || currentSig === draftSig(committedDraft, isAd, isDrama)) {
+      const nextCommitted = baselineDraft(ip, vp, isAd, upstreamVoiceover, upstreamSection, isDrama, upstreamUtterances);
+      setDraft(nextCommitted);
+      setCommittedDraft(nextCommitted);
+      setFailedDraft(null);
+      setPromptError(null);
     }
     setSyncedUpstreamSig(upstreamSig);
   }
@@ -515,28 +545,29 @@ export function ShotDetail({
   const dirtyPatch = useMemo<Record<string, unknown>>(() => {
     const patch: Record<string, unknown> = {};
     if (
-      draft.image_prompt !== ip &&
-      stableSig(draft.image_prompt) !== stableSig(ip)
+      draft.image_prompt !== committedDraft.image_prompt &&
+      stableSig(draft.image_prompt) !== stableSig(committedDraft.image_prompt)
     )
       patch.image_prompt = draft.image_prompt;
     if (
-      draft.video_prompt !== vp &&
-      stableSig(draft.video_prompt) !== stableSig(vp)
+      draft.video_prompt !== committedDraft.video_prompt &&
+      stableSig(draft.video_prompt) !== stableSig(committedDraft.video_prompt)
     )
       patch.video_prompt = draft.video_prompt;
     if (isAd) {
-      if ((draft.voiceover_text ?? "") !== upstreamVoiceover)
+      if ((draft.voiceover_text ?? "") !== (committedDraft.voiceover_text ?? ""))
         patch.voiceover_text = draft.voiceover_text ?? "";
-      if ((draft.section ?? "") !== upstreamSection)
+      if ((draft.section ?? "") !== (committedDraft.section ?? ""))
         patch.section = draft.section ?? "";
     }
     if (isDrama) {
       const draftUtterances = draft.utterances ?? EMPTY_UTTERANCES;
-      if (draftUtterances !== upstreamUtterances && utterancesSig(draftUtterances) !== upstreamUtterancesSig)
+      const committedUtterances = committedDraft.utterances ?? EMPTY_UTTERANCES;
+      if (draftUtterances !== committedUtterances && utterancesSig(draftUtterances) !== utterancesSig(committedUtterances))
         patch.utterances = draftUtterances;
     }
     return patch;
-  }, [draft, ip, vp, isAd, upstreamVoiceover, upstreamSection, isDrama, upstreamUtterances, upstreamUtterancesSig]);
+  }, [committedDraft, draft, isAd, isDrama]);
 
   const dirty = Object.keys(dirtyPatch).length > 0;
 
@@ -589,6 +620,34 @@ export function ShotDetail({
     setDraft((d) => ({ ...d, video_prompt: val }));
   };
 
+  const handlePromptShapeToggle = (field: "image_prompt" | "video_prompt") => {
+    setPromptError(null);
+    const value = draft[field];
+    if (field === "image_prompt") {
+      if (isStructuredImagePrompt(value)) {
+        setDraft({ ...draft, image_prompt: imagePromptToText(value) });
+        return;
+      }
+      const result = textToImagePrompt(typeof value === "string" ? value : "");
+      if (result.error) {
+        setPromptError({ field, code: result.error, message: t("shot_detail_prompt_shape_invalid") });
+        return;
+      }
+      setDraft({ ...draft, image_prompt: result.value });
+      return;
+    }
+    if (isStructuredVideoPrompt(value)) {
+      setDraft({ ...draft, video_prompt: videoPromptToText(value) });
+      return;
+    }
+    const result = textToVideoPrompt(typeof value === "string" ? value : "");
+    if (result.error) {
+      setPromptError({ field, code: result.error, message: t("shot_detail_prompt_shape_invalid") });
+      return;
+    }
+    setDraft({ ...draft, video_prompt: result.value });
+  };
+
   const handleNotesCommit = (value: string) => {
     if (value === note) return;
     void onUpdatePrompt?.(segmentId, "note", value);
@@ -596,18 +655,66 @@ export function ShotDetail({
 
   const handleSave = async () => {
     if (!dirty || saving) return;
+    const saveDraft = draft;
+    const savePatch: Record<string, unknown> = { ...dirtyPatch };
+    const requestId = ++saveRequestId.current;
+    const saveSignature = draftSig(saveDraft, isAd, isDrama);
     setSaving(true);
-    try {
-      await onUpdatePrompt?.(segmentId, dirtyPatch);
-      // 上游会刷新 → 渲染阶段同步检测到上游签名变化 → 草稿等于新基线时保持干净
-    } finally {
-      setSaving(false);
+    setPromptError(null);
+
+    // Plain text is an editing projection; persist only the canonical structured
+    // prompt accepted by the script models. Keep the user's text untouched when
+    // it cannot be converted, so they can repair or copy it without data loss.
+    for (const field of ["image_prompt", "video_prompt"] as const) {
+      const value = savePatch[field];
+      if (typeof value !== "string") continue;
+      const result = field === "image_prompt" ? textToImagePrompt(value) : textToVideoPrompt(value);
+      if (result.error) {
+        setPromptError({ field, code: result.error, message: t("shot_detail_prompt_shape_invalid") });
+        setSaving(false);
+        return;
+      }
+      savePatch[field] = result.value;
     }
+    try {
+      const result = await onUpdatePrompt?.(segmentId, savePatch);
+      if (result === false) {
+        throw new Error(t("shot_detail_prompt_save_failed"));
+      }
+      setCommittedDraft(saveDraft);
+      setDraft((current) => (draftSig(current, isAd, isDrama) === saveSignature ? saveDraft : current));
+      setFailedDraft(null);
+    } catch (error) {
+      if (requestId === saveRequestId.current) {
+        const parsedError = promptErrorFromUnknown(error);
+        setFailedDraft(saveDraft);
+        setDraft((current) => (draftSig(current, isAd, isDrama) === saveSignature ? committedDraft : current));
+        setPromptError({
+          ...parsedError,
+          field: parsedError.field ?? (Object.keys(savePatch).length === 1 ? Object.keys(savePatch)[0] : undefined),
+        });
+      }
+    } finally {
+      if (requestId === saveRequestId.current) setSaving(false);
+    }
+  };
+
+  const handleRetry = () => {
+    if (!failedDraft || saving) return;
+    // Keep edits made while the failed request was in flight; restore the failed snapshot
+    // only when the visible draft is still the committed baseline.
+    if (draftSig(draft, isAd, isDrama) === draftSig(committedDraft, isAd, isDrama)) {
+      setDraft(failedDraft);
+    }
+    setFailedDraft(null);
+    setPromptError(null);
   };
 
   const handleCancel = () => {
     if (saving) return;
-    setDraft(baselineDraft(ip, vp, isAd, upstreamVoiceover, upstreamSection, isDrama, upstreamUtterances));
+    setDraft(committedDraft);
+    setFailedDraft(null);
+    setPromptError(null);
   };
 
   const sbEstimate = segCost?.estimate?.image;
@@ -842,6 +949,16 @@ export function ShotDetail({
             {t("detail_image_prompt_title")}
           </span>
           <span className="flex-1" />
+          <button
+            type="button"
+            data-testid="image-prompt-shape-toggle"
+            onClick={() => handlePromptShapeToggle("image_prompt")}
+            disabled={refsReadOnly || saving}
+            className="focus-ring rounded px-1.5 py-0.5 text-[10px]"
+            style={{ color: "var(--color-text-3)", border: "1px solid var(--color-hairline-soft)" }}
+          >
+            {isStructIp ? t("shot_detail_prompt_shape_plain") : t("shot_detail_prompt_shape_structured")}
+          </button>
           {imgDraft && (
             <span
               className="num text-[10px]"
@@ -880,6 +997,16 @@ export function ShotDetail({
             {t("detail_video_prompt_title")}
           </span>
           <span className="flex-1" />
+          <button
+            type="button"
+            data-testid="video-prompt-shape-toggle"
+            onClick={() => handlePromptShapeToggle("video_prompt")}
+            disabled={refsReadOnly || saving}
+            className="focus-ring rounded px-1.5 py-0.5 text-[10px]"
+            style={{ color: "var(--color-text-3)", border: "1px solid var(--color-hairline-soft)" }}
+          >
+            {isStructVp ? t("shot_detail_prompt_shape_plain") : t("shot_detail_prompt_shape_structured")}
+          </button>
           {vidDraft && (
             <span
               className="num text-[10px]"
@@ -1088,6 +1215,27 @@ export function ShotDetail({
           )}
         </div>
       </div>
+
+      {promptError && (
+        <div
+          role="alert"
+          data-prompt-error-field={promptError.field}
+          className="flex items-center gap-2 px-5 py-2 text-[11px]"
+          style={{ color: "var(--color-danger, #f87171)", borderBottom: "1px solid var(--color-hairline-soft)" }}
+        >
+          <span>{promptError.message}</span>
+          {failedDraft && (
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="focus-ring ml-auto rounded px-2 py-1"
+              style={{ border: "1px solid var(--color-hairline-soft)" }}
+            >
+              {t("shot_detail_retry_save")}
+            </button>
+          )}
+        </div>
+      )}
 
       {dirty && (
         <div

@@ -243,12 +243,10 @@ def extract_kling_video_url(payload: dict) -> str:
 
 
 def extract_kling_image_urls(payload: dict) -> list[str]:
-    """从 succeed 的查询响应提取 ``data.task_result.images[].url`` 列表（按张顺序）。
-
-    可灵图像异步任务可一次产出多张（``n`` / 组图）；返回全部有效 URL，由后端按需取首张转存。
-    缺少任何有效 URL 即按 code 错误或原样抛出（与视频取 url 对称的 fail-loud）。
-    """
+    """从 succeed 查询响应提取普通图或 Omni 组图 URL（按 API 返回顺序）。"""
     urls = _extract_task_result_urls(payload, "images")
+    if not urls:
+        urls = _extract_task_result_urls(payload, "series_images")
     if urls:
         return urls
     reason = kling_response_error(payload)

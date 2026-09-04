@@ -15,7 +15,7 @@ from pathlib import Path
 import httpx
 
 from lib.agnes_shared import agnes_base_url, agnes_headers, resolve_agnes_api_key
-from lib.aspect_size import IMAGE_TIER_SHORT_EDGE, aspect_size, resolution_to_short_edge
+from lib.aspect_size import IMAGE_TIER_SHORT_EDGE, aspect_size, parse_aspect_ratio, resolution_to_short_edge
 from lib.image_backends.base import (
     ImageCapability,
     ImageCapabilityError,
@@ -31,7 +31,7 @@ from lib.video_backends.base import should_retry_download, should_retry_submit, 
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "agnes-image-2.1-flash"
+DEFAULT_MODEL = "agnes-image-2.5-flash"
 
 _IMAGE_ENDPOINT = "/images/generations"
 
@@ -41,8 +41,12 @@ _ROUND_TO = 8
 _MAX_LONG_EDGE = 2048
 _DEFAULT_SHORT = 1440
 
+# Agnes 文档支持的档位式尺寸。档位尺寸必须与 ratio 配合使用。
+_AGNES_SIZE_TIERS = frozenset({"1K", "2K", "3K", "4K"})
+_DEFAULT_SIZE = "2K"
+
 # 仅允许进日志的标量字段白名单；prompt 仅记长度、image 仅计数，base64/URL 一律不入日志。
-_SAFE_LOG_KEYS = ("model", "size", "n")
+_SAFE_LOG_KEYS = ("model", "size", "ratio")
 
 
 def _extract_first_str(payload: object, key: str) -> str | None:
@@ -63,7 +67,8 @@ def _safe_body_for_log(body: dict) -> dict:
     prompt = body.get("prompt")
     if isinstance(prompt, str):
         view["prompt_len"] = len(prompt)
-    images = body.get("image")
+    extra_body = body.get("extra_body")
+    images = extra_body.get("image") if isinstance(extra_body, dict) else None
     if isinstance(images, list) and images:
         view["image"] = f"<{len(images)} ref>"
     return view
@@ -100,20 +105,22 @@ class AgnesImageBackend:
     async def generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
         # 编排层不带重试：把非幂等的「建图 + 计费」submit 与幂等的结果下载隔离到各自的
         # 重试范围（_submit / _download_result），避免下载失败回退到重跑生成 POST 造成重复计费。
-        width, height = self._resolve_dimensions(request)
+        size, ratio = self._resolve_size(request)
 
-        # 不发 response_format：上游 litellm 网关对该参数报 UnsupportedParamsError；
-        # 响应默认同时带 url 与 b64_json，由 _persist_image 优先取 url。
+        # Agnes 文档要求 URL 输出放在 extra_body.response_format，不能放在顶层；
+        # 同一 extra_body 也承载图生图的 image 参数。
         payload: dict = {
             "model": self._model,
             "prompt": request.prompt,
-            "n": 1,
-            "size": f"{width}x{height}",
+            "size": size,
+            "extra_body": {"response_format": "url"},
         }
+        if ratio is not None:
+            payload["ratio"] = ratio
         if request.reference_images:
-            # I2I 参考图随同一请求体下发 data-URI 列表（image 字段）。读盘 + base64 编码
+            # I2I 参考图放在 extra_body.image（data-URI 列表）。读盘 + base64
             # （可能数 MB）offload 到线程，避免阻塞事件循环。
-            payload["image"] = await asyncio.to_thread(self._build_reference_images, request)
+            payload["extra_body"]["image"] = await asyncio.to_thread(self._build_reference_images, request)
 
         data = await self._submit(payload)
         image_uri = await self._persist_image(data, request.output_path)
@@ -151,11 +158,32 @@ class AgnesImageBackend:
             )
             return resp.json()
 
-    def _resolve_dimensions(self, request: ImageGenerationRequest) -> tuple[int, int]:
-        """按「比例优先、清晰度其次」算出 (宽, 高)。
+    def _resolve_size(self, request: ImageGenerationRequest) -> tuple[str, str | None]:
+        """将通用图片请求转换为 Agnes 文档规定的 size/ratio 参数。
 
-        比例永远来自 aspect_ratio；image_size（档位词 / 自定义 宽*高 / None）只决定清晰度短边，
-        自定义值剥离其自带比例（取 min）。结果被 8 整除、长边受 2048 收口。
+        Agnes 的档位式 ``size``（1K/2K/3K/4K）必须配合 ``ratio`` 使用；自定义像素
+        尺寸则继续使用兼容的 ``宽x高`` 写法，并让尺寸自身表达比例，避免同时发送冲突的 ratio。
+        未指定尺寸时使用文档中的 2K 档位。
+        """
+        raw_size = (request.image_size or "").strip().upper()
+        if not raw_size:
+            return _DEFAULT_SIZE, self._canonical_ratio(request.aspect_ratio)
+        if raw_size in _AGNES_SIZE_TIERS:
+            return raw_size, self._canonical_ratio(request.aspect_ratio)
+
+        width, height = self._resolve_dimensions(request)
+        return f"{width}x{height}", None
+
+    @staticmethod
+    def _canonical_ratio(value: str) -> str:
+        width, height = parse_aspect_ratio(value)
+        return f"{width}:{height}"
+
+    def _resolve_dimensions(self, request: ImageGenerationRequest) -> tuple[int, int]:
+        """按「比例优先、清晰度其次」算出自定义尺寸的 (宽, 高)。
+
+        自定义 image_size 会剥离其自带比例（取短边），比例由 aspect_ratio 决定；结果被 8
+        整除、长边受 2048 收口。
         """
         short = resolution_to_short_edge(
             request.image_size or None, tier_map=IMAGE_TIER_SHORT_EDGE, default_short=_DEFAULT_SHORT

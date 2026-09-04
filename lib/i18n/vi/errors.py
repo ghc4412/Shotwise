@@ -11,6 +11,10 @@ MESSAGES = {
     "workflow_version_conflict": "Quy trình đã thay đổi: cần phiên bản {expected}, hiện tại là {actual}",
     "project_not_found": "Dự án '{name}' không tồn tại hoặc chưa được khởi tạo",
     "resource_not_found": "Tài nguyên được yêu cầu không tồn tại",
+    "episode_duration_revision_conflict": "Kế hoạch thời lượng của tập đã thay đổi, hãy làm mới rồi thử lại",
+    "episode_duration_script_rebound": "Liên kết kịch bản của tập đã thay đổi, hãy làm mới rồi thử lại",
+    "episode_duration_resource_not_found": "Không tìm thấy tập hoặc cảnh quay mục tiêu",
+    "episode_duration_invalid": "Kế hoạch thời lượng của tập không hợp lệ: {details}",
     "canvas_image_source_invalid": "Nguồn ảnh trên canvas không hợp lệ; hãy chọn ảnh khả dụng trong dự án",
     "overview_ai_response_invalid": "Không thể phân tích phản hồi của AI thành tổng quan dự án, vui lòng thử lại hoặc đổi mô hình/nhà cung cấp",
     "overview_generation_failed": "Tạo tổng quan thất bại, vui lòng thử lại sau hoặc đổi mô hình/nhà cung cấp",
@@ -156,6 +160,7 @@ MESSAGES = {
     "connection_success": "Kết nối thành công",
     "connection_timeout": "Kết nối hết thời gian, vui lòng kiểm tra mạng hoặc cấu hình API",
     "connection_failed": "Kết nối thất bại: {err_msg}",
+    "model_type_override_registered": "Không thể thay đổi thủ công loại của model đã đăng ký: {models}",
     "unsupported_test": "Nhà cung cấp {provider_id} hiện chưa hỗ trợ kiểm tra kết nối",
     "missing_credentials": "Thiếu cấu hình thông tin xác thực, vui lòng thêm khóa trước",
     "credential_group_ambiguous": (
@@ -358,6 +363,7 @@ MESSAGES = {
     # Agent credentials
     "agent_preset_unknown": "Nhà cung cấp đặt sẵn không xác định: {preset_id}",
     "agent_sdk_type_unknown": "Loại Agent SDK không xác định: {sdk_type}",
+    "agent_protocol_invalid": "Giao thức truyền Agent không hợp lệ: {error}",
     "agent_preset_sdk_type_mismatch": "Nhà cung cấp {preset_id} không thuộc Agent {sdk_type}",
     "agent_base_url_required_custom": "Cấu hình tuỳ chỉnh yêu cầu base_url",
     "agent_no_fields_to_update": "Không có trường nào để cập nhật",

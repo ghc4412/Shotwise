@@ -1,5 +1,17 @@
 import type { ImagePrompt, Utterance, VideoPrompt } from "@/types";
 
+export interface PromptConversionSuccess<T> {
+  value: T;
+  error: null;
+}
+
+export interface PromptConversionFailure {
+  value: null;
+  error: "invalid_shape";
+}
+
+export type PromptConversionResult<T> = PromptConversionSuccess<T> | PromptConversionFailure;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -63,6 +75,74 @@ export function isStructuredVideoPrompt(value: unknown): value is VideoPrompt {
       typeof item.speaker === "string" &&
       typeof item.line === "string",
   );
+}
+
+/** Convert the structured editor model to the stable plain-text representation. */
+export function imagePromptToText(prompt: ImagePrompt): string {
+  return [
+    prompt.scene,
+    `Shot type: ${prompt.composition.shot_type}`,
+    `Lighting: ${prompt.composition.lighting}`,
+    `Ambiance: ${prompt.composition.ambiance}`,
+  ].join("\n");
+}
+
+/** Convert the structured editor model to the stable plain-text representation. */
+export function videoPromptToText(prompt: VideoPrompt): string {
+  const lines = [
+    prompt.action,
+    `Camera motion: ${prompt.camera_motion}`,
+    `Ambiance audio: ${prompt.ambiance_audio}`,
+  ];
+  if (prompt.dialogue?.length) {
+    lines.push(...prompt.dialogue.map(({ speaker, line }) => `${speaker}: ${line}`));
+  }
+  return lines.join("\n");
+}
+
+/** Parse only text produced by imagePromptToText; arbitrary text stays untouched on failure. */
+export function textToImagePrompt(value: string): PromptConversionResult<ImagePrompt> {
+  const lines = value.split(/\r?\n/);
+  const scene = lines[0]?.trim();
+  const shotType = lines[1]?.match(/^Shot type:\s*(.+)$/i)?.[1]?.trim();
+  const lighting = lines[2]?.match(/^Lighting:\s*(.+)$/i)?.[1]?.trim();
+  const ambiance = lines[3]?.match(/^Ambiance:\s*(.+)$/i)?.[1]?.trim();
+  if (lines.length !== 4 || !scene || !shotType || !lighting || !ambiance) {
+    return { value: null, error: "invalid_shape" };
+  }
+  return {
+    value: {
+      scene,
+      composition: {
+        shot_type: shotType as ImagePrompt["composition"]["shot_type"],
+        lighting,
+        ambiance,
+      },
+    },
+    error: null,
+  };
+}
+
+/** Parse only text produced by videoPromptToText; arbitrary text stays untouched on failure. */
+export function textToVideoPrompt(value: string): PromptConversionResult<VideoPrompt> {
+  const lines = value.split(/\r?\n/);
+  const action = lines[0]?.trim();
+  const cameraMotion = lines[1]?.match(/^Camera motion:\s*(.+)$/i)?.[1]?.trim();
+  const ambianceAudio = lines[2]?.match(/^Ambiance audio:\s*(.+)$/i)?.[1]?.trim();
+  if (!action || !cameraMotion || !ambianceAudio) return { value: null, error: "invalid_shape" };
+  const dialogue = lines.slice(3)
+    .map((line) => {
+      const separator = line.indexOf(":");
+      return separator > 0
+        ? { speaker: line.slice(0, separator).trim(), line: line.slice(separator + 1).trim() }
+        : null;
+    })
+    .filter((item): item is { speaker: string; line: string } => Boolean(item?.speaker && item.line));
+  if (dialogue.length !== lines.slice(3).length) return { value: null, error: "invalid_shape" };
+  return {
+    value: { action, camera_motion: cameraMotion as VideoPrompt["camera_motion"], ambiance_audio: ambianceAudio, dialogue },
+    error: null,
+  };
 }
 
 /**

@@ -1,4 +1,4 @@
-import { Sparkles, ImageIcon, Film } from "lucide-react";
+import { Sparkles, ImageIcon, Film, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { API } from "@/api";
 import { useProjectsStore } from "@/stores/projects-store";
@@ -121,6 +121,19 @@ export function MediaCard({
           {title}
         </span>
         <span className="flex-1" />
+        {kind === "storyboard" && assetPath && onGenerate && !demoReadOnly && (
+          <button
+            type="button"
+            onClick={onGenerate}
+            disabled={generateDisabled || resourceBusy}
+            title={t("media_regenerate_image")}
+            aria-label={t("media_regenerate_image")}
+            className="focus-ring inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-[oklch(1_0_0_/_0.05)] disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ color: "var(--color-text-3)" }}
+          >
+            <RefreshCw className={`h-3.5 w-3.5${generating ? " animate-spin" : ""}`} aria-hidden="true" />
+          </button>
+        )}
         {onUpload && !demoReadOnly && (
           <UploadIconButton
             accept={UPLOAD_ACCEPT[kind]}

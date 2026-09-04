@@ -116,3 +116,10 @@ export interface WorkspaceNotificationInput {
   target?: WorkspaceNotification["target"];
   read?: boolean;
 }
+
+export interface WorkspaceNotificationUpdate {
+  text?: string;
+  tone?: WorkspaceNotification["tone"];
+  target?: WorkspaceNotification["target"];
+  read?: boolean;
+}

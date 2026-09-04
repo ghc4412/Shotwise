@@ -59,7 +59,7 @@ from lib.video_backends.base import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "agnes-video-v2.0"
+DEFAULT_MODEL = "agnes-video-2.5"
 
 _VIDEOS_ENDPOINT = "/videos"
 # 成片查询端点，挂在网关根（不在 /v1 下），按 video_id 查询。
@@ -71,7 +71,7 @@ _FPS = 24
 _FRAME_STEP = 8
 _MAX_NUM_FRAMES = 441
 
-# 后端防御时长边界，与 registry agnes-video-v2.0 的 supported_durations（1..18s）同步。越界请求
+# 后端防御时长边界，与 registry Agnes 视频型号的 supported_durations（1..18s）同步。越界请求
 # fail-loud，而非静默截断到 _MAX_NUM_FRAMES——否则 30s 请求实际只生成约 18s，却按原请求秒数计费。
 _MIN_DURATION_SECONDS = 1
 _MAX_DURATION_SECONDS = 18

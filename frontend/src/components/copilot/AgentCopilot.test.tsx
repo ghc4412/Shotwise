@@ -167,6 +167,7 @@ describe("AgentCopilot", () => {
         {
           id: 1,
           sdk_type: "claude",
+          protocol: "anthropic_messages",
           preset_id: "anthropic",
           display_name: "Anthropic 主账号",
           icon_key: "Anthropic",
@@ -184,6 +185,7 @@ describe("AgentCopilot", () => {
         {
           id: 2,
           sdk_type: "claude",
+          protocol: "anthropic_messages",
           preset_id: "claude",
           display_name: "备用端点",
           icon_key: "Claude",

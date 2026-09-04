@@ -56,6 +56,7 @@ interface RowProps {
   supportsBaseUrl: boolean;
   secretFields: CredentialSecretField[];
   onChanged: () => void;
+  onTested?: (result: ProviderTestResult) => void;
 }
 
 const CredentialRow = memo(function CredentialRow({
@@ -65,6 +66,7 @@ const CredentialRow = memo(function CredentialRow({
   supportsBaseUrl,
   secretFields,
   onChanged,
+  onTested,
 }: RowProps) {
   const { t } = useTranslation("dashboard");
   const [editing, setEditing] = useState(false);
@@ -97,11 +99,14 @@ const CredentialRow = memo(function CredentialRow({
     try {
       const result = await API.testProviderConnection(providerId, cred.id);
       setTestResult(result);
+      onTested?.(result);
     } catch (e) {
-      setTestResult({ success: false, available_models: [], message: errMsg(e) });
+      const result = { success: false, available_models: [], message: errMsg(e) };
+      setTestResult(result);
+      onTested?.(result);
     }
     setTesting(false);
-  }, [providerId, cred.id]);
+  }, [providerId, cred.id, onTested]);
 
   const handleDelete = useCallback(async () => {
     if (!confirmDelete) {
@@ -590,9 +595,17 @@ interface Props {
   // 凭证「二选一」分组，见 AddFormProps 注释；未传时按单组全字段回退（旧版行为）。
   secretFieldGroups?: string[][];
   onChanged?: () => void;
+  onTested?: (result: ProviderTestResult) => void;
 }
 
-export function CredentialList({ providerId, supportsBaseUrl, secretFields, secretFieldGroups, onChanged }: Props) {
+export function CredentialList({
+  providerId,
+  supportsBaseUrl,
+  secretFields,
+  secretFieldGroups,
+  onChanged,
+  onTested,
+}: Props) {
   const fields = secretFields ?? DEFAULT_SECRET_FIELDS;
   const fieldGroups = secretFieldGroups ?? [fields.map((f) => f.key)];
   const { t } = useTranslation("dashboard");
@@ -682,6 +695,7 @@ export function CredentialList({ providerId, supportsBaseUrl, secretFields, secr
             supportsBaseUrl={supportsBaseUrl}
             secretFields={fields}
             onChanged={voidPromise(handleChanged)}
+            onTested={onTested}
           />
         ))}
       </div>

@@ -18,7 +18,14 @@ from pydantic import BaseModel
 from lib.api_errors import BadRequestError, ConflictError, NotFoundError
 from lib.asset_types import ASSET_SPECS, resolve_asset_key, validate_asset_name
 from lib.audio_utils import discard_stale_reference_audio, resolve_stale_reference_audio
-from lib.config.resolver import ConfigResolver, video_bucket_for_generation_mode
+from lib.config.resolver import ConfigResolver, VideoCapability, video_bucket_for_generation_mode
+from lib.episode_duration_plan import (
+    EpisodeDurationPlanner,
+    ShotDurationInput,
+    is_item_duration_locked,
+    is_item_video_generated,
+    read_episode_duration_plan,
+)
 from lib.generation_queue import get_generation_queue
 from lib.generation_queue_client import TaskSpec
 from lib.i18n import Translator
@@ -267,6 +274,83 @@ async def generate_storyboard(
 # ==================== 视频生成 ====================
 
 
+async def _resolve_episode_duration_request(
+    project: dict,
+    script: dict,
+    item: dict,
+    resource_id: str,
+    *,
+    explicit_duration: int | None,
+    capability: VideoCapability,
+) -> int | None:
+    """Resolve one planning request without changing the persisted script duration.
+
+    Explicit request durations retain their existing precedence.  Otherwise an
+    optional episode plan is recalculated from the current script, excluding items
+    that already have a video or an explicit duration lock.  Provider capabilities
+    are read at enqueue time so ``requested_seconds`` is already clamped in the task
+    payload; failures to resolve optional planning data leave the legacy duration
+    path untouched.
+    """
+    if explicit_duration is not None or is_item_duration_locked(item) or is_item_video_generated(item):
+        return None
+
+    plan_config = read_episode_duration_plan(project, script)
+    if plan_config is None:
+        return None
+
+    from lib.db import async_session_factory
+
+    try:
+        capabilities = await ConfigResolver(async_session_factory).video_capabilities_for_project(
+            project, capability=capability
+        )
+        raw_supported = capabilities.get("supported_durations")
+        if not isinstance(raw_supported, list):
+            return None
+        supported_durations = tuple(
+            value for value in raw_supported if isinstance(value, int) and not isinstance(value, bool) and value > 0
+        )
+        if not supported_durations:
+            return None
+
+        items, id_field, _, _, _ = get_storyboard_items(script)
+        planner_inputs: list[ShotDurationInput] = []
+        for candidate in items:
+            candidate_id = str(candidate.get(id_field) or "").strip()
+            if not candidate_id:
+                continue
+            current = candidate.get("duration_seconds")
+            if not isinstance(current, int) or isinstance(current, bool) or current <= 0:
+                current = None
+            weight = candidate.get("duration_weight", 1.0)
+            if not isinstance(weight, (int, float)) or isinstance(weight, bool) or weight <= 0:
+                weight = 1.0
+            planner_inputs.append(
+                ShotDurationInput(
+                    shot_id=candidate_id,
+                    current_seconds=current,
+                    supported_durations=supported_durations,
+                    locked=is_item_duration_locked(candidate),
+                    generated=is_item_video_generated(candidate),
+                    weight=float(weight),
+                )
+            )
+
+        plan = EpisodeDurationPlanner().build_plan(
+            target_seconds=plan_config.target_seconds,
+            shots=planner_inputs,
+            strategy=plan_config.strategy,
+            manual_allocations=plan_config.manual_allocations,
+        )
+        return EpisodeDurationPlanner.requested_seconds_for(resource_id, plan)
+    except (ValueError, KeyError, TypeError):
+        # Planning is an optional layer.  A malformed legacy plan or unavailable
+        # capability must not change the established enqueue behavior.
+        logger.info("跳过剧集时长规划 project=%s resource=%s", project.get("name", "<unknown>"), resource_id)
+        return None
+
+
 @router.post("/projects/{project_name}/generate/video/{segment_id}")
 async def generate_video(
     project_name: str,
@@ -283,7 +367,7 @@ async def generate_video(
     仅服务分镜图生视频路线：参考生视频路线没有分镜图这一步，在此拒绝并指引换入口。
     """
 
-    def _sync() -> dict:
+    def _sync() -> tuple[dict, dict, dict]:
         pm_local = get_project_manager()
         project = pm_local.load_project(project_name)
         project_path = pm_local.get_project_path(project_name)
@@ -318,9 +402,9 @@ async def generate_video(
             storyboard_file = project_path / "storyboards" / f"scene_{segment_id}.png"
         if not storyboard_file.is_file():
             raise BadRequestError("generate_storyboard_first", segment_id=segment_id)
-        return project
+        return project, script, resolved[0]
 
-    project = await asyncio.to_thread(_sync)
+    project, script, item = await asyncio.to_thread(_sync)
 
     # 归桶按项目路线求值（docs/adr/0054），与执行层 lane 声明同源、不第二次硬编码 i2v；
     # 上面的路线闸门已挡掉参考路线，此处对能到达的项目恒为 i2v。解析闸预检让能力缺失 /
@@ -328,6 +412,22 @@ async def generate_video(
     _video_bucket = video_bucket_for_generation_mode(project.get("generation_mode"))
     await require_video_bucket_capability(project, _video_bucket)
     await require_audio_switch_supported(project, _video_bucket)
+
+    requested_seconds = await _resolve_episode_duration_request(
+        project,
+        script,
+        item,
+        segment_id,
+        explicit_duration=req.duration_seconds,
+        capability=_video_bucket,
+    )
+    extra_payload: dict[str, object] = {"duration_seconds": req.duration_seconds, "seed": req.seed}
+    if requested_seconds is not None:
+        # ``duration_seconds`` remains the existing task execution contract; the
+        # separate marker makes clear that this value came from planning rather than
+        # from the persisted script's actual duration.
+        extra_payload["requested_seconds"] = requested_seconds
+        extra_payload["duration_seconds"] = requested_seconds
 
     # 结构校验 + 构造经单一守卫点（与 SDK 入队同源，规则不分叉）。
     # duration 是能力维度，留待执行层在 provider 解析后校验（见 ADR-0001）。
@@ -337,7 +437,7 @@ async def generate_video(
         resource_id=segment_id,
         prompt=req.prompt,
         script_file=req.script_file,
-        extra_payload={"duration_seconds": req.duration_seconds, "seed": req.seed},
+        extra_payload=extra_payload,
     )
 
     # 入队（provider 由服务层根据配置自动解析，调用方无需传递）

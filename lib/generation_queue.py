@@ -9,13 +9,16 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
+
+from sqlalchemy.exc import IntegrityError
 
 from lib.db import safe_session_factory
 from lib.db.base import DEFAULT_USER_ID
 from lib.db.repositories.task_repo import TaskRepository
+from lib.generation_batches import BatchAdmissionError
 from lib.task_terminal_events import emit_task_terminal_events
 
 if TYPE_CHECKING:
@@ -176,6 +179,15 @@ class GenerationQueue:
         """Attach in-process worker cancel callback. Must be called before worker.start()
         so cancel API can deliver signals synchronously (ADR 0006 秒级响应)."""
         self._worker_cancel_callback = callback
+
+    def batch_adapter(self, *, project_name: str | None = None) -> GenerationQueueBatchAdapter:
+        """Return an adapter for :class:`BatchOrchestrator`.
+
+        A project name is recommended because batch item payloads commonly omit
+        the repeated project field.  The adapter supplies it before the atomic
+        repository call and rejects an item that names a different project.
+        """
+        return GenerationQueueBatchAdapter(self, project_name=project_name)
 
     @asynccontextmanager
     async def _task_repo(self) -> AsyncIterator[TaskRepository]:
@@ -490,6 +502,149 @@ class GenerationQueue:
 
         async with self._task_repo() as repo:
             return await repo.get_worker_lease(name=name)
+
+
+class GenerationQueueBatchAdapter:
+    """Batch task adapter backed by the existing queue and task repository.
+
+    The adapter performs all execution-model preparation before opening the
+    repository transaction.  The final repository call is one atomic insert
+    operation, so a dedupe conflict cannot leave a partially admitted batch.
+    """
+
+    def __init__(self, queue: GenerationQueue, *, project_name: str | None = None) -> None:
+        self._queue = queue
+        self._project_name = project_name
+
+    async def validate(self, task: Mapping[str, Any]) -> tuple[str, ...]:
+        issues: list[str] = []
+        project_name = task.get("project_name") or self._project_name
+        if not str(project_name or "").strip():
+            issues.append("project_name is required")
+        elif self._project_name and str(project_name) != self._project_name:
+            issues.append("project_name does not match adapter")
+
+        for field in ("task_type", "media_type", "resource_id"):
+            if not str(task.get(field) or "").strip():
+                issues.append(f"{field} is required")
+        payload = task.get("payload")
+        if payload is not None and not isinstance(payload, dict):
+            issues.append("payload must be an object")
+        if isinstance(payload, dict):
+            script_file = task.get("script_file") or payload.get("script_file")
+        else:
+            script_file = task.get("script_file")
+        if str(task.get("task_type") or "") in {"storyboard", "video", "tts"} and not str(script_file or "").strip():
+            issues.append(f"script_file is required for {task.get('task_type')} batch task")
+        return tuple(issues)
+
+    async def admit_all(self, tasks: tuple[Mapping[str, Any], ...]) -> tuple[str, ...]:
+        normalized = await self.prepare_all(tasks, user_id=DEFAULT_USER_ID)
+
+        try:
+            async with self._queue._task_repo() as repo:
+                admitted = await repo.enqueue_batch(normalized)
+        except IntegrityError as exc:
+            raise BatchAdmissionError("batch contains an active task conflict") from exc
+        return tuple(str(task["task_id"]) for task in admitted)
+
+    async def prepare_all(
+        self,
+        tasks: tuple[Mapping[str, Any], ...],
+        *,
+        user_id: str,
+    ) -> tuple[Mapping[str, Any], ...]:
+        """Normalize tasks while keeping persistence in the batch transaction."""
+
+        if not tasks:
+            raise BatchAdmissionError("batch must contain at least one task")
+
+        normalized: list[dict[str, Any]] = []
+        for task in tasks:
+            issues = await self.validate(task)
+            if issues:
+                raise BatchAdmissionError("; ".join(issues))
+            prepared = await self._prepare_task(task)
+            prepared["user_id"] = user_id
+            normalized.append(prepared)
+        return tuple(normalized)
+
+    async def get_task(self, task_id: str) -> Mapping[str, Any] | None:
+        return await self._queue.get_task(task_id)
+
+    async def cancel_task(self, task_id: str) -> Mapping[str, Any]:
+        return await self._queue.cancel_task(task_id)
+
+    def _normalize_task(self, task: Mapping[str, Any]) -> dict[str, Any]:
+        normalized = dict(task)
+        task_project = normalized.get("project_name")
+        if task_project is None:
+            task_project = self._project_name
+            normalized["project_name"] = task_project
+        if not str(task_project or "").strip():
+            raise BatchAdmissionError("project_name is required")
+        if self._project_name and str(task_project) != self._project_name:
+            raise BatchAdmissionError("project_name does not match adapter")
+        return normalized
+
+    async def _prepare_task(self, task: Mapping[str, Any]) -> dict[str, Any]:
+        normalized = self._normalize_task(task)
+        raw_payload = normalized.get("payload")
+        if raw_payload is not None and not isinstance(raw_payload, dict):
+            raise BatchAdmissionError("payload must be an object")
+
+        payload = dict(raw_payload or {})
+        top_level_script_file = normalized.get("script_file")
+        payload_script_file = payload.get("script_file")
+        if (
+            top_level_script_file is not None
+            and payload_script_file is not None
+            and str(top_level_script_file) != str(payload_script_file)
+        ):
+            raise BatchAdmissionError("script_file differs between task and payload")
+
+        script_file = top_level_script_file if top_level_script_file is not None else payload_script_file
+        prompt = payload.get("prompt")
+        extra_payload = {key: value for key, value in payload.items() if key not in {"prompt", "script_file"}}
+
+        # Keep batch admission on the same structural guard as single-task WebUI and SDK
+        # enqueue paths. The worker requires prompt/script_file in payload even though the
+        # public batch DTO also exposes script_file as a task-level field.
+        from lib.generation_queue_client import TaskSpec, TaskSpecValidationError
+
+        try:
+            spec = TaskSpec.from_request(
+                task_type=str(normalized["task_type"]),
+                media_type=str(normalized["media_type"]),
+                resource_id=str(normalized["resource_id"]),
+                prompt=prompt,
+                script_file=str(script_file) if script_file is not None else None,
+                source=str(normalized.get("source") or "webui"),
+                extra_payload=extra_payload,
+            )
+        except (TaskSpecValidationError, ValueError) as exc:
+            raise BatchAdmissionError(str(exc)) from exc
+
+        normalized["payload"] = spec.payload
+        normalized["script_file"] = spec.script_file
+
+        if normalized.get("provider_id") is None:
+            derived = await _derive_execution_model_for_enqueue(
+                project_name=str(normalized["project_name"]),
+                payload=spec.payload,
+                task_type=str(normalized["task_type"]),
+                media_type=str(normalized["media_type"]),
+                resource_id=str(normalized["resource_id"]),
+            )
+            if derived is not None:
+                execution_model, video_capability = derived
+                normalized["provider_id"] = execution_model.provider_id
+                normalized["payload"] = _pin_video_execution_model(
+                    spec.payload,
+                    capability=video_capability,
+                    execution_model=execution_model,
+                )
+        return normalized
 
 
 def get_generation_queue() -> GenerationQueue:

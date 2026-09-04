@@ -12,14 +12,20 @@ import {
   ChevronDown,
   Activity,
   AlertTriangle,
+  Square,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
+import { useNowTick } from "@/hooks/useNowTick";
 import { useAppStore } from "@/stores/app-store";
 import { isTerminalStatus, useTasksStore } from "@/stores/tasks-store";
 import { API } from "@/api";
-import type { TaskItem } from "@/types";
+import type { TaskItem, TaskPromptPreview } from "@/types";
 import { GlassPopover } from "@/components/ui/GlassPopover";
+import { formatElapsedDuration, formatTaskElapsed } from "@/utils/task-elapsed";
+import { PromptPreview, type PromptPreviewModel } from "@/components/canvas/timeline/PromptPreview";
+import { BatchPanel } from "@/components/task-hud/BatchPanel";
+import { useProjectsStore } from "@/stores/projects-store";
 
 // ---------------------------------------------------------------------------
 // Theme tokens — v3 cool oklch + accent purple
@@ -59,6 +65,32 @@ function taskWarnings(task: TaskItem): string[] {
   const warnings = task.result?.warnings;
   if (!Array.isArray(warnings)) return [];
   return warnings.filter((warning): warning is string => typeof warning === "string");
+}
+
+function promptPreviewModel(value: TaskPromptPreview | null | undefined): PromptPreviewModel | null {
+  if (!value?.requests?.length) return null;
+  return {
+    source: value.source,
+    requests: value.requests.map((request) => ({
+      id: request.id,
+      label: request.label,
+      originalPrompt: request.original_prompt,
+      effectivePrompt: request.effective_prompt,
+      shape: request.shape,
+      provider: request.provider,
+      model: request.model,
+      references: request.references?.map((reference) => ({
+        kind: reference.kind as "character" | "scene" | "prop" | "product" | "image" | "other",
+        label: reference.label,
+        value: reference.value,
+      })),
+      durationSeconds: request.duration_seconds,
+      resolution: request.resolution,
+      capabilityAdjustments: request.capability_adjustments,
+      warnings: request.warnings,
+      requestSummary: request.request_summary,
+    })),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -138,11 +170,13 @@ function TaskRow({
   expandedTaskId,
   onToggleDetail,
   onCancel,
+  nowMs,
 }: {
   task: TaskItem;
   expandedTaskId: string | null;
   onToggleDetail: (taskId: string) => void;
   onCancel?: (taskId: string) => void;
+  nowMs: number;
 }) {
   const { t } = useTranslation("dashboard");
   const statusLabel: Record<TaskItem["status"], string> = {
@@ -157,8 +191,10 @@ function TaskRow({
   const warnings = task.status === "succeeded" ? taskWarnings(task) : [];
   const hasWarnings = warnings.length > 0;
   const hasError = Boolean(task.status === "failed" && task.error_message);
+  const promptPreview = promptPreviewModel(task.prompt_preview);
+  const hasPromptPreview = promptPreview !== null;
   // 失败原因与生成警示走同一套展开交互：一行最多只有其中一种详情。
-  const isExpandable = hasError || hasWarnings;
+  const isExpandable = hasError || hasWarnings || hasPromptPreview;
   const isExpanded = expandedTaskId === task.task_id;
 
   // 底色标的是任务状态，与「有没有详情可展开」解耦：失败任务即使没有 error_message
@@ -224,6 +260,7 @@ function TaskRow({
         >
           {statusLabel[task.status]}
         </span>
+        <TaskElapsedLabel task={task} nowMs={nowMs} />
         {task.status === "queued" && onCancel && (
           <button
             type="button"
@@ -339,7 +376,7 @@ function TaskRow({
               >
                 {task.error_message}
               </div>
-            ) : (
+            ) : hasWarnings ? (
               <ul
                 id={`task-detail-${task.task_id}`}
                 className="mx-3 mb-1.5 space-y-1 rounded px-2 py-1.5 text-[10.5px]"
@@ -353,11 +390,44 @@ function TaskRow({
                   <li key={`${task.task_id}-warning-${index}`}>{warning}</li>
                 ))}
               </ul>
+            ) : null}
+            {hasPromptPreview && (
+              <div className="mx-3 mb-1.5">
+                <PromptPreview preview={promptPreview} />
+              </div>
             )}
           </motion.div>
         )}
       </AnimatePresence>
     </motion.div>
+  );
+}
+
+function TaskElapsedLabel({ task, nowMs }: { task: TaskItem; nowMs: number }) {
+  const { t } = useTranslation("dashboard");
+  const elapsed = formatTaskElapsed(task, nowMs);
+  const details: string[] = [];
+  if (task.status === "queued") {
+    details.push(t("task_waiting_time", { duration: formatElapsedDuration(elapsed.waitingSeconds) }));
+    details.push(t("task_total_time", { duration: formatElapsedDuration(elapsed.totalSeconds) }));
+  } else if (task.status === "running" || task.status === "cancelling") {
+    details.push(t("task_waiting_time", { duration: formatElapsedDuration(elapsed.waitingSeconds) }));
+    if (elapsed.runningSeconds !== null) {
+      details.push(t("task_running_time", { duration: formatElapsedDuration(elapsed.runningSeconds) }));
+    }
+    details.push(t("task_total_time", { duration: formatElapsedDuration(elapsed.totalSeconds) }));
+  } else {
+    details.push(t("task_total_time", { duration: formatElapsedDuration(elapsed.totalSeconds) }));
+  }
+  return (
+    <span
+      className="num hidden min-w-0 shrink-0 text-[9.5px] sm:inline"
+      style={{ color: "var(--color-text-4)" }}
+      title={details.join(" · ")}
+      aria-label={details.join(" · ")}
+    >
+      {formatElapsedDuration(elapsed.totalSeconds)}
+    </span>
   );
 }
 
@@ -371,12 +441,14 @@ function ChannelSection({
   tasks,
   filter,
   onCancel,
+  nowMs,
 }: {
   title: string;
   icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   tasks: TaskItem[];
   filter: TaskFilter;
   onCancel?: (taskId: string) => void;
+  nowMs: number;
 }) {
   const { t } = useTranslation("dashboard");
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
@@ -435,6 +507,7 @@ function ChannelSection({
             expandedTaskId={expandedTaskId}
             onToggleDetail={toggleDetail}
             onCancel={onCancel}
+            nowMs={nowMs}
           />
         ))}
       </AnimatePresence>
@@ -573,7 +646,10 @@ function StatPill({
 export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null> }) {
   const { t } = useTranslation("dashboard");
   const { taskHudOpen, setTaskHudOpen } = useAppStore();
-  const { tasks, stats } = useTasksStore();
+  const { tasks, stats, refreshTasks } = useTasksStore();
+  const currentProjectName = useProjectsStore((state) => state.currentProjectName);
+  const hasActiveTasks = tasks.some((task) => !isTerminalStatus(task.status));
+  const nowMs = useNowTick(hasActiveTasks);
 
   const [cancelConfirm, setCancelConfirm] = useState<{
     taskId?: string;
@@ -597,16 +673,16 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
   }, []);
 
   const handleCancelAll = useCallback(async () => {
-    const queuedTask = tasks.find((task) => task.status === "queued");
-    if (!queuedTask) return;
-    const projectName = queuedTask.project_name;
+    if (!currentProjectName || stats.queued <= 0) return;
     try {
-      const { queued_count } = await API.cancelAllPreview(projectName);
-      setCancelConfirm({ allCount: queued_count, projectName });
+      const { queued_count } = await API.cancelAllPreview(currentProjectName);
+      if (queued_count > 0) {
+        setCancelConfirm({ allCount: queued_count, projectName: currentProjectName });
+      }
     } catch {
-      // no queued tasks
+      // The task list will reconcile on its next refresh if the preview races with completion.
     }
-  }, [tasks]);
+  }, [currentProjectName, stats.queued]);
 
   const confirmCancel = useCallback(async () => {
     if (!cancelConfirm) return;
@@ -616,12 +692,13 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
         await API.cancelTask(cancelConfirm.taskId);
       } else if (cancelConfirm.projectName) {
         await API.cancelAllQueued(cancelConfirm.projectName);
+        await refreshTasks();
       }
     } finally {
       setCancelling(false);
       setCancelConfirm(null);
     }
-  }, [cancelConfirm]);
+  }, [cancelConfirm, refreshTasks]);
 
   useEscapeClose(() => setCancelConfirm(null), Boolean(cancelConfirm));
 
@@ -660,7 +737,7 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
           >
             <Activity className="h-3.5 w-3.5" />
           </span>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div
               className="display-serif text-[14px] font-semibold tracking-tight"
               style={{ color: "var(--color-text)" }}
@@ -677,6 +754,21 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
               {t("task_hud_subtitle")}
             </div>
           </div>
+          <button
+            type="button"
+            onClick={voidPromise(handleCancelAll)}
+            disabled={!currentProjectName || stats.queued <= 0 || cancelling}
+            className="focus-ring inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+            style={{
+              color: stats.queued > 0 ? "oklch(0.72 0.18 25)" : "var(--color-text-4)",
+              borderColor: stats.queued > 0 ? "oklch(0.72 0.18 25 / 0.4)" : "var(--color-hairline-soft)",
+              background: stats.queued > 0 ? "oklch(0.72 0.18 25 / 0.08)" : "transparent",
+            }}
+            aria-label={t("task_radar_stop_all_aria")}
+            title={t("task_radar_stop_all")}
+          >
+            {cancelling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5 fill-current" />}
+          </button>
         </div>
 
         {/* Stats bar */}
@@ -711,24 +803,9 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
               color={STATUS_COLORS.cancelled}
             />
           )}
-          {stats.queued > 0 && (
-            <button
-              type="button"
-              onClick={voidPromise(handleCancelAll)}
-              className="focus-ring ml-auto rounded px-1.5 py-0.5 text-[10.5px] transition-colors"
-              style={{ color: "var(--color-text-4)" }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.color = "oklch(0.72 0.18 25)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.color = "var(--color-text-4)";
-              }}
-              aria-label={t("cancel_all_queued_aria")}
-            >
-              {t("cancel_all")}
-            </button>
-          )}
         </div>
+
+        <BatchPanel projectName={currentProjectName} />
 
         {/* Status filter */}
         <FilterPills tasks={tasks} value={filter} onChange={setFilter} />
@@ -744,6 +821,7 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
             tasks={imageTasks}
             filter={filter}
             onCancel={voidPromise(handleCancelSingle)}
+            nowMs={nowMs}
           />
           <div
             className="h-px"
@@ -755,6 +833,7 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
             tasks={videoTasks}
             filter={filter}
             onCancel={voidPromise(handleCancelSingle)}
+            nowMs={nowMs}
           />
           {audioTasks.length > 0 && (
             <>
@@ -768,6 +847,7 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
                 tasks={audioTasks}
                 filter={filter}
                 onCancel={voidPromise(handleCancelSingle)}
+                nowMs={nowMs}
               />
             </>
           )}

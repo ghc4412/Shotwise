@@ -9,8 +9,8 @@
 相同 ``session_id`` 即自动恢复历史——因此 OpenAI 通道不需要在 agent_sessions 表
 存额外的 SDK 会话 id，直接复用对外 ``sdk_session_id``。
 
-认证：OpenAI 兼容端点（DeepSeek / Kimi / GLM 等）走 Chat Completions API，
-经 ``OpenAIProvider(api_key, base_url, use_responses=False)`` 注入 active
+认证：OpenAI 兼容端点（DeepSeek / Kimi / GLM 等）按凭证协议选择 Chat
+Completions 或 Responses，经 ``OpenAIProvider`` 注入 active
 credential（``build_openai_agents_env_dict``）。
 """
 
@@ -24,6 +24,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from lib.agent_protocol import (
+    PROTOCOL_RESPONSES,
+    normalize_protocol,
+)
 from lib.i18n import DEFAULT_LOCALE
 
 _OPENAI_PERSONA_PROMPT = """你是 Shotwise 智能体，一个专业的 AI 视频内容创作助手。
@@ -91,10 +95,12 @@ class OpenAIAgentsOptionsAssembler:
         base_url = env.get("OPENAI_BASE_URL", "").strip()
         effective_model = model or env.get("OPENAI_MODEL", "").strip()
 
+        protocol = normalize_protocol("openai", env.get("OPENAI_PROTOCOL"))
         provider = OpenAIProvider(
             api_key=api_key or None,
             base_url=base_url or None,
-            use_responses=False,  # Chat Completions 兼容端点（国内供应商不支持 Responses）
+            use_responses=protocol == PROTOCOL_RESPONSES,
+            strict_feature_validation=True,
         )
 
         from server.agent_runtime.sdk_tools import build_shotwise_agents_tools

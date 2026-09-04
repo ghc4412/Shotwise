@@ -38,11 +38,12 @@ interface GridImageToVideoCanvasProps {
     fieldOrPatch: string | Record<string, unknown>,
     value?: unknown,
     scriptFile?: string,
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
   onGenerateStoryboard?: (segmentId: string, scriptFile?: string) => void;
   onGenerateVideo?: (segmentId: string, scriptFile?: string) => void;
   onGenerateNarration?: (segmentId: string, scriptFile?: string) => void;
   onGenerateEpisodeNarration?: (scriptFile?: string) => void;
+  onBatchGenerateStoryboards?: () => Promise<void>;
   onGenerateGrid?: (
     episode: number,
     scriptFile: string,
@@ -69,6 +70,7 @@ export function GridImageToVideoCanvas({
   onGenerateVideo,
   onGenerateNarration,
   onGenerateEpisodeNarration,
+  onBatchGenerateStoryboards,
   onGenerateGrid,
   onRestoreStoryboard,
   onRestoreVideo,
@@ -282,6 +284,17 @@ export function GridImageToVideoCanvas({
 
         {activeTab === "units" && hasScript && (
           <div className="mr-1 inline-flex items-center gap-1.5">
+            <button
+              type="button"
+              className="sv-navbtn inline-flex items-center gap-1.5"
+              disabled={!onBatchGenerateStoryboards}
+              onClick={() => void onBatchGenerateStoryboards?.()}
+              title={t("batch_generate_storyboards")}
+              aria-label={t("batch_generate_storyboards")}
+            >
+              <Sparkles className="h-3 w-3" />
+              <span>{t("batch_generate_storyboards")}</span>
+            </button>
             <button
               type="button"
               className="sv-navbtn inline-flex items-center gap-1.5"

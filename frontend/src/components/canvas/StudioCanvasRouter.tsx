@@ -40,7 +40,9 @@ import { ReferenceVideoCanvas } from "./reference/ReferenceVideoCanvas";
 import { AdReferenceVideoCanvas } from "./reference/AdReferenceVideoCanvas";
 import { GridImageToVideoCanvas } from "./grid/GridImageToVideoCanvas";
 import { EpisodeSourceReview } from "./EpisodeSourceReview";
+import { EpisodeDurationPlanPanel } from "./timeline/EpisodeDurationPlanPanel";
 import { API } from "@/api";
+import { createDurableBatch, type DurableBatchKind } from "@/actions/durable-batch";
 import {
   enqueueCharacter,
   enqueueEpisodeNarration,
@@ -64,8 +66,11 @@ import {
   useModelCapabilities,
 } from "@/hooks/useModelCapabilities";
 import { gridStoryboardEnabled, normalizeRoute } from "@/utils/generation-mode";
+import { getScriptItems, getScriptItemId, type ScriptItem } from "@/utils/script-shape";
 import type { Scene, Prop, Product, CustomProviderInfo, ProviderInfo } from "@/types";
 import type { EpisodeScript } from "@/types/script";
+import type { DurableBatchItemRequest } from "@/types/batch";
+import type { NarrationSegment } from "@/types/script";
 
 // ---------------------------------------------------------------------------
 // resolveSegmentPrompt -- shared segment lookup for generate storyboard/video
@@ -96,6 +101,73 @@ function resolveSegmentPrompt(
   };
 }
 
+function isUsablePrompt(value: unknown): value is string | Record<string, unknown> {
+  if (typeof value === "string") return value.trim().length > 0;
+  return Boolean(value && typeof value === "object");
+}
+
+function buildDurableBatchItems(
+  script: EpisodeScript,
+  scriptFile: string,
+  kind: DurableBatchKind,
+  busyIds: ReadonlySet<string>,
+): DurableBatchItemRequest[] {
+  const mode = script.content_mode;
+  const items = getScriptItems(script, mode);
+  const taskType = kind === "storyboard" ? "storyboard" : kind === "video" ? "video" : "tts";
+  const mediaType = kind === "storyboard" ? "image" : kind === "video" ? "video" : "audio";
+
+  return items.flatMap((item: ScriptItem): DurableBatchItemRequest[] => {
+    const resourceId = getScriptItemId(item, mode);
+    if (!resourceId || busyIds.has(resourceId)) return [];
+    const assets = item.generated_assets;
+
+    if (kind === "storyboard") {
+      if (assets?.storyboard_image || !isUsablePrompt(item.image_prompt)) return [];
+      return [{
+        item_id: resourceId,
+        task: {
+          task_type: taskType,
+          media_type: mediaType,
+          resource_id: resourceId,
+          payload: { prompt: item.image_prompt },
+          script_file: scriptFile,
+          source: "webui",
+        },
+      }];
+    }
+
+    if (kind === "video") {
+      if (assets?.video_clip || !assets?.storyboard_image || !isUsablePrompt(item.video_prompt)) return [];
+      return [{
+        item_id: resourceId,
+        task: {
+          task_type: taskType,
+          media_type: mediaType,
+          resource_id: resourceId,
+          payload: { prompt: item.video_prompt, duration_seconds: item.duration_seconds },
+          script_file: scriptFile,
+          source: "webui",
+        },
+      }];
+    }
+
+    const narrationText = mode === "narration" ? (item as NarrationSegment).novel_text : "";
+    if (mode !== "narration" || assets?.narration_audio || !narrationText?.trim()) return [];
+    return [{
+      item_id: resourceId,
+      task: {
+        task_type: taskType,
+        media_type: mediaType,
+        resource_id: resourceId,
+        payload: { prompt: null },
+        script_file: scriptFile,
+        source: "webui",
+      },
+    }];
+  });
+}
+
 // ---------------------------------------------------------------------------
 // StudioCanvasRouter -- reads Zustand store data and renders the correct
 // canvas view based on the nested route within /app/projects/:projectName.
@@ -115,6 +187,7 @@ export function StudioCanvasRouter() {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [customProviders, setCustomProviders] = useState<CustomProviderInfo[]>([]);
   const [globalVideoBackend, setGlobalVideoBackend] = useState("");
+  const [durationFocus, setDurationFocus] = useState<{ id: string; requestId: number } | null>(null);
 
   // 目录侧与服务端侧听同一个失效信号：本组件跨路由原地复用，改完全局默认后端 / 自定义供应商
   // 回到工作台不会重挂载，只重取服务端能力而留着旧目录的话，时长仍按旧配置解析。
@@ -177,6 +250,9 @@ export function StudioCanvasRouter() {
   const generatingSceneNames = useActiveResourceIds("scene", currentProjectName);
   const generatingPropNames = useActiveResourceIds("prop", currentProjectName);
   const generatingProductNames = useActiveResourceIds("product", currentProjectName);
+  const generatingStoryboardIds = useActiveResourceIds("storyboard", currentProjectName);
+  const generatingVideoIds = useActiveResourceIds("video", currentProjectName);
+  const generatingNarrationIds = useActiveResourceIds("tts", currentProjectName);
 
   // 刷新项目数据；返回本地 store 是否已同步成功，供调用方决定是否推进依赖新顺序的 UI 状态。
   // 在途合并 + 失败留旧收敛于 projects-store 的 refreshProject，此处仅表达意图。
@@ -233,7 +309,7 @@ export function StudioCanvasRouter() {
   // 同一适配回调。
   const awaitedUpdatePrompt = useCallback(
     async (...args: Parameters<typeof handleUpdatePrompt>) => {
-      await handleUpdatePrompt(...args);
+      return await handleUpdatePrompt(...args);
     },
     [handleUpdatePrompt],
   );
@@ -717,6 +793,21 @@ export function StudioCanvasRouter() {
             );
           const hasDraft =
             episode?.script_status === "segmented" || episode?.script_status === "generated";
+          const createEpisodeDurableBatch = async (kind: DurableBatchKind): Promise<void> => {
+            if (!script || !scriptFile) return;
+            if (kind === "narration" && !ensureAudioProviderConfigured()) return;
+            const busyIds =
+              kind === "storyboard"
+                ? generatingStoryboardIds
+                : kind === "video"
+                  ? generatingVideoIds
+                  : generatingNarrationIds;
+            await createDurableBatch(
+              currentProjectName,
+              kind,
+              buildDurableBatchItems(script, scriptFile, kind, busyIds),
+            );
+          };
           // ad 剧本骨架唯一（shots[]），但两条生成路径进不同画布：storyboard 走镜头
           // 编辑画布，reference_video 走按派生分组组织的专用画布（不提供分镜图与
           // 逐镜头图生视频——该路径按 ADR 0033 跳过分镜步骤）。
@@ -732,6 +823,16 @@ export function StudioCanvasRouter() {
 
           return (
             <div className="flex h-full min-w-0 w-full flex-col">
+              {!demoMode && script && (
+                <EpisodeDurationPlanPanel
+                  projectName={currentProjectName}
+                  episode={epNum}
+                  onApplied={() => refreshProject().then(() => undefined)}
+                  onSelectShot={(resourceId) =>
+                    setDurationFocus({ id: resourceId, requestId: Date.now() })
+                  }
+                />
+              )}
               <div className="min-h-0 min-w-0 w-full flex-1 overflow-hidden">
                 {demoMode && !script ? (
                   <DemoEpisodePlaceholder />
@@ -796,6 +897,7 @@ export function StudioCanvasRouter() {
                     onGenerateVideo={voidPromise(handleGenerateVideo)}
                     onGenerateNarration={voidPromise(handleGenerateNarration)}
                     onGenerateEpisodeNarration={voidPromise(handleGenerateEpisodeNarration)}
+                    onBatchGenerateStoryboards={() => createEpisodeDurableBatch("storyboard")}
                     onGenerateGrid={handleGenerateGrid}
                     onRestoreStoryboard={handleRestoreAsset}
                     onRestoreVideo={handleRestoreAsset}
@@ -818,12 +920,16 @@ export function StudioCanvasRouter() {
                     projectData={currentProjectData}
                     durationOptions={durationOptions}
                     durationWarningReason={durationWarningReason}
+                    focusSegment={durationFocus}
                     onUpdatePrompt={awaitedUpdatePrompt}
                     onMoveShot={isAd ? handleMoveShot : undefined}
                     onGenerateStoryboard={voidPromise(handleGenerateStoryboard)}
                     onGenerateVideo={voidPromise(handleGenerateVideo)}
                     onGenerateNarration={voidPromise(handleGenerateNarration)}
                     onGenerateEpisodeNarration={voidPromise(handleGenerateEpisodeNarration)}
+                    onBatchGenerateStoryboards={() => createEpisodeDurableBatch("storyboard")}
+                    onBatchGenerateVideos={() => createEpisodeDurableBatch("video")}
+                    onBatchGenerateNarration={() => createEpisodeDurableBatch("narration")}
                     onRestoreStoryboard={handleRestoreAsset}
                     onRestoreVideo={handleRestoreAsset}
                   />

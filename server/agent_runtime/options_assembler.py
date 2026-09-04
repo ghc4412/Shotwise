@@ -13,6 +13,7 @@ policy，装配天职是开会话时现场读 DB / 扫盘则允许 I/O 归本类
 import json
 import logging
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,11 @@ from lib.db.base import DEFAULT_USER_ID
 from lib.db.engine import async_session_factory as default_async_session_factory
 from lib.i18n import DEFAULT_LOCALE, LOCALE_LANGUAGE_MAP
 from server.agent_runtime.agent_access_policy import AgentAccessPolicy
+from server.agent_runtime.remote_mcp_runtime import (
+    RemoteMCPManifest,
+    build_remote_mcp_manifest,
+    load_remote_mcp_config,
+)
 from server.agent_runtime.sdk_tools import build_shotwise_mcp_server
 
 logger = logging.getLogger(__name__)
@@ -34,6 +40,18 @@ from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk.types import HookMatcher, SystemPromptPreset
 
 SDK_AVAILABLE = True
+
+
+@dataclass(frozen=True, slots=True)
+class OptionsBuildResult:
+    """SDK options plus resources whose lifetime must match the session."""
+
+    options: ClaudeAgentOptions
+    cleanup: Callable[[], Awaitable[None]] | None = None
+
+    def __getattr__(self, name: str) -> Any:
+        """Keep options inspection ergonomic while ownership stays explicit."""
+        return getattr(self.options, name)
 
 
 async def load_provider_env_overrides() -> dict[str, str]:
@@ -99,6 +117,7 @@ class OptionsAssembler:
         provider_env_loader: Callable[[], Awaitable[dict[str, str]]] | None = None,
         session_factory_provider: Callable[[], Any] | None = None,
         user_id_provider: Callable[[], str] | None = None,
+        remote_mcp_profile_root: Path | None = None,
     ) -> None:
         self.projects_root = Path(projects_root)
         self._allowed_tools = list(allowed_tools)
@@ -109,9 +128,17 @@ class OptionsAssembler:
         self._provider_env_loader = provider_env_loader
         self._session_factory_provider = session_factory_provider or (lambda: None)
         self._user_id_provider = user_id_provider or (lambda: DEFAULT_USER_ID)
+        self._remote_mcp_profile_root = (
+            Path(remote_mcp_profile_root).resolve(strict=False) if remote_mcp_profile_root is not None else None
+        )
         # session store 单例缓存：每个 assembler 一份，避免每次 build 都新建 store。
         self._cached_session_store: DbSessionStore | None = None
         self._session_store_resolved = False
+
+    async def build_remote_mcp_manifest(self, project_cwd: Path) -> RemoteMCPManifest:
+        """Load and materialize the project's read-only remote MCP servers."""
+        config = load_remote_mcp_config(project_cwd, self._remote_mcp_profile_root)
+        return await build_remote_mcp_manifest(config)
 
     async def build_provider_env_overrides(self) -> dict[str, str]:
         """DB 凭证注入入口。默认走模块级 ``load_provider_env_overrides``（现取 module
@@ -207,7 +234,7 @@ class OptionsAssembler:
         stderr: Callable[[str], None] | None = None,
         session_id: str | None = None,
         context_append: str | None = None,
-    ) -> Any:
+    ) -> OptionsBuildResult:
         """Build ClaudeAgentOptions for a session.
 
         ``stderr`` 在 SDK 子进程退出非 0 时是唯一拿到真实错误的途径
@@ -283,30 +310,46 @@ class OptionsAssembler:
             projects_root=self.projects_root,
         )
 
-        return ClaudeAgentOptions(
-            cwd=str(project_cwd),
-            setting_sources=self._setting_sources,  # type: ignore[arg-type]
-            allowed_tools=allowed_tools,
-            max_turns=self._max_turns_provider(),
-            system_prompt=SystemPromptPreset(
-                type="preset",
-                preset="claude_code",
-                append=self._build_append_prompt(project_name, locale=locale, context_append=context_append),
-            ),
-            include_partial_messages=True,
-            # CLI 只在该开关下把 stdin 收到的用户消息带 uuid 回放到 stdout。
-            # 不开则回放副本根本不出现：echo 去重与用户消息身份映射都不会触发。
-            extra_args={"replay-user-messages": None},
-            resume=resume_id,
-            can_use_tool=can_use_tool,
-            hooks=hooks,  # type: ignore[arg-type]
-            mcp_servers={"shotwise": shotwise_server},
-            session_store=self.build_session_store(),  # type: ignore[arg-type]
-            session_store_flush=session_store_flush_mode(),
-            sandbox=sandbox_typed,  # type: ignore[arg-type]
-            env=provider_env,
-            stderr=stderr,
+        remote_manifest = await self.build_remote_mcp_manifest(project_cwd)
+        mcp_servers = {"shotwise": shotwise_server, **remote_manifest.servers}
+        allowed_tools.extend(remote_manifest.allowed_tools)
+
+        try:
+            options = ClaudeAgentOptions(
+                cwd=str(project_cwd),
+                setting_sources=self._setting_sources,  # type: ignore[arg-type]
+                allowed_tools=allowed_tools,
+                max_turns=self._max_turns_provider(),
+                system_prompt=SystemPromptPreset(
+                    type="preset",
+                    preset="claude_code",
+                    append=self._build_append_prompt(project_name, locale=locale, context_append=context_append),
+                ),
+                include_partial_messages=True,
+                # CLI 只在该开关下把 stdin 收到的用户消息带 uuid 回放到 stdout。
+                # 不开则回放副本根本不出现：echo 去重与用户消息身份映射都不会触发。
+                extra_args={"replay-user-messages": None},
+                resume=resume_id,
+                can_use_tool=can_use_tool,
+                hooks=hooks,  # type: ignore[arg-type]
+                mcp_servers=mcp_servers,
+                session_store=self.build_session_store(),  # type: ignore[arg-type]
+                session_store_flush=session_store_flush_mode(),
+                sandbox=sandbox_typed,  # type: ignore[arg-type]
+                env=provider_env,
+                stderr=stderr,
+            )
+        except Exception:
+            try:
+                await remote_manifest.aclose()
+            except Exception:
+                logger.exception("Remote MCP cleanup failed after options assembly error")
+            raise
+
+        cleanup_remote_mcp: Callable[[], Awaitable[None]] | None = (
+            remote_manifest.aclose if remote_manifest.has_resources else None
         )
+        return OptionsBuildResult(options=options, cleanup=cleanup_remote_mcp)
 
     @staticmethod
     async def _keep_stream_open_hook(

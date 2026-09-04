@@ -50,7 +50,7 @@ class TestConstruction:
 
             backend = AgnesTextBackend(api_key="sk")
             assert backend.name == PROVIDER_AGNES
-            assert backend.model == "agnes-2.0-flash"
+            assert backend.model == "agnes-2.5-flash"
 
     def test_custom_model(self):
         with patch("lib.openai_shared.AsyncOpenAI"):
@@ -105,7 +105,7 @@ class TestGenerate:
 
         assert result.text == "Test output"
         assert result.provider == PROVIDER_AGNES
-        assert result.model == "agnes-2.0-flash"
+        assert result.model == "agnes-2.5-flash"
         assert result.input_tokens == 15
         assert result.output_tokens == 8
 

@@ -6,6 +6,7 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from sqlalchemy import ColumnElement, func, select, text, update
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from lib.db.base import DEFAULT_USER_ID, dt_to_iso, utc_now
 from lib.db.models.task import Task, WorkerLease
 from lib.db.repositories.base import BaseRepository, rowcount
+from lib.prompt_preview import PROMPT_PREVIEW_PAYLOAD_KEY, build_enqueue_prompt_preview
 from lib.task_failure import bound_reason, collapse_cascade_reason, encode_failure
 from lib.task_terminal_events import TERMINAL_TASK_STATUSES
 
@@ -90,6 +92,8 @@ def _json_loads(value: str | None, default: Any) -> Any:
 
 
 def _task_to_dict(row: Task) -> dict[str, Any]:
+    payload = _json_loads(row.payload_json, {})
+    prompt_preview = payload.pop(PROMPT_PREVIEW_PAYLOAD_KEY, None) if isinstance(payload, dict) else None
     return {
         "task_id": row.task_id,
         "project_name": row.project_name,
@@ -98,7 +102,8 @@ def _task_to_dict(row: Task) -> dict[str, Any]:
         "resource_id": row.resource_id,
         "resource_type": row.resource_type,
         "script_file": row.script_file,
-        "payload": _json_loads(row.payload_json, {}),
+        "payload": payload,
+        "prompt_preview": prompt_preview if isinstance(prompt_preview, dict) else None,
         "status": row.status,
         "result": _json_loads(row.result_json, {}),
         "error_message": row.error_message,
@@ -164,6 +169,17 @@ class TaskRepository(BaseRepository):
     ) -> dict[str, Any]:
         now = utc_now()
 
+        stored_payload = dict(payload or {})
+        stored_payload[PROMPT_PREVIEW_PAYLOAD_KEY] = build_enqueue_prompt_preview(
+            project_name=project_name,
+            task_type=task_type,
+            media_type=media_type,
+            resource_id=resource_id,
+            script_file=script_file,
+            provider_id=provider_id,
+            payload=stored_payload,
+        )
+
         task_id = uuid.uuid4().hex
         task = Task(
             task_id=task_id,
@@ -173,7 +189,7 @@ class TaskRepository(BaseRepository):
             resource_id=resource_id,
             script_file=script_file,
             resource_type=resource_type,
-            payload_json=_json_dumps(payload or {}),
+            payload_json=_json_dumps(stored_payload),
             status="queued",
             source=source,
             dependency_task_id=dependency_task_id,
@@ -222,6 +238,90 @@ class TaskRepository(BaseRepository):
             "deduped": False,
             "existing_task_id": None,
         }
+
+    async def enqueue_batch(self, tasks: Sequence[Mapping[str, Any]]) -> tuple[dict[str, Any], ...]:
+        """Atomically enqueue a non-empty collection of generation tasks.
+
+        Unlike :meth:`enqueue`, this method never falls back to an existing task
+        on an active dedupe conflict.  A conflict or any other flush failure
+        rolls the whole transaction back, which is the admission boundary used
+        by the durable batch adapter.
+
+        Batch metadata is intentionally not written here.  The existing schema
+        has no batch table, so task rows remain the execution source of truth
+        until a separately coordinated migration introduces durable batch
+        metadata.
+        """
+        if not tasks:
+            return ()
+
+        now = utc_now()
+        rows: list[Task] = []
+        for spec in tasks:
+            required = ("project_name", "task_type", "media_type", "resource_id")
+            missing = [field for field in required if not str(spec.get(field) or "").strip()]
+            if missing:
+                raise ValueError(f"batch task missing required fields: {', '.join(missing)}")
+
+            project_name = str(spec["project_name"])
+            task_type = str(spec["task_type"])
+            media_type = str(spec["media_type"])
+            resource_id = str(spec["resource_id"])
+            raw_payload = spec.get("payload")
+            if raw_payload is None:
+                payload: dict[str, Any] = {}
+            elif isinstance(raw_payload, Mapping):
+                payload = dict(raw_payload)
+            else:
+                raise ValueError("batch task payload must be an object")
+            payload[PROMPT_PREVIEW_PAYLOAD_KEY] = build_enqueue_prompt_preview(
+                project_name=project_name,
+                task_type=task_type,
+                media_type=media_type,
+                resource_id=resource_id,
+                script_file=spec.get("script_file"),
+                provider_id=spec.get("provider_id"),
+                payload=payload,
+            )
+
+            rows.append(
+                Task(
+                    task_id=uuid.uuid4().hex,
+                    project_name=project_name,
+                    task_type=task_type,
+                    media_type=media_type,
+                    resource_id=resource_id,
+                    script_file=spec.get("script_file"),
+                    resource_type=spec.get("resource_type"),
+                    payload_json=_json_dumps(payload),
+                    status="queued",
+                    source=str(spec.get("source") or "webui"),
+                    dependency_task_id=spec.get("dependency_task_id"),
+                    dependency_group=spec.get("dependency_group"),
+                    dependency_index=spec.get("dependency_index"),
+                    provider_id=spec.get("provider_id"),
+                    queued_at=now,
+                    updated_at=now,
+                    user_id=str(spec.get("user_id") or DEFAULT_USER_ID),
+                )
+            )
+
+        try:
+            self.session.add_all(rows)
+            await self.session.flush()
+            await self.session.commit()
+        except Exception:
+            await self.session.rollback()
+            raise
+        return tuple(
+            {
+                "task_id": row.task_id,
+                "status": "queued",
+                "deduped": False,
+                "existing_task_id": None,
+            }
+            for row in rows
+        )
 
     async def get_active_tasks_for_resources(
         self,

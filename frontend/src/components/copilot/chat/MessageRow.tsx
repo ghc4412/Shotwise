@@ -27,6 +27,8 @@ const AMBER = "oklch(0.80 0.12 80)";
 
 interface MessageRowProps {
   turn: Turn;
+  /** 稳定的 DOM 锚点，供消息轨道定位。 */
+  anchorId?: string;
   /** 该 turn 是流式草稿——末尾块处于生成中，不给操作行。 */
   streaming?: boolean;
   /** 此刻是否给出改写入口（判据见 utils.canEditUserTurn）。 */
@@ -42,6 +44,7 @@ interface MessageRowProps {
 
 export function MessageRow({
   turn,
+  anchorId,
   streaming,
   editable = false,
   editing = false,
@@ -60,26 +63,32 @@ export function MessageRow({
     // 被夺走），但重新发送要跟着 editable 一起关：否则一次改写会把刚开的那一轮
     // 连同它已经做出的文件修改一起作废。
     return (
-      <MessageEditor
-        initialText={text}
-        submitting={submitting}
-        canSubmit={editable}
-        onCancel={() => onCancelEdit?.()}
-        onSubmit={(draft) => onSubmitEdit?.(turnUuid, draft)}
-      />
+      <div id={anchorId} data-message-id={turnUuid}>
+        <MessageEditor
+          initialText={text}
+          submitting={submitting}
+          canSubmit={editable}
+          onCancel={() => onCancelEdit?.()}
+          onSubmit={(draft) => onSubmitEdit?.(turnUuid, draft)}
+        />
+      </div>
     );
   }
 
   // 操作行只服务于有正文的已落库消息：草稿、工具卡片、系统事件没有可复制的正文
   const showActions = !streaming && Boolean(text.trim()) && (turn.type === "user" || turn.type === "assistant");
   if (!showActions) {
-    return <ChatMessage message={turn} streaming={streaming} />;
+    return (
+      <div id={anchorId} data-message-id={turnUuid}>
+        <ChatMessage message={turn} streaming={streaming} />
+      </div>
+    );
   }
 
   const isUser = turn.type === "user";
 
   return (
-    <div className="group">
+    <div id={anchorId} data-message-id={turnUuid} className="group">
       <ChatMessage message={turn} />
       <div
         className={`flex h-7 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 ${

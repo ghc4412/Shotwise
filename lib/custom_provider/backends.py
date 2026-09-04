@@ -5,7 +5,13 @@
 
 from __future__ import annotations
 
+import base64
+import json
+from collections.abc import Mapping
 from dataclasses import replace
+from pathlib import Path
+
+import httpx
 
 from lib.audio_backends.base import (
     AudioBackend,
@@ -21,7 +27,255 @@ from lib.video_backends.base import (
     VideoCapabilities,
     VideoGenerationRequest,
     VideoGenerationResult,
+    download_video,
 )
+
+
+def _declarative_url(base_url: str, path: str) -> str:
+    """Join a validated relative declaration path to the configured provider origin."""
+    return base_url.rstrip("/") + path
+
+
+async def _post_declarative(
+    *,
+    base_url: str,
+    api_key: str,
+    declaration,
+    model: str,
+    inputs: Mapping[str, object],
+) -> dict[str, object]:
+    from lib.custom_provider.endpoints import normalize_endpoint_response, render_endpoint_declaration
+
+    rendered = render_endpoint_declaration(declaration, inputs)
+    headers = dict(rendered.headers)
+    headers.setdefault("Authorization", f"Bearer {api_key}")
+    async with httpx.AsyncClient() as client:
+        response = await client.request(
+            rendered.method,
+            _declarative_url(base_url, rendered.path),
+            headers=headers,
+            json=rendered.body,
+            timeout=120,
+        )
+    response.raise_for_status()
+    try:
+        document = response.json()
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise ValueError(f"declarative endpoint returned non-JSON response for {model}") from exc
+    return normalize_endpoint_response(declaration, document)
+
+
+def _request_inputs(model: str, **values: object) -> dict[str, object]:
+    inputs: dict[str, object] = {"model": model}
+    for name, value in values.items():
+        if isinstance(value, Path):
+            inputs[name] = str(value)
+        elif isinstance(value, list) and all(isinstance(item, Path) for item in value):
+            inputs[name] = [str(item) for item in value]
+        else:
+            inputs[name] = value
+    return inputs
+
+
+def _response_value(response: Mapping[str, object], *names: str) -> object:
+    for name in names:
+        if name in response:
+            return response[name]
+    raise ValueError(f"declarative endpoint response must map one of {names!r}")
+
+
+class DeclarativeTextDelegate:
+    def __init__(self, *, provider_id: str, base_url: str, api_key: str, model: str, declaration) -> None:
+        self._provider_id, self._base_url, self._api_key = provider_id, base_url, api_key
+        self._model, self._declaration = model, declaration
+
+    @property
+    def name(self) -> str:
+        return self._provider_id
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @property
+    def capabilities(self) -> set[TextCapability]:
+        return {TextCapability.TEXT_GENERATION}
+
+    async def generate(self, request: TextGenerationRequest) -> TextGenerationResult:
+        response = await _post_declarative(
+            base_url=self._base_url,
+            api_key=self._api_key,
+            declaration=self._declaration,
+            model=self._model,
+            inputs=_request_inputs(
+                self._model,
+                prompt=request.prompt,
+                system_prompt=request.system_prompt,
+                max_output_tokens=request.max_output_tokens,
+            ),
+        )
+        text = _response_value(response, "text", "content", "output")
+        return TextGenerationResult(text=str(text), provider=self._provider_id, model=self._model)
+
+
+class DeclarativeImageDelegate:
+    def __init__(self, *, provider_id: str, base_url: str, api_key: str, model: str, declaration) -> None:
+        self._provider_id, self._base_url, self._api_key = provider_id, base_url, api_key
+        self._model, self._declaration = model, declaration
+
+    @property
+    def name(self) -> str:
+        return self._provider_id
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @property
+    def capabilities(self) -> set[ImageCapability]:
+        return {ImageCapability.TEXT_TO_IMAGE}
+
+    async def generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
+        response = await _post_declarative(
+            base_url=self._base_url,
+            api_key=self._api_key,
+            declaration=self._declaration,
+            model=self._model,
+            inputs=_request_inputs(
+                self._model,
+                prompt=request.prompt,
+                aspect_ratio=request.aspect_ratio,
+                image_size=request.image_size,
+                seed=request.seed,
+                reference_images=request.reference_images,
+            ),
+        )
+        value = _response_value(response, "image_url", "result_url", "url", "image_base64", "b64_json")
+        if isinstance(value, str) and value.startswith("data:"):
+            value = value.split(",", 1)[-1]
+        if isinstance(value, str) and not value.startswith("http"):
+            content = base64.b64decode(value)
+            await _write_bytes(request.output_path, content)
+        else:
+            from lib.image_backends.base import download_image_to_path
+
+            await download_image_to_path(str(value), request.output_path)
+        return ImageGenerationResult(
+            image_path=request.output_path,
+            provider=self._provider_id,
+            model=self._model,
+        )
+
+
+class DeclarativeVideoDelegate:
+    def __init__(self, *, provider_id: str, base_url: str, api_key: str, model: str, declaration) -> None:
+        self._provider_id, self._base_url, self._api_key = provider_id, base_url, api_key
+        self._model, self._declaration = model, declaration
+
+    @property
+    def name(self) -> str:
+        return self._provider_id
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @property
+    def video_capabilities(self) -> VideoCapabilities:
+        return VideoCapabilities()
+
+    async def generate(self, request: VideoGenerationRequest) -> VideoGenerationResult:
+        response = await _post_declarative(
+            base_url=self._base_url,
+            api_key=self._api_key,
+            declaration=self._declaration,
+            model=self._model,
+            inputs=_request_inputs(
+                self._model,
+                prompt=request.prompt,
+                duration=request.duration_seconds,
+                duration_seconds=request.duration_seconds,
+                aspect_ratio=request.aspect_ratio,
+                resolution=request.resolution,
+                start_image=request.start_image,
+                end_image=request.end_image,
+                reference_images=request.reference_images or [],
+                reference_audio_files=request.reference_audio_files or [],
+                generate_audio=request.generate_audio,
+            ),
+        )
+        url = str(_response_value(response, "video_url", "result_url", "url"))
+        await download_video(url, request.output_path)
+        task_id = response.get("task_id") or response.get("job_id")
+        return VideoGenerationResult(
+            video_path=request.output_path,
+            provider=self._provider_id,
+            model=self._model,
+            duration_seconds=request.duration_seconds,
+            video_uri=url,
+            task_id=str(task_id) if task_id is not None else None,
+        )
+
+    async def resume_video(self, job_id: str, request: VideoGenerationRequest) -> VideoGenerationResult:
+        raise NotImplementedError
+
+
+class DeclarativeAudioDelegate:
+    def __init__(self, *, provider_id: str, base_url: str, api_key: str, model: str, declaration) -> None:
+        self._provider_id, self._base_url, self._api_key = provider_id, base_url, api_key
+        self._model, self._declaration = model, declaration
+
+    @property
+    def name(self) -> str:
+        return self._provider_id
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @property
+    def capabilities(self) -> set[AudioCapability]:
+        return {AudioCapability.TEXT_TO_SPEECH}
+
+    def list_voices(self) -> list[VoiceOption]:
+        return []
+
+    async def synthesize(self, request: AudioSynthesisRequest) -> AudioSynthesisResult:
+        response = await _post_declarative(
+            base_url=self._base_url,
+            api_key=self._api_key,
+            declaration=self._declaration,
+            model=self._model,
+            inputs=_request_inputs(
+                self._model,
+                text=request.text,
+                voice=request.voice,
+                language_type=request.language_type,
+                speed=request.speed,
+            ),
+        )
+        value = _response_value(response, "audio_url", "result_url", "url", "audio_base64", "b64_json")
+        if isinstance(value, str) and value.startswith("http"):
+            async with httpx.AsyncClient() as client:
+                download = await client.get(value, timeout=120)
+            download.raise_for_status()
+            content = download.content
+        else:
+            if isinstance(value, str) and value.startswith("data:"):
+                value = value.split(",", 1)[-1]
+            content = base64.b64decode(str(value))
+        await _write_bytes(request.output_path, content)
+        return AudioSynthesisResult(
+            provider=self._provider_id,
+            model=self._model,
+            characters=len(request.text),
+            output_path=request.output_path,
+        )
+
+
+async def _write_bytes(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
 
 
 class CustomTextBackend:

@@ -1,8 +1,9 @@
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { Activity, CheckCircle2, ChevronRight, Clock3, Eye, Filter, Loader2, XCircle } from "lucide-react";
+import { Activity, CheckCircle2, ChevronRight, Clock3, Eye, Filter, Loader2, Square, XCircle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { GlassPopover } from "@/components/ui/GlassPopover";
+import { API } from "@/api";
 import { useEscapeClose } from "@/hooks/useEscapeClose";
 import { useAppStore } from "@/stores/app-store";
 import { useProjectsStore } from "@/stores/projects-store";
@@ -118,18 +119,68 @@ export function TaskRadar() {
   const anchorRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<RadarFilter>("all");
-  const { tasks, stats } = useTasksStore();
+  const [stopConfirm, setStopConfirm] = useState<{ count: number; projectName: string } | null>(null);
+  const [stopping, setStopping] = useState(false);
+  const { tasks, stats, refreshTasks } = useTasksStore();
   const { currentProjectData, currentProjectName } = useProjectsStore();
   const setTaskHudOpen = useAppStore((s) => s.setTaskHudOpen);
+  const pushToast = useAppStore((s) => s.pushToast);
   const triggerScrollTo = useAppStore((s) => s.triggerScrollTo);
 
-  useEscapeClose(() => setOpen(false), open);
+  useEscapeClose(() => {
+    if (stopConfirm) {
+      setStopConfirm(null);
+    } else {
+      setOpen(false);
+    }
+  }, open || Boolean(stopConfirm));
 
   const reviewCount = useMemo(() => tasks.filter(isReviewTask).length, [tasks]);
   const completedCount = Math.max(0, stats.succeeded - reviewCount);
   const filteredTasks = useMemo(() => tasks.filter((task) => matchesRadarFilter(task, filter)).slice(0, 8), [filter, tasks]);
   const activeCount = stats.queued + stats.running + stats.cancelling;
   const totalCount = stats.total || tasks.length;
+
+  const handleStopAll = useCallback(async () => {
+    if (!currentProjectName || stats.queued <= 0 || stopping) return;
+    try {
+      const { queued_count } = await API.cancelAllPreview(currentProjectName);
+      if (queued_count > 0) {
+        setStopConfirm({ count: queued_count, projectName: currentProjectName });
+      }
+    } catch {
+      pushToast(t("task_radar_stop_error"), "error");
+    }
+  }, [currentProjectName, pushToast, stats.queued, stopping, t]);
+
+  const confirmStopAll = useCallback(async () => {
+    if (!stopConfirm) return;
+    setStopping(true);
+    try {
+      const result = await API.cancelAllQueued(stopConfirm.projectName);
+      if (result.skipped_running_count > 0) {
+        pushToast(
+          t("task_radar_stop_partial", {
+            cancelled: result.cancelled_count,
+            skipped: result.skipped_running_count,
+          }),
+          "warning",
+        );
+      } else {
+        pushToast(t("task_radar_stop_success", { count: result.cancelled_count }), "success");
+      }
+    } catch {
+      pushToast(t("task_radar_stop_error"), "error");
+    } finally {
+      try {
+        await refreshTasks();
+      } catch {
+        // The cancellation result is already reported; the next task refresh will reconcile the list.
+      }
+      setStopping(false);
+      setStopConfirm(null);
+    }
+  }, [pushToast, refreshTasks, stopConfirm, t]);
 
   const openTask = (task: TaskItem) => {
     setOpen(false);
@@ -167,9 +218,37 @@ export function TaskRadar() {
             </div>
             <Filter className="mt-0.5 h-3.5 w-3.5" style={{ color: "var(--color-text-4)" }} />
           </div>
-          <div className="mt-3 grid grid-cols-5 gap-1" role="group" aria-label={t("task_radar_filter_group", { defaultValue: "Filter tasks" })}>
-            {filters.map((item) => <button key={item.id} type="button" className="rounded px-1 py-1.5 text-[10px] transition-colors focus-ring" style={{ color: filter === item.id ? "var(--color-text-1)" : "var(--color-text-4)", background: filter === item.id ? "var(--color-accent-dim)" : "transparent" }} onClick={() => setFilter(item.id)} aria-pressed={filter === item.id}><span className="block truncate">{item.label}</span><span className="mt-0.5 block tabular-nums">{item.count}</span></button>)}
+          <div className="mt-3 flex items-stretch gap-1" role="group" aria-label={t("task_radar_filter_group", { defaultValue: "Filter tasks" })}>
+            <div className="grid min-w-0 flex-1 grid-cols-5 gap-1">
+              {filters.map((item) => <button key={item.id} type="button" className="rounded px-1 py-1.5 text-[10px] transition-colors focus-ring" style={{ color: filter === item.id ? "var(--color-text-1)" : "var(--color-text-4)", background: filter === item.id ? "var(--color-accent-dim)" : "transparent" }} onClick={() => setFilter(item.id)} aria-pressed={filter === item.id}><span className="block truncate">{item.label}</span><span className="mt-0.5 block tabular-nums">{item.count}</span></button>)}
+            </div>
+            {currentProjectName && stats.queued > 0 && (
+              <button
+                type="button"
+                className="focus-ring inline-flex w-8 shrink-0 items-center justify-center rounded border transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                style={{ color: "oklch(0.72 0.18 25)", borderColor: "oklch(0.72 0.18 25 / 0.35)", background: "oklch(0.72 0.18 25 / 0.06)" }}
+                onClick={() => void handleStopAll()}
+                disabled={stopping}
+                aria-label={t("task_radar_stop_all_aria")}
+                title={t("task_radar_stop_all")}
+              >
+                {stopping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5 fill-current" />}
+              </button>
+            )}
           </div>
+          {stopConfirm && (
+            <div className="mt-2 rounded-md px-2.5 py-2" role="alertdialog" aria-label={t("task_radar_stop_confirm_aria")} style={{ background: "oklch(0.72 0.18 25 / 0.08)", border: "1px solid oklch(0.72 0.18 25 / 0.22)" }}>
+              <p className="text-[11px]" style={{ color: "var(--color-text-2)" }}>{t("task_radar_stop_confirm", { count: stopConfirm.count })}</p>
+              <div className="mt-2 flex gap-2">
+                <button type="button" className="focus-ring rounded px-2 py-1 text-[10px] font-medium text-white transition-opacity disabled:opacity-50" style={{ background: "oklch(0.55 0.20 25)" }} onClick={() => void confirmStopAll()} disabled={stopping}>
+                  {stopping ? t("cancelling") : t("task_radar_stop_confirm_action")}
+                </button>
+                <button type="button" className="focus-ring rounded px-2 py-1 text-[10px]" style={{ color: "var(--color-text-3)", border: "1px solid var(--color-hairline)" }} onClick={() => setStopConfirm(null)} disabled={stopping}>
+                  {t("task_radar_stop_cancel")}
+                </button>
+              </div>
+            </div>
+          )}
           <div className="mt-2 max-h-[21rem] overflow-y-auto pr-0.5">
             {filteredTasks.length > 0 ? filteredTasks.map((task) => <TaskRadarRow key={task.task_id} task={task} onOpen={openTask} />) : <div className="py-8 text-center text-xs" style={{ color: "var(--color-text-4)" }}>{t("task_radar_empty", { defaultValue: "No tasks match this view" })}</div>}
           </div>

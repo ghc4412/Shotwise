@@ -11,6 +11,10 @@ MESSAGES = {
     "workflow_version_conflict": "The workflow changed: expected version {expected}, current version {actual}",
     "project_not_found": "Project '{name}' does not exist or is not initialized",
     "resource_not_found": "The requested resource does not exist",
+    "episode_duration_revision_conflict": "The episode duration plan changed; refresh and try again",
+    "episode_duration_script_rebound": "The episode script binding changed; refresh and try again",
+    "episode_duration_resource_not_found": "The target episode or shot does not exist",
+    "episode_duration_invalid": "The episode duration plan is invalid: {details}",
     "canvas_image_source_invalid": "The canvas image source is invalid; choose an available image inside the project",
     "overview_ai_response_invalid": "The AI response could not be parsed into a project overview. Please retry or switch to a different model/provider",
     "overview_generation_failed": "Overview generation failed. Please retry later or switch to a different model/provider",
@@ -156,6 +160,7 @@ MESSAGES = {
     "connection_success": "Connection successful",
     "connection_timeout": "Connection timeout, please check your network or API configuration",
     "connection_failed": "Connection failed: {err_msg}",
+    "model_type_override_registered": "Registered models cannot have their type changed manually: {models}",
     "unsupported_test": "Provider {provider_id} does not support connection testing yet",
     "missing_credentials": "Missing credential configuration, please add a key first",
     "credential_group_ambiguous": (
@@ -356,6 +361,7 @@ MESSAGES = {
     # Agent credentials
     "agent_preset_unknown": "Unknown preset provider: {preset_id}",
     "agent_sdk_type_unknown": "Unknown Agent SDK type: {sdk_type}",
+    "agent_protocol_invalid": "Invalid Agent transport protocol: {error}",
     "agent_preset_sdk_type_mismatch": "Preset {preset_id} does not belong to the {sdk_type} Agent",
     "agent_base_url_required_custom": "base_url is required for custom configuration",
     "agent_no_fields_to_update": "No fields to update",

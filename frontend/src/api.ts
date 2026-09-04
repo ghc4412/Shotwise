@@ -81,6 +81,10 @@ import type { GenerationRoute } from "@/utils/generation-mode";
 import type { GridCapability, GridGeneration } from "@/types/grid";
 import type { Asset, AssetType, AssetCreatePayload, AssetUpdatePayload } from "@/types/asset";
 import type {
+  CreateDurableBatchRequest,
+  DurableBatchResponse,
+} from "@/types/batch";
+import type {
   AgentCredential,
   CreateAgentCredentialRequest,
   PresetProvidersResponse,
@@ -301,6 +305,41 @@ export interface UsageCallsFilters {
 export interface SuccessResponse {
   success: boolean;
   message?: string;
+}
+
+export type EpisodeDurationStrategy = "equal" | "proportional" | "manual";
+
+export interface EpisodeDurationPlanInput {
+  target_seconds: number;
+  strategy: EpisodeDurationStrategy;
+  manual_allocations?: Record<string, number>;
+}
+
+export interface EpisodeDurationItem {
+  resource_id: string;
+  duration_seconds: number | null;
+  locked: boolean;
+  generated: boolean;
+}
+
+export interface EpisodeDurationState {
+  revision: string;
+  plan: EpisodeDurationPlanInput | null;
+  items: EpisodeDurationItem[];
+}
+
+export interface EpisodeDurationChange {
+  resource_id: string;
+  from_seconds: number | null;
+  to_seconds: number;
+  clamp_reason: string | null;
+}
+
+export interface EpisodeDurationPreview {
+  revision: string;
+  plan: EpisodeDurationPlanInput;
+  target_seconds: number;
+  changes: EpisodeDurationChange[];
 }
 
 /** 说书模式片段 PATCH 入参（drama 模式片段走 {@link API.updateScene}）。 */
@@ -1111,6 +1150,65 @@ class API {
         method: "PATCH",
         body: JSON.stringify({ display_episode: displayEpisode }),
       },
+    );
+  }
+
+  static async getEpisodeDurationPlan(
+    projectName: string,
+    episode: number,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<EpisodeDurationState> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/episodes/${episode}/duration-plan`,
+      { signal: options.signal },
+    );
+  }
+
+  static async saveEpisodeDurationPlan(
+    projectName: string,
+    episode: number,
+    revision: string,
+    input: EpisodeDurationPlanInput,
+  ): Promise<{ revision: string; plan: EpisodeDurationPlanInput }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/episodes/${episode}/duration-plan`,
+      { method: "PUT", body: JSON.stringify({ ...input, expected_revision: revision }) },
+    );
+  }
+
+  static async previewEpisodeDurationPlan(
+    projectName: string,
+    episode: number,
+    input: EpisodeDurationPlanInput,
+  ): Promise<EpisodeDurationPreview> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/episodes/${episode}/duration-plan/preview`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  }
+
+  static async applyEpisodeDurationPlan(
+    projectName: string,
+    episode: number,
+    revision: string,
+    input: EpisodeDurationPlanInput,
+  ): Promise<{ revision: string; plan: EpisodeDurationPlanInput; applied: Record<string, number>; skipped: string[] }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/episodes/${episode}/duration-plan/apply`,
+      { method: "POST", body: JSON.stringify({ ...input, expected_revision: revision }) },
+    );
+  }
+
+  static async setEpisodeDurationLock(
+    projectName: string,
+    episode: number,
+    resourceId: string,
+    revision: string,
+    locked: boolean,
+  ): Promise<{ revision: string; resource_id: string; locked: boolean }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/episodes/${episode}/duration-plan/items/${encodeURIComponent(resourceId)}/lock`,
+      { method: "PATCH", body: JSON.stringify({ expected_revision: revision, locked }) },
     );
   }
 
@@ -2012,6 +2110,52 @@ class API {
     });
   }
 
+  static async createBatch(
+    projectName: string,
+    payload: CreateDurableBatchRequest,
+  ): Promise<DurableBatchResponse> {
+    return this.request<DurableBatchResponse>(
+      "/projects/" + encodeURIComponent(projectName) + "/batches",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  }
+
+  static async getBatch(
+    projectName: string,
+    batchId: string,
+  ): Promise<DurableBatchResponse> {
+    return this.request<DurableBatchResponse>(
+      "/projects/" + encodeURIComponent(projectName) + "/batches/" + encodeURIComponent(batchId),
+    );
+  }
+
+  static async cancelBatch(
+    projectName: string,
+    batchId: string,
+  ): Promise<DurableBatchResponse> {
+    return this.request<DurableBatchResponse>(
+      "/projects/" + encodeURIComponent(projectName) + "/batches/" + encodeURIComponent(batchId) + "/cancel",
+      {
+        method: "POST",
+      },
+    );
+  }
+
+  static async retryFailedBatch(
+    projectName: string,
+    batchId: string,
+  ): Promise<DurableBatchResponse> {
+    return this.request<DurableBatchResponse>(
+      "/projects/" + encodeURIComponent(projectName) + "/batches/" + encodeURIComponent(batchId) + "/retry-failed",
+      {
+        method: "POST",
+      },
+    );
+  }
+
   static async cancelAllPreview(
     projectName: string
   ): Promise<{ queued_count: number }> {
@@ -2425,6 +2569,17 @@ class API {
     return this.request(`/providers/${encodeURIComponent(id)}/enabled`, {
       method: "PATCH",
       body: JSON.stringify({ enabled }),
+    });
+  }
+
+  /** 更新连接测试发现的未登记模型媒体类型覆盖。 */
+  static async patchProviderModelTypes(
+    id: string,
+    modelTypes: Record<string, string | null>,
+  ): Promise<{ model_type_overrides: Record<string, string>; discovered_models: string[] }> {
+    return this.request(`/providers/${encodeURIComponent(id)}/model-types`, {
+      method: "PATCH",
+      body: JSON.stringify({ model_types: modelTypes }),
     });
   }
 

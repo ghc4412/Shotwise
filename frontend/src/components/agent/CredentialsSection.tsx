@@ -217,6 +217,7 @@ export function CredentialsSection({ sdkType }: CredentialsSectionProps) {
           editingCred
             ? {
                 preset_id: editingCred.preset_id,
+                protocol: editingCred.protocol,
                 display_name: editingCred.display_name,
                 base_url: editingCred.base_url,
                 model: editingCred.model ?? undefined,

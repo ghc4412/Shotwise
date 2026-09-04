@@ -85,4 +85,5 @@ async def load_custom_backend(
         model_id=model_id,
         endpoint=model.endpoint,
         capability_overrides=model.capability_overrides,
+        endpoint_declaration=model.endpoint_declaration,
     )

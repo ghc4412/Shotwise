@@ -15,6 +15,25 @@ export type TaskStatus =
   | "cancelled";
 export type TaskMediaType = "image" | "video" | "audio";
 
+export interface TaskPromptPreview {
+  source: "current_draft" | "enqueue_snapshot";
+  requests: Array<{
+    id: string;
+    label: string;
+    original_prompt: string;
+    effective_prompt: string | null;
+    shape: "structured" | "plain_text" | "unknown";
+    provider?: string | null;
+    model?: string | null;
+    references?: Array<{ kind: string; label: string; value: string }>;
+    duration_seconds?: number | null;
+    resolution?: string | null;
+    capability_adjustments?: string[];
+    warnings?: string[];
+    request_summary?: unknown;
+  }>;
+}
+
 export interface TaskItem {
   task_id: string;
   project_name: string;
@@ -30,6 +49,7 @@ export interface TaskItem {
   script_file: string | null;
   /** Parsed from payload_json in the SQLite row */
   payload: Record<string, unknown>;
+  prompt_preview?: TaskPromptPreview | null;
   status: TaskStatus;
   result: Record<string, unknown> | null;
   error_message: string | null;

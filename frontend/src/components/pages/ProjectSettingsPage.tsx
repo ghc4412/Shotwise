@@ -400,33 +400,41 @@ export function ProjectSettingsPage() {
     && (styleValue.uploadedFile !== null || !!styleValue.uploadedPreview);
   const isStyleSaveDisabled = savingStyle || !styleIsDirty || isStyleIncomplete;
 
+  const persistStyle = useCallback(async (value: StylePickerValue) => {
+    if (value.mode === "template" && value.templateId) {
+      await API.updateProject(projectName, { style_template_id: value.templateId });
+    } else if (value.mode === "custom" && value.uploadedFile) {
+      await API.uploadStyleImage(projectName, value.uploadedFile);
+    } else {
+      // 取消风格：显式清掉模板 ID 与自定义图
+      await API.updateProject(projectName, {
+        style_template_id: null,
+        clear_style_image: true,
+      });
+    }
+  }, [projectName]);
+
+  const refreshSavedStyle = useCallback(async () => {
+    // Refetch project to reset styleValue from canonical server state
+    const refreshed = await API.getProject(projectName);
+    const nextStyle = deriveStyleValue(refreshed.project as unknown as Record<string, unknown>, projectName);
+    setStyleValue(nextStyle);
+    initialStyleRef.current = nextStyle;
+  }, [projectName]);
+
   const handleSaveStyle = useCallback(async () => {
     if (!styleValue) return;
     setSavingStyle(true);
     try {
-      if (styleValue.mode === "template" && styleValue.templateId) {
-        await API.updateProject(projectName, { style_template_id: styleValue.templateId });
-      } else if (styleValue.mode === "custom" && styleValue.uploadedFile) {
-        await API.uploadStyleImage(projectName, styleValue.uploadedFile);
-      } else {
-        // 取消风格：显式清掉模板 ID 与自定义图
-        await API.updateProject(projectName, {
-          style_template_id: null,
-          clear_style_image: true,
-        });
-      }
-      // Refetch project to reset styleValue from canonical server state
-      const refreshed = await API.getProject(projectName);
-      const nextStyle = deriveStyleValue(refreshed.project as unknown as Record<string, unknown>, projectName);
-      setStyleValue(nextStyle);
-      initialStyleRef.current = nextStyle;
+      await persistStyle(styleValue);
+      await refreshSavedStyle();
       useAppStore.getState().pushToast(t("saved"), "success");
     } catch (e: unknown) {
       useAppStore.getState().pushToast(t("save_failed", { message: errMsg(e) }), "error");
     } finally {
       setSavingStyle(false);
     }
-  }, [styleValue, projectName, t]);
+  }, [styleValue, persistStyle, refreshSavedStyle, t]);
 
   const handleClearStyle = useCallback(() => {
     if (!styleValue) return;
@@ -486,6 +494,10 @@ export function ProjectSettingsPage() {
         ...(contentMode === "ad" ? {} : { default_duration: defaultDuration }),
         model_settings: newModelSettings,
       });
+      if (styleIsDirty && styleValue) {
+        await persistStyle(styleValue);
+        await refreshSavedStyle();
+      }
       setModelSettings(newModelSettings);
       setNarrationVoice(trimmedVoice);
       initialRef.current = {
@@ -505,7 +517,7 @@ export function ProjectSettingsPage() {
     } finally {
       setSaving(false);
     }
-  }, [modelSettings, videoBackend, videoProviderI2V, videoProviderR2V, imageBackendDefault, imageBackendT2I, imageBackendI2I, audioOverride, audioBackend, narrationVoice, narrationSpeed, textDefault, textSimple, textComplex, aspectRatio, generationRoute, gridStoryboard, gridToggleVisible, defaultDuration, speechRate, contentMode, videoResolution, imageResolution, projectName, t, globalDefaults]);
+  }, [modelSettings, videoBackend, videoProviderI2V, videoProviderR2V, imageBackendDefault, imageBackendT2I, imageBackendI2I, audioOverride, audioBackend, narrationVoice, narrationSpeed, textDefault, textSimple, textComplex, aspectRatio, generationRoute, gridStoryboard, gridToggleVisible, defaultDuration, speechRate, contentMode, videoResolution, imageResolution, projectName, t, globalDefaults, styleIsDirty, styleValue, persistStyle, refreshSavedStyle]);
 
   return (
     <div
@@ -885,7 +897,7 @@ export function ProjectSettingsPage() {
               // eslint-disable-next-line react-hooks/refs
               onClick={voidPromise(handleSave)}
               // 口播语速越界时不放行保存（区间与后端同一把尺），行内提示已说明原因
-              disabled={saving || !isValidSpeechRate(speechRate)}
+              disabled={saving || !isValidSpeechRate(speechRate) || isStyleIncomplete}
               className={`${ACCENT_BTN_CLS} px-5`}
               style={ACCENT_BUTTON_STYLE}
             >

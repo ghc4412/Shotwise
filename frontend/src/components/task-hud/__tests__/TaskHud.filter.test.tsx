@@ -1,9 +1,11 @@
-import { render, screen, cleanup, act, within } from "@testing-library/react";
+import { render, screen, cleanup, act, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createElement, useRef } from "react";
+import { API } from "@/api";
 import { TaskHud } from "@/components/task-hud/TaskHud";
 import { useAppStore } from "@/stores/app-store";
+import { useProjectsStore } from "@/stores/projects-store";
 import { useTasksStore } from "@/stores/tasks-store";
 import { makeTask } from "@/test/factories";
 import i18n from "@/i18n";
@@ -108,12 +110,14 @@ describe("TaskHud status filter", () => {
   beforeEach(async () => {
     await i18n.changeLanguage("zh");
     useAppStore.setState({ taskHudOpen: true });
+    useProjectsStore.setState({ currentProjectName: "proj" });
     useTasksStore.setState({ tasks: TASKS, stats: emptyStats });
   });
 
   afterEach(() => {
     cleanup();
     useAppStore.setState({ taskHudOpen: false });
+    useProjectsStore.setState({ currentProjectName: null });
     useTasksStore.setState({ tasks: [], stats: emptyStats });
   });
 
@@ -123,6 +127,40 @@ describe("TaskHud status filter", () => {
     for (const resourceId of ["RUNNING1", "QUEUED1", "FAILED1", "DONE1", "CANCELLED1"]) {
       expect(await screen.findByText(resourceId)).toBeTruthy();
     }
+  });
+
+  it("keeps the stop button visible and disabled when there are no queued tasks", () => {
+    useTasksStore.setState({ tasks: [], stats: emptyStats });
+    render(<HostedTaskHud />);
+
+    expect(screen.getByRole("button", { name: "停止当前项目所有排队任务" })).toBeDisabled();
+  });
+
+  it("previews and confirms stopping queued tasks from the task radar", async () => {
+    const preview = vi.spyOn(API, "cancelAllPreview").mockResolvedValue({ queued_count: 1 });
+    const cancelAll = vi.spyOn(API, "cancelAllQueued").mockResolvedValue({
+      cancelled_count: 1,
+      skipped_running_count: 0,
+    });
+    const refreshTasks = vi.fn().mockResolvedValue(undefined);
+    useTasksStore.setState({
+      tasks: [makeTask({ project_name: "proj", status: "queued", resource_id: "QUEUED1" })],
+      stats: { ...emptyStats, queued: 1, total: 1 },
+      refreshTasks,
+    });
+    const user = userEvent.setup();
+    render(<HostedTaskHud />);
+
+    const stopButton = screen.getByRole("button", { name: "停止当前项目所有排队任务" });
+    expect(stopButton).toBeEnabled();
+    await user.click(stopButton);
+    await waitFor(() => expect(preview).toHaveBeenCalledWith("proj"));
+
+    await user.click(screen.getByRole("button", { name: "确认取消" }));
+    await waitFor(() => {
+      expect(cancelAll).toHaveBeenCalledWith("proj");
+      expect(refreshTasks).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("keeps terminal tasks visible instead of fading them out", async () => {
@@ -248,3 +286,5 @@ describe("TaskHud status filter", () => {
     }
   });
 });
+
+

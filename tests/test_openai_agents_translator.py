@@ -61,6 +61,21 @@ def test_text_streaming_and_message_completion() -> None:
     assert completed[0]["message_id"] == "resp-1"
 
 
+def test_flush_partial_assistant_preserves_text_until_completion_item() -> None:
+    tr = OpenAIAgentsTranslator(session_id="sess-1", model="gpt-x")
+    tr.feed(FakeEvent("raw_response_event", data=_D(type="response.created", response=_D(id="resp-1"))))
+    tr.feed(FakeEvent("raw_response_event", data=_D(type="response.output_text.delta", delta="未完成")))
+
+    partial = tr.flush_partial_assistant()
+
+    assert partial == {
+        "type": "assistant",
+        "message_id": "resp-1",
+        "content": [{"type": "text", "text": "未完成"}],
+    }
+    assert tr.flush_partial_assistant() is None
+
+
 def test_tool_call_and_output() -> None:
     tr = OpenAIAgentsTranslator(session_id="sess-1", model="gpt-x")
     tr.feed(FakeEvent("raw_response_event", data=_D(type="response.created", response=_D(id="resp-1"))))

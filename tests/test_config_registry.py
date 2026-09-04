@@ -351,7 +351,7 @@ class TestModelHasAudioTrack:
 
     def test_agnes_true_silent(self):
         """Agnes 同 MiniMax：真无声模型。"""
-        model = self._model("agnes", "agnes-video-v2.0")
+        model = self._model("agnes", "agnes-video-2.5")
         assert model_has_audio_track("agnes", model) is False
 
     def test_non_video_model_always_false(self):
@@ -404,6 +404,8 @@ class TestAudioSwitchControllable:
 #: silent = 无音轨。新增视频型号必须在此登记，登记时即被迫表态其音轨立场——漏声明 audio_always_on
 #: 的恒有声新型号会以 silent 落到这张表上，与作者的登记意图对不上而在 CI 暴露。
 _VIDEO_AUDIO_STANCES: dict[tuple[str, str], str] = {
+    ("agnes", "agnes-video-2.5"): "silent",
+    ("agnes", "agnes-video-2.5-flash"): "silent",
     ("agnes", "agnes-video-v2.0"): "silent",
     ("ark", "doubao-seedance-1-5-pro-251215"): "controllable",
     ("ark", "doubao-seedance-2-0-260128"): "controllable",

@@ -37,6 +37,9 @@ class AgentAnthropicCredential(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, default=DEFAULT_USER_ID)
     sdk_type: Mapped[str] = mapped_column(String(16), nullable=False, default="claude")  # "claude" | "openai"
+    protocol: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="chat_completions", server_default="chat_completions"
+    )
     preset_id: Mapped[str] = mapped_column(String(64), nullable=False)  # "deepseek" | "__custom__" | ...
     display_name: Mapped[str] = mapped_column(String(128), nullable=False)
     base_url: Mapped[str] = mapped_column(Text, nullable=False)

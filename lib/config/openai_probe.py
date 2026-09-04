@@ -16,6 +16,7 @@ from typing import Any, Literal
 
 import httpx
 
+from lib.agent_protocol import PROTOCOL_CHAT_COMPLETIONS, PROTOCOL_RESPONSES, normalize_protocol
 from lib.agent_provider_catalog import CUSTOM_SENTINEL_ID, get_preset
 from lib.config.anthropic_probe import (
     DiagnosisCode,
@@ -119,6 +120,64 @@ async def probe_chat_completions(
     return ProbeResult(success=True, status_code=resp.status_code, latency_ms=elapsed, error=None)
 
 
+async def probe_responses(
+    *,
+    base_url: str,
+    api_key: str,
+    model: str,
+    timeout_s: float = 10.0,
+) -> ProbeResult:
+    """POST {base_url}/v1/responses with a minimal Responses API request."""
+    effective = ensure_openai_base_url(base_url) or ""
+    url = f"{effective.rstrip('/')}/responses"
+    payload = {
+        "model": model,
+        "input": "ping",
+        "max_output_tokens": 1,
+        "stream": False,
+    }
+    headers = {"authorization": f"Bearer {api_key}", "content-type": "application/json"}
+    started = time.perf_counter()
+    try:
+        resp = await _post(url=url, headers=headers, payload=payload, timeout_s=timeout_s)
+    except httpx.TimeoutException as exc:
+        elapsed = int((time.perf_counter() - started) * 1000)
+        logger.info("probe_responses timeout url=%s elapsed_ms=%d", url, elapsed)
+        return ProbeResult(success=False, status_code=None, latency_ms=elapsed, error=f"timeout: {exc!s}")
+    except httpx.HTTPError as exc:
+        elapsed = int((time.perf_counter() - started) * 1000)
+        logger.info("probe_responses network err url=%s elapsed_ms=%d", url, elapsed)
+        return ProbeResult(success=False, status_code=None, latency_ms=elapsed, error=_truncate(str(exc)))
+
+    elapsed = int((time.perf_counter() - started) * 1000)
+    logger.info("probe_responses url=%s status=%d elapsed_ms=%d", url, resp.status_code, elapsed)
+    if resp.status_code >= 400:
+        return ProbeResult(
+            success=False,
+            status_code=resp.status_code,
+            latency_ms=elapsed,
+            error=_truncate(resp.text),
+        )
+
+    try:
+        data = resp.json()
+    except ValueError:
+        return ProbeResult(
+            success=False,
+            status_code=resp.status_code,
+            latency_ms=elapsed,
+            error="non-openai response: not JSON",
+        )
+    if not isinstance(data, dict) or not isinstance(data.get("output"), list):
+        return ProbeResult(
+            success=False,
+            status_code=resp.status_code,
+            latency_ms=elapsed,
+            error="non-openai Responses JSON: missing output array",
+        )
+    return ProbeResult(success=True, status_code=resp.status_code, latency_ms=elapsed, error=None)
+
+
 async def _get(*, url: str, headers: dict[str, str], timeout_s: float) -> httpx.Response:
     """间接层：测试时 patch 这一个。"""
     client = get_http_client()
@@ -187,8 +246,13 @@ async def run_test(
     base_url: str | None,
     api_key: str,
     model: str | None,
+    protocol: str = PROTOCOL_CHAT_COMPLETIONS,
 ) -> TestConnectionResponse:
-    """OpenAI Agents 端到端测试：派生 base_url → chat + models 并发 → 诊断。"""
+    """OpenAI Agents 端到端测试：按协议探测消息端点，并发探测 models。"""
+    try:
+        effective_protocol = normalize_protocol("openai", protocol)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
     if preset_id and preset_id != CUSTOM_SENTINEL_ID:
         preset = get_preset(preset_id)
         if preset is None:
@@ -201,8 +265,9 @@ async def run_test(
         effective_base = base_url
         effective_model = model or _DEFAULT_TEST_MODEL
 
+    message_probe = probe_responses if effective_protocol == PROTOCOL_RESPONSES else probe_chat_completions
     msg, disc = await asyncio.gather(
-        probe_chat_completions(base_url=effective_base, api_key=api_key, model=effective_model),
+        message_probe(base_url=effective_base, api_key=api_key, model=effective_model),
         probe_discovery(base_url=effective_base, api_key=api_key),
     )
 

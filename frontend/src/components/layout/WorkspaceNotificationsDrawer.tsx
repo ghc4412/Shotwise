@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   BellRing,
   CheckCheck,
+  Trash2,
   CircleAlert,
   Info,
   Sparkles,
@@ -59,6 +60,9 @@ export function WorkspaceNotificationsDrawer({
   );
   const removeWorkspaceNotification = useAppStore(
     (s) => s.removeWorkspaceNotification,
+  );
+  const clearWorkspaceNotifications = useAppStore(
+    (s) => s.clearWorkspaceNotifications,
   );
   useEffect(() => {
     if (open) markAllWorkspaceNotificationsRead();
@@ -118,6 +122,27 @@ export function WorkspaceNotificationsDrawer({
           </div>
         </div>
         <div className="flex-1" />
+        {workspaceNotifications.length > 0 && (
+          <button
+            type="button"
+            onClick={clearWorkspaceNotifications}
+            className="focus-ring inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10.5px] transition-colors"
+            style={{ color: "var(--color-text-3)" }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = "var(--color-text)";
+              e.currentTarget.style.background = "oklch(1 0 0 / 0.06)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "var(--color-text-3)";
+              e.currentTarget.style.background = "transparent";
+            }}
+            aria-label={t("clear_notifications")}
+            title={t("clear_notifications")}
+          >
+            <Trash2 className="h-3 w-3" />
+            {t("clear_notifications")}
+          </button>
+        )}
         <ModalCloseButton onClick={onClose} ariaLabel={t("close_notification_panel")} />
       </div>
 

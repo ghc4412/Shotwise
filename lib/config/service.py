@@ -120,6 +120,7 @@ async def build_openai_agents_env_dict(session: AsyncSession) -> dict[str, str]:
         "OPENAI_API_KEY": cred.api_key or "",
         "OPENAI_BASE_URL": cred.base_url or "",
         "OPENAI_MODEL": cred.model or "",
+        "OPENAI_PROTOCOL": getattr(cred, "protocol", "") or "chat_completions",
     }
     # 未消费的 openai env key 补空，保持注入字典键集完整
     for key in OPENAI_AGENTS_ENV_KEYS:

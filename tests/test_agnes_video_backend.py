@@ -76,13 +76,13 @@ class TestCapabilities:
 
         backend = AgnesVideoBackend(api_key="sk-test", base_url="https://apihub.agnes-ai.com/v1")
         assert backend.name == PROVIDER_AGNES
-        assert backend.model == "agnes-video-v2.0"
+        assert backend.model == "agnes-video-2.5"
 
     def test_default_model_when_unset(self):
         from lib.video_backends.agnes import AgnesVideoBackend
 
         backend = AgnesVideoBackend(api_key="sk-test")
-        assert backend.model == "agnes-video-v2.0"
+        assert backend.model == "agnes-video-2.5"
 
     def test_video_capabilities(self):
         from lib.video_backends.agnes import AgnesVideoBackend
@@ -185,7 +185,7 @@ class TestTextToVideo:
         assert result.video_path == tmp_path / "out.mp4"
         assert result.video_path.read_bytes() == b"mp4-bytes"
         assert result.provider == PROVIDER_AGNES
-        assert result.model == "agnes-video-v2.0"
+        assert result.model == "agnes-video-2.5"
         assert result.duration_seconds == 5
         assert result.task_id == "task-42"
         assert result.video_uri == "https://cdn.agnes/out.mp4"
@@ -195,7 +195,7 @@ class TestTextToVideo:
         post_call = client.post.call_args
         assert post_call.args[0] == "https://apihub.agnes-ai.com/v1/videos"
         body = post_call.kwargs["json"]
-        assert body["model"] == "agnes-video-v2.0"
+        assert body["model"] == "agnes-video-2.5"
         assert body["prompt"] == "A cat running"
         assert body["height"] == 1280
         assert body["width"] == 720

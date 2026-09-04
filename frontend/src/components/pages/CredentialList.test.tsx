@@ -301,6 +301,22 @@ describe("pages/CredentialList credential groups (api_key OR access_key+secret_k
     expect(createSpy).not.toHaveBeenCalled();
   });
 
+  it("forwards connection test results to the parent", async () => {
+    vi.spyOn(API, "listCredentials").mockResolvedValue({ credentials: [mockCred()] });
+    const result = {
+      success: true,
+      available_models: ["qwen-plus", "wan2.7-image"],
+      message: "连接成功",
+    };
+    vi.spyOn(API, "testProviderConnection").mockResolvedValue(result);
+    const onTested = vi.fn();
+    render(<CredentialList providerId="dashscope" supportsBaseUrl onTested={onTested} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /测试 默认账号 连接/ }));
+
+    await vi.waitFor(() => expect(onTested).toHaveBeenCalledWith(result));
+  });
+
   it("does not mark any single field as required when multiple groups exist", async () => {
     vi.spyOn(API, "listCredentials").mockResolvedValue({ credentials: [] });
     render(

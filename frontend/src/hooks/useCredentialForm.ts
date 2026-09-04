@@ -2,12 +2,14 @@ import { useState } from "react";
 
 import type {
   AgentModelMapEntry,
+  AgentProtocol,
   CreateAgentCredentialRequest,
   PresetProvider,
 } from "@/types/agent-credential";
 
 export interface CredentialForm {
   presetId: string;
+  protocol: AgentProtocol;
   apiKey: string;
   baseUrl: string;
   displayName: string;
@@ -17,6 +19,7 @@ export interface CredentialForm {
   opusModel: string;
   subagentModel: string;
   modelMap: AgentModelMapEntry[];
+  setProtocol: (v: AgentProtocol) => void;
   setApiKey: (v: string) => void;
   setBaseUrl: (v: string) => void;
   setDisplayName: (v: string) => void;
@@ -38,8 +41,12 @@ export function useCredentialForm(
   initial: Partial<CreateAgentCredentialRequest> | undefined,
   customSentinelId: string,
   presets: PresetProvider[],
+  sdkType: "claude" | "openai",
 ): CredentialForm {
   const [presetId, setPresetId] = useState(initial?.preset_id ?? customSentinelId);
+  const [protocol, setProtocol] = useState<AgentProtocol>(
+    initial?.protocol ?? (sdkType === "claude" ? "anthropic_messages" : "chat_completions"),
+  );
   const [apiKey, setApiKey] = useState(initial?.api_key ?? "");
   const [baseUrl, setBaseUrl] = useState(initial?.base_url ?? "");
   const [displayName, setDisplayName] = useState(initial?.display_name ?? "");
@@ -69,6 +76,7 @@ export function useCredentialForm(
   };
 
   const isDirty = (init: Partial<CreateAgentCredentialRequest> | undefined): boolean =>
+    protocol !== (init?.protocol ?? (sdkType === "claude" ? "anthropic_messages" : "chat_completions")) ||
     apiKey.trim() !== "" ||
     displayName !== (init?.display_name ?? "") ||
     baseUrl !== (init?.base_url ?? "") ||
@@ -81,6 +89,7 @@ export function useCredentialForm(
 
   const buildRequest = (): CreateAgentCredentialRequest => ({
     preset_id: presetId,
+    protocol,
     api_key: apiKey,
     display_name: displayName || undefined,
     base_url: baseUrl || undefined,
@@ -94,6 +103,7 @@ export function useCredentialForm(
 
   return {
     presetId,
+    protocol,
     apiKey,
     baseUrl,
     displayName,
@@ -103,6 +113,7 @@ export function useCredentialForm(
     opusModel,
     subagentModel,
     modelMap,
+    setProtocol,
     setApiKey,
     setBaseUrl,
     setDisplayName,

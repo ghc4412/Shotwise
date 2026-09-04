@@ -120,6 +120,8 @@ export function SubagentCard({ block }: SubagentCardProps) {
           onClick={() => setIsExpanded(!isExpanded)}
           aria-expanded={isExpanded}
           aria-controls={detailsId}
+        aria-label={isExpanded ? t("tool_call_collapse") : t("tool_call_expand")}
+        title={isExpanded ? t("tool_call_collapse") : t("tool_call_expand")}
           className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left transition-colors"
           onMouseEnter={(e) => {
             e.currentTarget.style.background = "oklch(1 0 0 / 0.04)";

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, Index, Integer, String, Text, text
+from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from lib.db.base import Base, UserOwnedMixin
@@ -76,3 +76,21 @@ class WorkerLease(Base):
     owner_id: Mapped[str] = mapped_column(String, nullable=False)
     lease_until: Mapped[float] = mapped_column(Float, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class GenerationBatchRecord(UserOwnedMixin, Base):
+    """Durable control-plane record for a group of generation tasks."""
+
+    __tablename__ = "generation_batches"
+
+    batch_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_name: Mapped[str] = mapped_column(String, nullable=False)
+    admission_state: Mapped[str] = mapped_column(String, nullable=False, default="admitting")
+    items_json: Mapped[str] = mapped_column(Text, nullable=False)
+    task_ids_json: Mapped[str] = mapped_column(Text, nullable=False)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (Index("idx_generation_batches_user_project_updated", "user_id", "project_name", "updated_at"),)

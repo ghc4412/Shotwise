@@ -49,6 +49,7 @@ class TestCustomProviderTable:
             "image_max_workers",
             "video_max_workers",
             "audio_max_workers",
+            "is_enabled",
             "created_at",
             "updated_at",
         }
@@ -117,6 +118,7 @@ class TestCustomProviderModelTable:
             "supported_durations",
             "resolution",
             "capability_overrides",
+            "endpoint_declaration",
             "created_at",
             "updated_at",
         }
@@ -124,6 +126,41 @@ class TestCustomProviderModelTable:
 
 
 class TestCustomProviderModelRoundTrip:
+    async def test_endpoint_declaration_round_trips(self, session):
+        provider = CustomProvider(
+            display_name="Declarative Provider",
+            discovery_format="openai",
+            base_url="https://relay.example.com",
+            api_key="sk-test",
+        )
+        session.add(provider)
+        await session.commit()
+
+        declaration = {
+            "method": "POST",
+            "path": "/v1/videos/{model}",
+            "headers": {"Content-Type": "application/json"},
+            "body": {"/prompt": "prompt"},
+            "response": {"result_url": "/output/url"},
+            "capability_overrides": {},
+        }
+        session.add(
+            CustomProviderModel(
+                provider_id=provider.id,
+                model_id="relay-video",
+                display_name="Relay Video",
+                endpoint="openai-video",
+                endpoint_declaration=declaration,
+            )
+        )
+        await session.commit()
+        session.expire_all()
+
+        loaded = (
+            await session.execute(select(CustomProviderModel).where(CustomProviderModel.model_id == "relay-video"))
+        ).scalar_one()
+        assert loaded.endpoint_declaration == declaration
+
     async def test_create_linked_model(self, session):
         """Create a CustomProviderModel linked to a provider and read back."""
         provider = CustomProvider(

@@ -12,7 +12,7 @@ import logging
 import os
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import AfterValidator, BaseModel
@@ -43,6 +43,11 @@ logger = logging.getLogger(__name__)
 MAX_VERTEX_CREDENTIALS_BYTES = 1024 * 1024  # 1 MiB
 
 router = APIRouter(prefix="/providers", tags=["Providers"])
+
+ModelMediaType = Literal["image", "video", "text", "audio", "unknown"]
+_MODEL_MEDIA_TYPES = frozenset({"image", "video", "text", "audio", "unknown"})
+_MODEL_TYPE_OVERRIDES_KEY = "model_type_overrides"
+_DISCOVERED_MODELS_KEY = "discovered_models"
 
 _CREDENTIAL_KEYS = frozenset({"api_key", "credentials_path", "base_url", "access_key", "secret_key"})
 
@@ -162,12 +167,28 @@ class ProviderConfigResponse(BaseModel):
     # 与 /providers 目录端点同构（同一序列化点 _build_models_response），供详情页渲染只读模型列表；
     # 预置供应商模型不落 DB、不可编辑，可编辑模型走自定义供应商。
     models: dict[str, ModelInfoResponse] = {}
+    # 仅用于连接测试发现且未登记的模型；键为模型 ID，值为用户手动选择的媒体类型。
+    model_type_overrides: dict[str, ModelMediaType] = {}
+    # 连接测试发现的未登记模型 ID，持久化用于刷新后恢复设置页列表。
+    discovered_models: list[str] = []
 
 
 class ConnectionTestResponse(BaseModel):
     success: bool
     available_models: list[str]
     message: str
+    # 媒体类型由连接测试统一推断；旧客户端可忽略该字段。
+    model_types: dict[str, str] = {}
+
+
+class UpdateModelTypesRequest(BaseModel):
+    # 值为 null 表示删除该模型的手动覆盖，恢复自动推断。
+    model_types: dict[str, ModelMediaType | None]
+
+
+class UpdateModelTypesResponse(BaseModel):
+    model_type_overrides: dict[str, ModelMediaType] = {}
+    discovered_models: list[str] = []
 
 
 class CredentialResponse(BaseModel):
@@ -523,7 +544,54 @@ async def get_provider_config(
         console_url=meta.console_url,
         enabled=await svc.get_provider_enabled(provider_id),
         models=_build_models_response(provider_id, models_dict),
+        model_type_overrides=_read_model_type_overrides(db_values.get(_MODEL_TYPE_OVERRIDES_KEY)),
+        discovered_models=_read_discovered_models(db_values.get(_DISCOVERED_MODELS_KEY)),
     )
+
+
+@router.patch("/{provider_id}/model-types", response_model=UpdateModelTypesResponse)
+async def patch_model_types(
+    provider_id: str,
+    body: UpdateModelTypesRequest,
+    _t: Translator,
+    _user: AdminUser,
+    session: AsyncSession = Depends(get_async_session),
+) -> UpdateModelTypesResponse:
+    """保存未登记模型的手动媒体类型覆盖。"""
+    _validate_provider(provider_id, _t)
+    meta = PROVIDER_REGISTRY[provider_id]
+    invalid_registered = sorted(set(body.model_types) & set(meta.models))
+    if invalid_registered:
+        raise HTTPException(
+            status_code=422,
+            detail=_t("model_type_override_registered", models=", ".join(invalid_registered)),
+        )
+
+    svc = ConfigService(session)
+    current = await svc.get_provider_config(provider_id)
+    overrides = _read_model_type_overrides(current.get(_MODEL_TYPE_OVERRIDES_KEY))
+    discovered_models = _read_discovered_models(current.get(_DISCOVERED_MODELS_KEY))
+    for model_id, media_type in body.model_types.items():
+        if media_type is None:
+            overrides.pop(model_id, None)
+        else:
+            overrides[model_id] = media_type
+        if model_id not in discovered_models:
+            discovered_models.append(model_id)
+    await svc.set_provider_config(
+        provider_id,
+        _MODEL_TYPE_OVERRIDES_KEY,
+        json.dumps(overrides, ensure_ascii=False, sort_keys=True),
+        flush=False,
+    )
+    await svc.set_provider_config(
+        provider_id,
+        _DISCOVERED_MODELS_KEY,
+        json.dumps(discovered_models, ensure_ascii=False),
+        flush=False,
+    )
+    await session.commit()
+    return {"model_type_overrides": overrides, "discovered_models": discovered_models}
 
 
 @router.patch("/{provider_id}/config", status_code=204)
@@ -755,6 +823,73 @@ async def upload_vertex_credential(
 # ---------------------------------------------------------------------------
 
 _CONNECTION_TEST_TIMEOUT = 15  # 秒
+
+
+def _read_discovered_models(raw: str | Mapping[str, Any] | None) -> list[str]:
+    """读取连接测试发现的模型 ID，损坏配置按空列表处理。"""
+    if not raw:
+        return []
+    if isinstance(raw, Mapping):
+        raw = raw.get("value")
+    if not isinstance(raw, str):
+        return []
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(payload, list):
+        return []
+    return list(dict.fromkeys(model_id for model_id in payload if isinstance(model_id, str) and model_id))
+
+
+def _read_model_type_overrides(raw: str | Mapping[str, Any] | None) -> dict[str, ModelMediaType]:
+    """读取并过滤模型类型覆盖，损坏或过期配置按空字典处理。"""
+    if not raw:
+        return {}
+    if isinstance(raw, Mapping):
+        raw = raw.get("value")
+    if not isinstance(raw, str):
+        return {}
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        model_id: media_type
+        for model_id, media_type in payload.items()
+        if isinstance(model_id, str) and isinstance(media_type, str) and media_type in _MODEL_MEDIA_TYPES
+    }
+
+
+def _infer_model_media_type(provider_id: str, model_id: str) -> str:
+    """Infer a display-only media type for models returned by a provider API.
+
+    Registered models remain the source of truth for known capabilities. This
+    fallback only labels newly discovered model IDs for the settings page; it
+    does not alter backend routing or generation capabilities.
+    """
+    meta = PROVIDER_REGISTRY.get(provider_id)
+    registered = meta.models.get(model_id) if meta else None
+    if registered is not None:
+        return registered.media_type
+
+    name = model_id.casefold()
+    if any(token in name for token in ("embedding", "embed", "rerank", "moderation", "safety")):
+        return "unknown"
+    if any(token in name for token in ("whisper", "tts", "text-to-speech", "speech-to-text", "audio")):
+        return "audio"
+    if any(token in name for token in ("veo", "sora", "video", "kling", "vidu", "hailuo", "seedance", "runway")):
+        return "video"
+    if any(token in name for token in ("imagen", "image", "dall-e", "dall", "flux", "stable-diffusion")):
+        return "image"
+
+    return "unknown"
+
+
+def _model_types_for(provider_id: str, model_ids: list[str]) -> dict[str, str]:
+    return {model_id: _infer_model_media_type(provider_id, model_id) for model_id in model_ids}
 
 
 def _test_gemini_aistudio(config: dict[str, str], _t: Callable[..., str]) -> ConnectionTestResponse:
@@ -1103,4 +1238,24 @@ async def test_provider_connection(
             available_models=[],
             message=_t("connection_failed", err_msg=err_msg),
         )
+    result.model_types = _model_types_for(provider_id, result.available_models)
+    current = await svc.get_provider_config(provider_id)
+    overrides = _read_model_type_overrides(current.get(_MODEL_TYPE_OVERRIDES_KEY))
+    result.model_types.update(
+        {
+            model_id: media_type
+            for model_id, media_type in overrides.items()
+            if model_id in result.model_types and model_id not in PROVIDER_REGISTRY[provider_id].models
+        }
+    )
+    discovered_models = [
+        model_id for model_id in result.available_models if model_id not in PROVIDER_REGISTRY[provider_id].models
+    ]
+    await svc.set_provider_config(
+        provider_id,
+        _DISCOVERED_MODELS_KEY,
+        json.dumps(discovered_models, ensure_ascii=False),
+        flush=False,
+    )
+    await session.commit()
     return result

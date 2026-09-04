@@ -119,6 +119,23 @@ describe("SubagentCard", () => {
     expect(screen.getByText("子任务回复")).toBeInTheDocument();
   });
 
+  it("collapses standalone execution results by default", () => {
+    const block: ContentBlock = {
+      type: "tool_result",
+      content: "很长的执行结果",
+      is_error: false,
+    };
+    render(<ContentBlockRenderer block={block} index={0} />);
+
+    const toggle = screen.getByRole("button", { name: "展开执行结果" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("很长的执行结果")).not.toBeInTheDocument();
+
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("很长的执行结果")).toBeInTheDocument();
+  });
+
   it("derives completed status from the tool result", () => {
     render(<SubagentCard block={makeCardBlock({ result: "done" })} />);
     expect(screen.getByText("已完成")).toBeInTheDocument();

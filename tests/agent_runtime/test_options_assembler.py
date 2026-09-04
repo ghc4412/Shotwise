@@ -8,13 +8,15 @@ project_cwd 解析器 / 凭证 loader 直接构造装配器，断言凭证注入
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from server.agent_runtime.agent_access_policy import AgentAccessPolicy
 from server.agent_runtime.options_assembler import (
     OptionsAssembler,
+    OptionsBuildResult,
     load_provider_env_overrides,
 )
 
@@ -114,6 +116,54 @@ async def test_build_threads_injected_deps_into_options(tmp_path: Path) -> None:
     assert options.sandbox.get("enabled") is True
     # 用户消息回放开关：缺失则 SDK 不回放副本，身份映射无从建立
     assert options.extra_args == {"replay-user-messages": None}
+    assert isinstance(options, OptionsBuildResult)
+    assert options.cleanup is None
+    assert set(options.mcp_servers) == {"shotwise"}
+
+
+@pytest.mark.asyncio
+async def test_build_closes_remote_manifest_when_options_construction_fails(tmp_path: Path) -> None:
+    async def fake_loader():
+        return {}
+
+    assembler = _make_assembler(tmp_path, provider_env_loader=fake_loader)
+    close = AsyncMock()
+    manifest = SimpleNamespace(
+        servers={"remote_docs": {"type": "sdk"}},
+        allowed_tools=("mcp__remote_docs__knowledge.search",),
+        has_resources=True,
+        aclose=close,
+    )
+
+    with (
+        patch.object(assembler, "build_remote_mcp_manifest", AsyncMock(return_value=manifest)),
+        patch("server.agent_runtime.options_assembler.ClaudeAgentOptions", side_effect=RuntimeError("invalid")),
+        pytest.raises(RuntimeError, match="invalid"),
+    ):
+        await assembler.build("demo")
+
+    close.assert_awaited_once_with()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_failure_does_not_mask_options_construction_error(tmp_path: Path) -> None:
+    async def fake_loader():
+        return {}
+
+    assembler = _make_assembler(tmp_path, provider_env_loader=fake_loader)
+    manifest = SimpleNamespace(
+        servers={},
+        allowed_tools=(),
+        has_resources=True,
+        aclose=AsyncMock(side_effect=RuntimeError("cleanup failed")),
+    )
+
+    with (
+        patch.object(assembler, "build_remote_mcp_manifest", AsyncMock(return_value=manifest)),
+        patch("server.agent_runtime.options_assembler.ClaudeAgentOptions", side_effect=ValueError("invalid options")),
+        pytest.raises(ValueError, match="invalid options"),
+    ):
+        await assembler.build("demo")
 
 
 @pytest.mark.asyncio

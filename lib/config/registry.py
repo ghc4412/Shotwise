@@ -1427,26 +1427,40 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
         secret_keys=["api_key"],
         models={
             # --- text ---
-            # agnes-2.0-flash：OpenAI 兼容 /v1/chat/completions，原生 response_format json_schema
-            # 结构化输出，失败再降级 Instructor（见 AgnesTextBackend）。
+            # Agnes 文本模型使用 OpenAI 兼容 /v1/chat/completions，原生 response_format json_schema
+            # 结构化输出，失败再降级 Instructor（见 AgnesTextBackend）。旧型号保留用于兼容存量配置。
             "agnes-2.0-flash": ModelInfo(
                 display_name="Agnes 2.0 Flash",
                 media_type="text",
                 capabilities=["text_generation", "structured_output"],
-                default=True,
                 pricing=_agnes_text_pricing("agnes-2.0-flash", 0.03, 0.15),
+            ),
+            "agnes-2.5-flash": ModelInfo(
+                display_name="Agnes 2.5 Flash",
+                media_type="text",
+                capabilities=["text_generation", "structured_output"],
+                default=True,
+                pricing=_agnes_text_pricing("agnes-2.5-flash", 0.03, 0.15),
             ),
             # --- image ---
             # agnes-image-2.1-flash：OpenAI 兼容 /images/generations 单步同步，T2I + I2I。
-            # 仅注册 2.1（2.0 与其价格 / 字段实测无差异，model 目录收敛）。
+            # 旧型号保留用于兼容存量项目配置；新项目默认使用 2.5 Flash。
             # resolutions 为保守 UI 档位（未逐档实测）；实际尺寸由 backend aspect_size 计算、与此无耦合。
             "agnes-image-2.1-flash": ModelInfo(
                 display_name="Agnes Image 2.1 Flash",
                 media_type="image",
                 capabilities=["text_to_image", "image_to_image"],
-                default=True,
                 resolutions=["1K", "2K"],
                 pricing=_agnes_image_pricing("agnes-image-2.1-flash", 0.003),
+            ),
+            # agnes-image-2.5-flash：OpenAI 兼容 /images/generations 单步同步，T2I + I2I。
+            "agnes-image-2.5-flash": ModelInfo(
+                display_name="Agnes Image 2.5 Flash",
+                media_type="image",
+                capabilities=["text_to_image", "image_to_image"],
+                default=True,
+                resolutions=["1K", "2K"],
+                pricing=_agnes_image_pricing("agnes-image-2.5-flash", 0.003),
             ),
             # --- video ---
             # agnes-video-v2.0：apihub 异步 /v1/videos，图生 / 首尾帧 / 多图主体参考；fps 固定 24、
@@ -1455,10 +1469,28 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
                 display_name="Agnes Video 2.0",
                 media_type="video",
                 capabilities=[],
-                default=True,
                 supported_durations=list(range(1, 19)),
                 resolutions=["480p", "720p", "1080p"],
                 pricing=_agnes_video_pricing("agnes-video-v2.0", 0.005),
+            ),
+            # Agnes 2.5 视频模型共用异步 /v1/videos 端点与同一能力约束；后端按传入
+            # model 下发，不需要为型号复制一套请求构造逻辑。
+            "agnes-video-2.5": ModelInfo(
+                display_name="Agnes Video 2.5",
+                media_type="video",
+                capabilities=[],
+                default=True,
+                supported_durations=list(range(1, 19)),
+                resolutions=["480p", "720p", "1080p"],
+                pricing=_agnes_video_pricing("agnes-video-2.5", 0.005),
+            ),
+            "agnes-video-2.5-flash": ModelInfo(
+                display_name="Agnes Video 2.5 Flash",
+                media_type="video",
+                capabilities=[],
+                supported_durations=list(range(1, 19)),
+                resolutions=["480p", "720p", "1080p"],
+                pricing=_agnes_video_pricing("agnes-video-2.5-flash", 0.005),
             ),
         },
         default_base_url=AGNES_BASE_URL,

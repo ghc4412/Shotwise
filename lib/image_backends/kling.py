@@ -1,8 +1,8 @@
 """KlingImageBackend — 可灵 Kling 图像生成后端（JWT 直连 / Bearer 中转双模式，异步轮询）。
 
-走可灵原生图像端点：submit ``POST /v1/images/generations`` 取 ``data.task_id`` →
-轮询 ``GET /v1/images/generations/{task_id}`` 至 ``task_status=succeed`` 取
-``task_result.images[0].url``（24h 有效）→ 失效前立即下载本地。
+走可灵原生图像端点：普通模型使用 ``POST /v1/images/generations``，Omni 模型使用
+``POST /v1/images/omni-image``；均取 ``data.task_id`` 后轮询对应端点至
+``task_status=succeed``，再下载 ``task_result.images[0].url``（24h 有效）。
 
 鉴权 / base_url 装配 / submit-poll 骨架由 ``KlingBackendBase`` 共享（与 ``KlingVideoBackend`` 同源），
 本类只填图像侧差异：端点路径、payload 构建、参考图编码、静态 capability 与 ``api_model_name`` 解耦。
@@ -14,14 +14,14 @@
 
 注册图像模型：
 - ``kling-image-o1``（默认）：文生图 / 图生图 / 1-10 图参考（跨图角色一致性），按 ``image`` 数组下传。
-- ``kling-v3-omni-image``：文生图 / 图生图 / 组图生成（registry 别名键，API 模型名 ``kling-v3-omni``）。
+- ``kling-v3-omni-image``：使用 Omni 专用端点，文生图 / 图生图 / 组图生成（registry 别名键，API 模型名 ``kling-v3-omni``）。
 
 发给 API 的模型名取 ``api_model_name``（registry 解耦键名与 API 名，供两栖模型共用 API 名），缺省回退
 到 registry 键名——不硬发键名，否则别名键会把 ``kling-v3-omni-image`` 误当 API 模型名。
 
-resolution（1K/2K/4K）由 registry 声明驱动 UI 下拉与计费，不下传请求体：可灵图像官方关键参数
-（model_name/prompt/image/aspect_ratio/n 等）未含 resolution 字段，与 KlingVideoBackend 一致只发
-已核实参数，避免猜测外部 API 结构。
+Omni 的 ``resolution`` 接受 ``1k``/``2k``/``4k``，由通用请求中的 ``image_size``（UI 使用
+``1K``/``2K``/``4K``）转换后下传；Omni 参考图使用官方要求的 ``image_list``，而普通模型继续
+使用 ``image``。
 """
 
 from __future__ import annotations
@@ -51,6 +51,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL = "kling-image-o1"
 
 _IMAGE_ENDPOINT = "images/generations"
+_OMNI_IMAGE_ENDPOINT = "images/omni-image"
+_OMNI_MODEL = "kling-v3-omni"
 _POLL_INTERVAL_SECONDS = 5.0
 _POLL_MAX_WAIT_SECONDS = 600.0
 
@@ -104,19 +106,34 @@ class KlingImageBackend(KlingBackendBase):
     def _ref_limit(self) -> int:
         return _MODEL_REF_LIMITS.get(self._model, _DEFAULT_REF_LIMIT)
 
+    @property
+    def _is_omni(self) -> bool:
+        return self._api_model_name == _OMNI_MODEL
+
+    @property
+    def _image_endpoint(self) -> str:
+        return _OMNI_IMAGE_ENDPOINT if self._is_omni else _IMAGE_ENDPOINT
+
     # ── request building ────────────────────────────────────────────────
 
     def _build_payload(self, request: ImageGenerationRequest) -> dict:
-        """构建图像请求体。无参考图 → 文生图；有参考图 → 图生图（image 数组）。"""
+        """构建普通或 Omni 图像请求体，按 API 模型选择对应字段。"""
         payload: dict = {
             "model_name": self._api_model_name,
             "prompt": request.prompt,
             "aspect_ratio": request.aspect_ratio,
             "n": 1,
         }
+        if self._is_omni and request.image_size:
+            resolution = request.image_size.strip().lower()
+            if resolution in {"1k", "2k", "4k"}:
+                payload["resolution"] = resolution
         images = self._encode_references(request.reference_images)
         if images:
-            payload["image"] = images
+            if self._is_omni:
+                payload["image_list"] = [{"image": image} for image in images]
+            else:
+                payload["image"] = images
         return payload
 
     def _encode_references(self, reference_images: list[ReferenceImage]) -> list[str]:
@@ -160,14 +177,19 @@ class KlingImageBackend(KlingBackendBase):
         """
         prompt = payload.get("prompt")
         images = payload.get("image")
-        return {
-            "endpoint": _IMAGE_ENDPOINT,
+        image_list = payload.get("image_list")
+        references = image_list if isinstance(image_list, list) else images
+        view = {
+            "endpoint": _OMNI_IMAGE_ENDPOINT if payload.get("model_name") == _OMNI_MODEL else _IMAGE_ENDPOINT,
             "model_name": payload.get("model_name"),
             "aspect_ratio": payload.get("aspect_ratio"),
             "n": payload.get("n"),
-            "reference_count": len(images) if isinstance(images, list) else 0,
+            "reference_count": len(references) if isinstance(references, list) else 0,
             "prompt_len": len(prompt) if isinstance(prompt, str) else 0,
         }
+        if "resolution" in payload:
+            view["resolution"] = payload["resolution"]
+        return view
 
     # ── generate ────────────────────────────────────────────────────────
 
@@ -175,11 +197,11 @@ class KlingImageBackend(KlingBackendBase):
         payload = self._build_payload(request)
         logger.info("调用 Kling 图像 API payload=%s", self._safe_log_view(payload))
         async with httpx.AsyncClient(timeout=self._http_timeout) as client:
-            task_id = await self._submit_task(client, _IMAGE_ENDPOINT, payload)
+            task_id = await self._submit_task(client, self._image_endpoint, payload)
             logger.info("Kling 图像任务已创建: task_id=%s model=%s", task_id, self._model)
 
             final = await self._poll_until_terminal(
-                lambda: self._poll_query(client, f"{_IMAGE_ENDPOINT}/{task_id}"),
+                lambda: self._poll_query(client, f"{self._image_endpoint}/{task_id}"),
                 poll_interval=_POLL_INTERVAL_SECONDS,
                 max_wait=_POLL_MAX_WAIT_SECONDS,
             )

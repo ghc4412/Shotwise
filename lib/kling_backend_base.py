@@ -17,7 +17,7 @@ from typing import ClassVar
 
 import httpx
 
-from lib.config.url_utils import normalize_base_url
+from lib.config.url_utils import ensure_kling_base_url
 from lib.kling_shared import (
     KLING_BASE_URL,
     KlingJWTManager,
@@ -73,7 +73,7 @@ class KlingBackendBase:
     ) -> None:
         self._auth_mode = auth_mode
         self._model = model
-        self._base_url = (normalize_base_url(base_url) or KLING_BASE_URL).rstrip("/")
+        self._base_url = (ensure_kling_base_url(base_url) or KLING_BASE_URL).rstrip("/")
         self._http_timeout = http_timeout
 
         if auth_mode == "jwt":

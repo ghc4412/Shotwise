@@ -37,7 +37,8 @@ async function requestOutline(
       "请阅读源文件「" + filename + "」的当前片段，提取当前片段中出现的所有章节大纲。",
       "这是第 " + batchNumber + "/" + totalBatches + " 个片段；只处理当前片段，不要臆测片段外的章节内容。",
       "请只输出 JSON 数组，不要使用 Markdown，格式为 [{\"chapter\":1,\"title\":\"章节标题\",\"summary\":\"本章核心事件\"}]。",
-      "保留原文已有的章节编号和顺序；如果没有明确章节，请按自然剧情段落划分并给出简短标题。",
+      "原文已有章节必须逐字复制章节标题（包括括号、标点和副标题），不得改写、概括或替换标题；同时保留原文章节编号和顺序。",
+      "如果没有明确章节，才按自然剧情段落划分并给出简短标题。",
       "如果当前片段是同一章节的延续，请继续使用原章节编号，后续系统会自动合并摘要。",
     ].join("\n"),
   });
@@ -60,8 +61,10 @@ export function SourceOutlineSidebar({ projectName, filename, content, onSelectI
       .then((savedContent) => {
         if (disposed) return;
         const savedItems = parseSavedCreativeOutline(savedContent);
-        setItems(savedItems);
-        setHasAttempted(savedItems.length > 0);
+        const sourceChapters = parseSourceChapters(content);
+        const normalizedItems = mergeOutlineWithSourceChapters(sourceChapters, savedItems);
+        setItems(normalizedItems);
+        setHasAttempted(normalizedItems.length > 0);
         setError(false);
       })
       .catch(() => {
@@ -74,7 +77,7 @@ export function SourceOutlineSidebar({ projectName, filename, content, onSelectI
     return () => {
       disposed = true;
     };
-  }, [projectName]);
+  }, [content, projectName]);
 
   const saveItems = useCallback(
     async (outlineItems: OutlineItem[]) => {
@@ -99,31 +102,65 @@ export function SourceOutlineSidebar({ projectName, filename, content, onSelectI
   );
 
   const handleExtract = useCallback(async () => {
+    const notificationId = useAppStore.getState().pushWorkspaceNotification({
+      text: t("creative_outline_extract_started", { filename }),
+      tone: "info",
+    });
     setLoading(true);
     setHasAttempted(true);
     setError(false);
     try {
       const chunks = splitSourceIntoChunks(content);
+      if (chunks.length === 0) {
+        setError(true);
+        useAppStore.getState().updateWorkspaceNotification(notificationId, {
+          text: t("creative_outline_extract_failed", { filename }),
+          tone: "error",
+        });
+        return;
+      }
+
       const sourceChapters = parseSourceChapters(content);
       const batches: OutlineItem[][] = [];
       for (let index = 0; index < chunks.length; index += 1) {
         const result = await requestOutline(projectName, filename, chunks[index], index + 1, chunks.length);
         batches.push(parseOutline(result.content));
         setItems(mergeOutlineWithSourceChapters(sourceChapters, mergeOutlineItems(batches)));
+        useAppStore.getState().updateWorkspaceNotification(notificationId, {
+          text: t("creative_outline_extract_progress", {
+            filename,
+            current: index + 1,
+            total: chunks.length,
+          }),
+        });
       }
       const extractedItems = mergeOutlineWithSourceChapters(sourceChapters, mergeOutlineItems(batches));
       if (extractedItems.length === 0) {
         setError(true);
+        useAppStore.getState().updateWorkspaceNotification(notificationId, {
+          text: t("creative_outline_extract_failed", { filename }),
+          tone: "error",
+        });
         return;
       }
       setItems(extractedItems);
-      await saveItems(extractedItems);
+      const saved = await saveItems(extractedItems);
+      useAppStore.getState().updateWorkspaceNotification(notificationId, {
+        text: saved
+          ? t("creative_outline_extract_completed", { filename })
+          : t("creative_outline_extract_failed", { filename }),
+        tone: saved ? "success" : "error",
+      });
     } catch {
       setError(true);
+      useAppStore.getState().updateWorkspaceNotification(notificationId, {
+        text: t("creative_outline_extract_failed", { filename }),
+        tone: "error",
+      });
     } finally {
       setLoading(false);
     }
-  }, [content, filename, projectName, saveItems]);
+  }, [content, filename, projectName, saveItems, t]);
 
   const handleSave = useCallback(async () => {
     if (items.length === 0 || saving) return;

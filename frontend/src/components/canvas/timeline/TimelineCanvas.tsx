@@ -36,16 +36,20 @@ interface TimelineCanvasProps {
     fieldOrPatch: string | Record<string, unknown>,
     value?: unknown,
     scriptFile?: string,
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
   /** ad 模式镜头顺序调整（向前/向后移动一位），resolve 为是否移动成功 */
   onMoveShot?: (shotId: string, direction: "earlier" | "later", scriptFile?: string) => Promise<boolean>;
   onGenerateStoryboard?: (segmentId: string, scriptFile?: string) => void;
   onGenerateVideo?: (segmentId: string, scriptFile?: string) => void;
   onGenerateNarration?: (segmentId: string, scriptFile?: string) => void;
   onGenerateEpisodeNarration?: (scriptFile?: string) => void;
+  onBatchGenerateStoryboards?: () => Promise<void>;
+  onBatchGenerateVideos?: () => Promise<void>;
+  onBatchGenerateNarration?: () => Promise<void>;
   durationOptions?: number[];
   /** 已保存时长越界的成因判定；缺省时 ShotDetail 退回不区分成因的通用警告文案。 */
   durationWarningReason?: (seconds: number) => DurationOutOfRangeReason | null;
+  focusSegment?: { id: string; requestId: number } | null;
   onRestoreStoryboard?: () => Promise<void> | void;
   onRestoreVideo?: () => Promise<void> | void;
   onSaveTitle?: (next: string) => Promise<void>;
@@ -61,6 +65,9 @@ const DEMO_READ_ONLY_PROPS = {
   onMoveShot: undefined,
   onGenerateNarration: undefined,
   onGenerateEpisodeNarration: undefined,
+  onBatchGenerateStoryboards: undefined,
+  onBatchGenerateVideos: undefined,
+  onBatchGenerateNarration: undefined,
   onSaveTitle: undefined,
   canEditTitle: false,
 } as const satisfies Partial<TimelineCanvasProps>;
@@ -84,6 +91,9 @@ export function TimelineCanvas(props: TimelineCanvasProps) {
     onGenerateVideo,
     onGenerateNarration,
     onGenerateEpisodeNarration,
+    onBatchGenerateStoryboards,
+    onBatchGenerateVideos,
+    onBatchGenerateNarration,
     onRestoreStoryboard,
     onRestoreVideo,
     onSaveTitle,
@@ -171,6 +181,20 @@ export function TimelineCanvas(props: TimelineCanvasProps) {
   const narrationBatchBusy = useMemo(
     () => [...currentSegmentIds].some((id) => ttsBusyIds.has(id)),
     [ttsBusyIds, currentSegmentIds],
+  );
+  const [submittingBatch, setSubmittingBatch] = useState<"storyboard" | "video" | "narration" | null>(null);
+
+  const submitBatch = useCallback(
+    async (kind: "storyboard" | "video" | "narration", action?: () => Promise<void>) => {
+      if (!action || submittingBatch) return;
+      setSubmittingBatch(kind);
+      try {
+        await action();
+      } finally {
+        setSubmittingBatch(null);
+      }
+    },
+    [submittingBatch],
   );
 
   if (!projectData || (!episodeScript && !hasDraft)) {
@@ -291,30 +315,38 @@ export function TimelineCanvas(props: TimelineCanvasProps) {
             <button
               type="button"
               className="sv-navbtn inline-flex items-center gap-1.5"
-              disabled
+              disabled={!onBatchGenerateStoryboards || submittingBatch !== null}
+              onClick={() => void submitBatch("storyboard", onBatchGenerateStoryboards)}
               title={t("batch_generate_storyboards")}
             >
-              <Sparkles className="h-3 w-3" />
+              <Sparkles className={"h-3 w-3 " + (submittingBatch === "storyboard" ? "animate-pulse" : "")} />
               <span>{t("batch_generate_storyboards")}</span>
             </button>
             <button
               type="button"
               className="sv-navbtn inline-flex items-center gap-1.5"
-              disabled
+              disabled={!onBatchGenerateVideos || submittingBatch !== null}
+              onClick={() => void submitBatch("video", onBatchGenerateVideos)}
               title={t("batch_generate_videos")}
             >
-              <Sparkles className="h-3 w-3" />
+              <Sparkles className={"h-3 w-3 " + (submittingBatch === "video" ? "animate-pulse" : "")} />
               <span>{t("batch_generate_videos")}</span>
             </button>
-            {contentMode === "narration" && onGenerateEpisodeNarration && (
+            {contentMode === "narration" && (onBatchGenerateNarration || onGenerateEpisodeNarration) && (
               <button
                 type="button"
                 className="sv-navbtn inline-flex items-center gap-1.5"
-                disabled={narrationBatchBusy}
-                onClick={() => onGenerateEpisodeNarration(scriptFile)}
+                disabled={narrationBatchBusy || submittingBatch !== null}
+                onClick={() =>
+                  void submitBatch(
+                    "narration",
+                    onBatchGenerateNarration ??
+                      (() => Promise.resolve(onGenerateEpisodeNarration?.(scriptFile))),
+                  )
+                }
                 title={t("batch_generate_narration")}
               >
-                <Sparkles className="h-3 w-3" />
+                <Sparkles className={"h-3 w-3 " + (submittingBatch === "narration" ? "animate-pulse" : "")} />
                 <span>{t("batch_generate_narration")}</span>
               </button>
             )}
@@ -358,6 +390,7 @@ export function TimelineCanvas(props: TimelineCanvasProps) {
                 generatingNarration={generatingNarration}
                 durationOptions={durationOptions}
                 durationWarningReason={durationWarningReason}
+                focusSegment={props.focusSegment}
               />
             </div>
           </div>
