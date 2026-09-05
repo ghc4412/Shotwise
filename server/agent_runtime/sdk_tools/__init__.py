@@ -38,7 +38,7 @@ from server.agent_runtime.sdk_tools.episode_planning import (
     plan_episodes_tool,
     reset_episode_planning_tool,
 )
-from server.agent_runtime.sdk_tools.file_read import read_project_text_tool
+from server.agent_runtime.sdk_tools.file_read import list_project_text_files_tool, read_project_text_tool
 from server.agent_runtime.sdk_tools.patch_episode_meta import patch_episode_meta_tool
 from server.agent_runtime.sdk_tools.patch_project import patch_project_tool
 from server.agent_runtime.sdk_tools.patch_script import (
@@ -97,6 +97,8 @@ SHOTWISE_MCP_TOOL_IDS: tuple[str, ...] = (
     "patch_project",
     "rename_asset",
     "analyze_character_relations",
+    "list_project_text_files",
+    "read_project_text",
 )
 
 
@@ -137,6 +139,8 @@ def build_shotwise_tool_list(*, project_name: str, projects_root: Path) -> list[
         patch_project_tool(ctx),
         rename_asset_tool(ctx),
         analyze_character_relations_tool(ctx),
+        list_project_text_files_tool(ctx),
+        read_project_text_tool(ctx),
         context_reference_tool(ctx),
     ]
 
@@ -161,10 +165,6 @@ def build_shotwise_agents_tools(*, project_name: str, projects_root: Path) -> li
     tools: list[Any] = []
     for sdk_tool in build_shotwise_tool_list(project_name=project_name, projects_root=projects_root):
         tools.append(_sdk_tool_to_function_tool(sdk_tool))
-    # OpenAI Agents has no Claude-native Read/Glob/Grep tools.  Add only the
-    # bounded project reader; Claude's MCP catalogue remains unchanged.
-    ctx = ToolContext(project_name=project_name, projects_root=projects_root)
-    tools.append(_sdk_tool_to_function_tool(read_project_text_tool(ctx)))
     return tools
 
 

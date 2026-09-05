@@ -417,7 +417,7 @@ export function AdReferenceVideoCanvas({
         canEditTitle={canEditTitle}
       />
 
-      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-hairline)] bg-[oklch(0.19_0.012_250_/_0.5)] px-5 py-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-hairline)] bg-[var(--color-shell-side-a)] px-5 py-2">
         <Layers className="h-3.5 w-3.5 text-[var(--color-text-3)]" aria-hidden="true" />
         <span className="text-[12.5px] font-medium text-[var(--color-text-2)]">
           {t("ad_ref_units_title")}
@@ -462,7 +462,7 @@ export function AdReferenceVideoCanvas({
         </p>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto bg-[oklch(0.18_0.011_250_/_0.25)] px-5 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto bg-[var(--color-bg-grad-a)] px-5 py-4">
         {!hasScript ? (
           <p className="py-8 text-center text-[13px] text-[var(--color-text-4)]">
             {t("timeline_script_not_ready")}
@@ -580,7 +580,7 @@ function AdUnitCard({
         : t("ad_ref_generate_unit");
 
   return (
-    <li className="overflow-hidden rounded-lg border border-[var(--color-hairline)] bg-[oklch(0.19_0.012_250_/_0.5)]">
+    <li className="overflow-hidden rounded-lg border border-[var(--color-hairline)] bg-[var(--panel-card-bg)]">
       <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-hairline-soft)] px-3.5 py-2.5">
         <span
           translate="no"
@@ -591,11 +591,11 @@ function AdUnitCard({
         <span className="font-mono text-[11.5px] text-[var(--color-text-3)]" translate="no">
           {shotRangeLabel(unit.shot_ids)}
         </span>
-        <span className="inline-flex items-center gap-1 rounded border border-[var(--color-hairline-soft)] bg-[oklch(0.22_0.011_265_/_0.6)] px-2 py-0.5 text-[11.5px] text-[var(--color-text-2)]">
+        <span className="inline-flex items-center gap-1 rounded border border-[var(--color-hairline-soft)] bg-[var(--color-shell-btn)] px-2 py-0.5 text-[11.5px] text-[var(--color-text-2)]">
           <Clock className="h-3 w-3" aria-hidden="true" />
           <span className="font-mono tabular-nums">{durationSeconds}s</span>
         </span>
-        <span className="inline-flex items-center gap-1 rounded border border-[var(--color-hairline-soft)] bg-[oklch(0.22_0.011_265_/_0.6)] px-2 py-0.5 text-[11.5px] text-[var(--color-text-2)]">
+        <span className="inline-flex items-center gap-1 rounded border border-[var(--color-hairline-soft)] bg-[var(--color-shell-btn)] px-2 py-0.5 text-[11.5px] text-[var(--color-text-2)]">
           <Scissors className="h-3 w-3" aria-hidden="true" />
           <span className="font-mono tabular-nums">
             {t("reference_unit_shots_count", { count: unit.shot_ids.length })}
@@ -645,7 +645,7 @@ function AdUnitCard({
               return (
                 <li
                   key={shotId}
-                  className="rounded bg-[oklch(0.22_0.012_250_/_0.5)] px-2.5 py-1.5 text-[12px]"
+                  className="rounded bg-[var(--color-shell-field)] px-2.5 py-1.5 text-[12px]"
                 >
                   <div className="flex flex-wrap items-center gap-2">
                     <span
@@ -685,7 +685,7 @@ function AdUnitCard({
                 {unit.references.map((ref) => (
                   <li
                     key={`${ref.type}:${ref.name}`}
-                    className="rounded border border-[var(--color-hairline-soft)] bg-[oklch(0.22_0.011_265_/_0.6)] px-2 py-0.5 text-[11px] text-[var(--color-text-2)]"
+                    className="rounded border border-[var(--color-hairline-soft)] bg-[var(--color-shell-btn)] px-2 py-0.5 text-[11px] text-[var(--color-text-2)]"
                   >
                     {ref.name}
                   </li>
@@ -700,7 +700,7 @@ function AdUnitCard({
             className={`relative aspect-video w-full overflow-hidden rounded-lg border border-[var(--color-hairline)] ${
               ready
                 ? "bg-[linear-gradient(135deg,oklch(0.32_0.04_240),oklch(0.18_0.02_280))]"
-                : "bg-[oklch(0.18_0.010_265_/_0.5)]"
+                : "bg-[var(--color-shell-field)]"
             }`}
           >
             {ready && videoUrl && (
@@ -785,14 +785,14 @@ function ShotLightEditor({
     : [shot.duration_seconds, ...SHOT_DURATION_OPTIONS].sort((a, b) => a - b);
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded bg-[oklch(0.22_0.012_250_/_0.5)] px-2.5 py-1.5 text-[12px]">
+    <div className="flex flex-wrap items-center gap-2 rounded bg-[var(--color-shell-field)] px-2.5 py-1.5 text-[12px]">
       <span className="font-mono font-medium text-[var(--color-text-2)]" translate="no">
         {shot.shot_id}
       </span>
       {shot.section && <span className="text-[11px] text-[var(--color-text-4)]">{shot.section}</span>}
       <select
         aria-label={t("ad_ref_shot_duration_label", { shot_id: shot.shot_id })}
-        className="focus-ring rounded border border-[var(--color-hairline-soft)] bg-[oklch(0.22_0.011_265_/_0.6)] px-1.5 py-0.5 text-[11.5px] text-[var(--color-text-2)]"
+        className="focus-ring rounded border border-[var(--color-hairline-soft)] bg-[var(--color-shell-field)] px-1.5 py-0.5 text-[11.5px] text-[var(--color-text-2)]"
         value={shot.duration_seconds}
         disabled={disabled}
         onChange={(e) => onCommitDuration(shot.shot_id, parseInt(e.target.value, 10))}
@@ -806,7 +806,7 @@ function ShotLightEditor({
       <input
         type="text"
         aria-label={t("ad_ref_shot_voiceover_label", { shot_id: shot.shot_id })}
-        className="focus-ring min-w-0 flex-1 rounded border border-[var(--color-hairline-soft)] bg-[oklch(0.22_0.011_265_/_0.6)] px-1.5 py-0.5 text-[11.5px] text-[var(--color-text-2)]"
+        className="focus-ring min-w-0 flex-1 rounded border border-[var(--color-hairline-soft)] bg-[var(--color-shell-field)] px-1.5 py-0.5 text-[11.5px] text-[var(--color-text-2)]"
         value={text}
         disabled={disabled}
         onChange={(e) => setDraftText(e.target.value)}

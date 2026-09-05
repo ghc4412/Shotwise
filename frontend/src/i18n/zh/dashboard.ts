@@ -638,6 +638,8 @@ export default {
   'image_channel': '图片通道',
   'video_channel': '视频通道',
   'audio_channel': '音频通道',
+  'expand_channel': '展开{{channel}}',
+  'collapse_channel': '收起{{channel}}',
   'cancelled_status': '已取消',
   'cancelling_status': '正在取消…',
   'cancelled_label': '取消',
@@ -1753,6 +1755,8 @@ export default {
   'tool_name_patch_project': '编辑项目资产',
   'tool_name_rename_asset': '重命名资产',
   'tool_name_analyze_character_relations': '分析角色关系',
+  'tool_name_list_project_text_files': '列出项目文稿',
+  'tool_name_read_project_text': '读取项目文稿',
   // Skill display names (single source of truth: agent_runtime_profile/.claude/skills/*/SKILL.md
   // 中 user-invocable: true 的 skill；tests/test_frontend_skill_i18n.py 校验三语齐全)
   'skill_name_manga_workflow': '视频工作流',

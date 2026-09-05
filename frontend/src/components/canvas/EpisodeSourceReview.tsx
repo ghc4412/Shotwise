@@ -113,13 +113,13 @@ function GuideSection({ meta }: { meta: EpisodeMeta | undefined }) {
   return (
     <section
       className="mt-4 overflow-hidden rounded-xl"
-      style={{ background: "oklch(0.21 0.012 265 / 0.35)", border: "1px solid var(--color-hairline)" }}
+      style={{ background: "var(--panel-card-bg)", border: "1px solid var(--color-hairline)" }}
     >
       <button
         type="button"
         onClick={() => setCollapsed((v) => !v)}
         aria-expanded={!collapsed}
-        className="focus-ring flex w-full items-center gap-2 px-4 py-2.5 text-left text-[11.5px] font-semibold tracking-wide transition-colors hover:bg-[oklch(1_0_0_/_0.03)]"
+        className="focus-ring flex w-full items-center gap-2 px-4 py-2.5 text-left text-[11.5px] font-semibold tracking-wide transition-colors hover:bg-[var(--color-shell-hover)]"
         style={{
           color: "var(--color-text-3)",
           borderBottom: collapsed ? "none" : "1px solid var(--color-hairline-soft)",
@@ -149,7 +149,7 @@ function GuideSection({ meta }: { meta: EpisodeMeta | undefined }) {
                 <div
                   key={i}
                   className="rounded-lg px-3.5 py-3"
-                  style={{ background: "oklch(0.24 0.012 265 / 0.55)", border: "1px solid var(--color-hairline-soft)" }}
+                  style={{ background: "var(--color-shell-field)", border: "1px solid var(--color-hairline-soft)" }}
                 >
                   <span className="num text-[15px] font-bold" style={{ color: "var(--color-accent-2)" }}>
                     {i + 1}

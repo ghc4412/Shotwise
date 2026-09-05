@@ -64,6 +64,7 @@ export function SourceFileViewer({ projectName, filename }: SourceFileViewerProp
       await API.saveSourceFile(projectName, filename, editContent);
       setContent(editContent);
       setEditing(false);
+      useAppStore.getState().invalidateSourceFiles();
     } catch {
       // 静默失败
     } finally {

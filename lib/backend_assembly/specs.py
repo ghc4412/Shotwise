@@ -157,8 +157,8 @@ def _gemini_spec(provider_id: str, media_type: str, *, backend_type: str) -> Pro
 #   双 secret 按列名直取，无条件透传含 None，由 backend 内 resolve_kling_jwt_credentials 处理。
 # base_url 兜底：db_config 显式填写 > registry default_base_url > 不传（KlingBackend 自带
 # KLING_BASE_URL 兜底）。image/video 共用单一构造 helper，仅 image 侧额外注入 api_model_name 解耦
-# （两栖别名键如 kling-v3-omni-image 读 registry api_model_name 发真实 API 名）；video backend 不
-# 接受 api_model_name 参数，故该注入仅对 image media_type 生效。
+# （两栖别名键如 kling-v3-omni-image 读 registry api_model_name 发真实 API 名）；
+# 视频也可使用该字段把 UI/计费键映射到官方 API 模型名。
 
 _KLING_REGISTRY_BACKEND = "kling"
 
@@ -178,11 +178,9 @@ def _build_kling(config: LoadedConfig, model_id: str | None, *, media_type: str)
             "secret_key": config.credentials.get("secret_key"),
             "model": model_id,
         }
-    if media_type == "image":
-        # 两栖别名键读 registry api_model_name 发真实 API 名；video backend 不接受该参数，仅 image 注入。
-        model_info = config.provider_meta.models.get(model_id) if (config.provider_meta and model_id) else None
-        if model_info is not None and model_info.api_model_name:
-            kwargs["api_model_name"] = model_info.api_model_name
+    model_info = config.provider_meta.models.get(model_id) if (config.provider_meta and model_id) else None
+    if model_info is not None and model_info.api_model_name:
+        kwargs["api_model_name"] = model_info.api_model_name
     base_url = _resolve_base_url(config)
     if base_url:
         kwargs["base_url"] = base_url

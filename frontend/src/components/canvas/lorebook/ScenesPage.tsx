@@ -33,6 +33,13 @@ export function ScenesPage({ projectName, scenes, onUpdateScene, onGenerateScene
   useScrollTarget("scene");
 
   const entries = Object.entries(scenes);
+  const hasGeneratingScene = entries.some(([name]) => generatingSceneNames?.has(name));
+
+  const handleGenerateAll = () => {
+    for (const [name] of entries) {
+      onGenerateScene(name);
+    }
+  };
 
   const handleImport = async (ids: string[]) => {
     try {
@@ -57,6 +64,8 @@ export function ScenesPage({ projectName, scenes, onUpdateScene, onGenerateScene
         count={entries.length}
         onAdd={readOnly ? undefined : () => setAdding(true)}
         onPickFromLibrary={readOnly ? undefined : () => setPicking(true)}
+        onGenerateDesigns={readOnly || entries.length === 0 ? undefined : handleGenerateAll}
+        generateDesignsDisabled={hasGeneratingScene}
       />
       <div className="px-5 py-5">
         {entries.length === 0 ? (

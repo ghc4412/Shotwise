@@ -630,6 +630,8 @@ export default {
   'image_channel': 'Kênh ảnh',
   'video_channel': 'Kênh video',
   'audio_channel': 'Kênh âm thanh',
+  'expand_channel': 'Mở rộng {{channel}}',
+  'collapse_channel': 'Thu gọn {{channel}}',
   'cancelled_status': 'Đã hủy',
   'cancelling_status': 'Đang hủy…',
   'cancelled_label': 'Đã hủy',
@@ -1909,6 +1911,8 @@ export default {
   'tool_name_patch_project': 'Sửa tài sản dự án',
   'tool_name_rename_asset': 'Đổi tên tài sản',
   'tool_name_analyze_character_relations': 'Phân tích quan hệ nhân vật',
+  'tool_name_list_project_text_files': 'Liệt kê tài liệu dự án',
+  'tool_name_read_project_text': 'Đọc tài liệu dự án',
   // Skill display names (single source of truth: user-invocable SKILL.md
   // dưới agent_runtime_profile/.claude/skills/; tests/test_frontend_skill_i18n.py kiểm tra đồng bộ)
   'skill_name_manga_workflow': 'Quy trình video',

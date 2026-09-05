@@ -13,11 +13,55 @@ from claude_agent_sdk import tool
 
 from lib.path_safety import PathTraversalError, safe_join
 from server.agent_runtime.sdk_tools._context import ToolContext, tool_error
+from server.services.project_files import enumerate_project_text_files, project_text_files_signature
 
 _ALLOWED_SUFFIXES = {".txt", ".md", ".json"}
 _ALLOWED_ROOTS = ("source", "scripts", "drafts")
 _MAX_LINES = 400
 _MAX_CHARS = 120_000
+
+
+def list_project_text_files_tool(ctx: ToolContext) -> Any:
+    @tool(
+        "list_project_text_files",
+        "列出当前绑定项目的文稿、草稿和结构化剧本文本文件，不读取全文。文稿任务开始前必须调用；默认检查 source/，且不包含 source/raw/ 上传备份。",
+        {"type": "object", "properties": {}},
+    )
+    async def _handler(_args: dict[str, Any]) -> dict[str, Any]:
+        try:
+            project_path = ctx.project_path.resolve()
+            files = enumerate_project_text_files(project_path)
+            ctx.mark_text_files_listed(project_text_files_signature(project_path))
+            documents_by_category = {
+                category: [item for item in files if item["category"] == category]
+                for category in ("source", "drafts", "scripts")
+            }
+            metadata = [item for item in files if item["category"] == "metadata"]
+            primary_category = next(
+                (category for category in ("source", "drafts", "scripts") if documents_by_category[category]),
+                None,
+            )
+            lines = [f"当前项目: {ctx.project_name}", "文稿目录优先级：source/ → drafts/ → scripts/"]
+            if primary_category is None:
+                lines.append("当前首选文稿候选：无（这不代表页面没有其他类型文件）")
+            else:
+                lines.append(f"当前首选文稿候选（{primary_category}/）：")
+                lines.extend(
+                    f"- {item['path']} ({item['size']} bytes)" for item in documents_by_category[primary_category]
+                )
+                for category in ("source", "drafts", "scripts"):
+                    if category == primary_category or not documents_by_category[category]:
+                        continue
+                    lines.append(f"备用项目文本（{category}/，仅在首选目录没有合适文稿时使用）：")
+                    lines.extend(f"- {item['path']} ({item['size']} bytes)" for item in documents_by_category[category])
+            if metadata:
+                lines.append("项目元数据（不计入文稿候选，仅按需读取）：")
+                lines.extend(f"- {item['path']} ({item['size']} bytes)" for item in metadata)
+            return {"content": [{"type": "text", "text": "\n".join(lines)}]}
+        except (OSError, ValueError) as exc:
+            return tool_error("list_project_text_files", exc)
+
+    return _handler
 
 
 def read_project_text_tool(ctx: ToolContext) -> Any:
@@ -37,6 +81,8 @@ def read_project_text_tool(ctx: ToolContext) -> Any:
     )
     async def _handler(args: dict[str, Any]) -> dict[str, Any]:
         try:
+            if not ctx.has_fresh_text_file_list():
+                raise ValueError("请先调用 list_project_text_files 获取当前项目文件清单；文件发生变化后必须重新列出")
             path_value = args.get("path")
             if not isinstance(path_value, str) or not path_value.strip():
                 raise ValueError("path 必须是非空字符串")
@@ -48,6 +94,9 @@ def read_project_text_tool(ctx: ToolContext) -> Any:
             project_path = ctx.project_path.resolve()
             target = safe_join(project_path, path_value, require_file=True)
             relative = target.relative_to(project_path).as_posix()
+            relative_lower = relative.lower()
+            if relative_lower == "source/raw" or relative_lower.startswith("source/raw/"):
+                raise ValueError("source/raw/ 是上传备份目录，不作为文稿读取")
             if relative != "project.json" and not relative.startswith(tuple(f"{root}/" for root in _ALLOWED_ROOTS)):
                 raise ValueError("只能读取 project.json、source/、scripts/ 或 drafts/ 下的文件")
             if target.suffix.lower() not in _ALLOWED_SUFFIXES:

@@ -449,6 +449,10 @@ export function useAssistantSession(projectName: string | null) {
     const projectAbort = new AbortController();
     projectAbortRef.current = projectAbort;
     projectAbortOwnerRef.current = projectName;
+    // 先清除旧项目的会话身份，再异步加载新项目列表，避免迟到期间跨项目发送。
+    store.getState().setCurrentSessionId(null);
+    store.getState().setCurrentProject(projectName);
+    useAppStore.getState().invalidateSourceFiles();
     // 加载完成标记按项目作废：留着上一个项目的会话 id，回到那个项目后若自动重载
     // 失败，点它会被短路当成「已加载」，重试就永远进不来
     loadedSessionRef.current = null;

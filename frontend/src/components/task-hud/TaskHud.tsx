@@ -442,6 +442,8 @@ function ChannelSection({
   filter,
   onCancel,
   nowMs,
+  collapsible = false,
+  sectionId,
 }: {
   title: string;
   icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
@@ -449,9 +451,12 @@ function ChannelSection({
   filter: TaskFilter;
   onCancel?: (taskId: string) => void;
   nowMs: number;
+  collapsible?: boolean;
+  sectionId?: string;
 }) {
   const { t } = useTranslation("dashboard");
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(true);
 
   const toggleDetail = useCallback((taskId: string) => {
     setExpandedTaskId((prev) => (prev === taskId ? null : taskId));
@@ -486,7 +491,7 @@ function ChannelSection({
         {title}
         {running.length > 0 && (
           <span
-            className="num ml-auto rounded px-1.5 py-px text-[10px]"
+            className={`num rounded px-1.5 py-px text-[10px]${collapsible ? "" : " ml-auto"}`}
             style={{
               color: "var(--color-accent-2)",
               background: "var(--color-accent-dim)",
@@ -498,25 +503,52 @@ function ChannelSection({
             {t("running_count", { count: running.length })}
           </span>
         )}
+        {collapsible && (
+          <button
+            type="button"
+            className="focus-ring ml-auto inline-flex h-5 w-5 items-center justify-center rounded transition-colors hover:bg-white/[0.06]"
+            style={{ color: "var(--color-text-3)" }}
+            onClick={() => setIsExpanded((value) => !value)}
+            aria-expanded={isExpanded}
+            aria-controls={sectionId}
+            aria-label={t(isExpanded ? "collapse_channel" : "expand_channel", {
+              channel: title,
+              defaultValue: `${isExpanded ? "Collapse" : "Expand"} ${title}`,
+            })}
+            title={t(isExpanded ? "collapse_channel" : "expand_channel", {
+              channel: title,
+              defaultValue: `${isExpanded ? "Collapse" : "Expand"} ${title}`,
+            })}
+          >
+            <ChevronDown
+              className={`h-3.5 w-3.5 transition-transform${isExpanded ? "" : " -rotate-90"}`}
+              aria-hidden
+            />
+          </button>
+        )}
       </div>
-      <AnimatePresence>
-        {visible.map((task) => (
-          <TaskRow
-            key={task.task_id}
-            task={task}
-            expandedTaskId={expandedTaskId}
-            onToggleDetail={toggleDetail}
-            onCancel={onCancel}
-            nowMs={nowMs}
-          />
-        ))}
-      </AnimatePresence>
-      {visible.length === 0 && (
-        <div
-          className="px-3 py-2 text-[11px] italic"
-          style={{ color: "var(--color-text-4)" }}
-        >
-          {filter === "all" ? t("no_tasks") : t("no_tasks_in_filter")}
+      {(!collapsible || isExpanded) && (
+        <div id={sectionId}>
+          <AnimatePresence>
+            {visible.map((task) => (
+              <TaskRow
+                key={task.task_id}
+                task={task}
+                expandedTaskId={expandedTaskId}
+                onToggleDetail={toggleDetail}
+                onCancel={onCancel}
+                nowMs={nowMs}
+              />
+            ))}
+          </AnimatePresence>
+          {visible.length === 0 && (
+            <div
+              className="px-3 py-2 text-[11px] italic"
+              style={{ color: "var(--color-text-4)" }}
+            >
+              {filter === "all" ? t("no_tasks") : t("no_tasks_in_filter")}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -822,6 +854,8 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
             filter={filter}
             onCancel={voidPromise(handleCancelSingle)}
             nowMs={nowMs}
+            collapsible
+            sectionId="task-hud-image-channel"
           />
           <div
             className="h-px"
@@ -834,6 +868,8 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
             filter={filter}
             onCancel={voidPromise(handleCancelSingle)}
             nowMs={nowMs}
+            collapsible
+            sectionId="task-hud-video-channel"
           />
           {audioTasks.length > 0 && (
             <>

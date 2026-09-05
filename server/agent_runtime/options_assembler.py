@@ -27,6 +27,7 @@ from lib.db.base import DEFAULT_USER_ID
 from lib.db.engine import async_session_factory as default_async_session_factory
 from lib.i18n import DEFAULT_LOCALE, LOCALE_LANGUAGE_MAP
 from server.agent_runtime.agent_access_policy import AgentAccessPolicy
+from server.agent_runtime.document_workflow import PROJECT_DOCUMENT_WORKFLOW
 from server.agent_runtime.remote_mcp_runtime import (
     RemoteMCPManifest,
     build_remote_mcp_manifest,
@@ -155,12 +156,12 @@ class OptionsAssembler:
         """Build the append portion for SystemPromptPreset.
 
         Combines the Shotwise persona, the locale language regulation, and the
-        session-invariant project context (identity, cwd, operating rules).
+        session-invariant project context (identity and operating rules).
         Mutable project metadata is not included here — it lives in project.json
         and is read on demand. The project's CLAUDE.md (mode variant projected
         into the cwd) is auto-loaded by the SDK via setting_sources=["project"].
         """
-        parts = [_PERSONA_PROMPT]
+        parts = [_PERSONA_PROMPT, PROJECT_DOCUMENT_WORKFLOW]
 
         lang = LOCALE_LANGUAGE_MAP.get(locale, "中文")
         parts.append(
@@ -182,8 +183,8 @@ class OptionsAssembler:
     def _build_project_context(self, project_name: str) -> str:
         """Build session-invariant project context for the system prompt.
 
-        Holds only facts that cannot change within a session: project identity,
-        cwd, and static operating rules. Mutable metadata (title, style,
+        Holds only facts that cannot change within a session: project identity
+        and static operating rules. Mutable metadata (title, style,
         overview, ...) lives in project.json and is read on demand by the agent
         and tools — never baked into the session-fixed system prompt.
         """

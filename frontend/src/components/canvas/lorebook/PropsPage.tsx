@@ -33,6 +33,13 @@ export function PropsPage({ projectName, props, onUpdateProp, onGenerateProp, on
   useScrollTarget("prop");
 
   const entries = Object.entries(props);
+  const hasGeneratingProp = entries.some(([name]) => generatingPropNames?.has(name));
+
+  const handleGenerateAll = () => {
+    for (const [name] of entries) {
+      onGenerateProp(name);
+    }
+  };
 
   const handleImport = async (ids: string[]) => {
     try {
@@ -57,6 +64,8 @@ export function PropsPage({ projectName, props, onUpdateProp, onGenerateProp, on
         count={entries.length}
         onAdd={readOnly ? undefined : () => setAdding(true)}
         onPickFromLibrary={readOnly ? undefined : () => setPicking(true)}
+        onGenerateDesigns={readOnly || entries.length === 0 ? undefined : handleGenerateAll}
+        generateDesignsDisabled={hasGeneratingProp}
       />
       <div className="px-5 py-5">
         {entries.length === 0 ? (

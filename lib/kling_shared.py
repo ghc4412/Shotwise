@@ -31,10 +31,11 @@ _TOKEN_TTL_SECONDS = 1800  # 约 30 分钟过期（官方）。
 _TOKEN_NBF_SKEW_SECONDS = 5  # nbf 略提前，容忍 client/server 轻微时钟偏移。
 _TOKEN_REFRESH_MARGIN_SECONDS = 60  # 距过期 <60s 即重签，避免长任务途中 token 失效。
 
-# 异步视频任务终态：succeed / failed；中间态 submitted / processing 继续轮询。
+# 异步视频任务终态：旧 API 使用 succeed，新 API 使用 succeeded。
 KLING_STATUS_SUCCEED = "succeed"
+KLING_STATUS_SUCCEEDED = "succeeded"
 KLING_STATUS_FAILED = "failed"
-_TERMINAL_STATES = frozenset({KLING_STATUS_SUCCEED, KLING_STATUS_FAILED})
+_TERMINAL_STATES = frozenset({KLING_STATUS_SUCCEED, KLING_STATUS_SUCCEEDED, KLING_STATUS_FAILED})
 
 
 class KlingJWTManager:
@@ -189,16 +190,30 @@ def kling_response_error(payload: object) -> str | None:
 
 def extract_kling_task_id(submit_payload: dict) -> str:
     """从提交响应提取 ``data.task_id``；缺失则按 code 错误或原样抛出。"""
-    task_id = _as_dict(submit_payload.get("data")).get("task_id")
+    data = _as_dict(submit_payload.get("data"))
+    task_id = data.get("task_id") or data.get("id")
     if not task_id:
         reason = kling_response_error(submit_payload)
         raise RuntimeError(reason or f"Kling 提交响应缺少 task_id: {submit_payload}")
     return str(task_id)
 
 
+def _task_data(payload: dict) -> dict:
+    """Return the task object from legacy object-shaped or modern list-shaped data."""
+    data = payload.get("data")
+    if isinstance(data, dict):
+        return data
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                return item
+    return {}
+
+
 def kling_task_status(payload: dict) -> str | None:
     """查询响应的 ``data.task_status``（submitted/processing/succeed/failed）。"""
-    return _as_dict(payload.get("data")).get("task_status")
+    data = _task_data(payload)
+    return data.get("task_status") or data.get("status")
 
 
 def is_kling_task_terminal(payload: dict) -> bool:
@@ -216,15 +231,21 @@ def kling_task_failure_reason(payload: dict) -> str | None:
     if err is not None:
         return err
     if kling_task_status(payload) == KLING_STATUS_FAILED:
-        data = _as_dict(payload.get("data"))
-        return (f"Kling 任务失败 task_id={data.get('task_id')}: {_as_str(data.get('task_status_msg'))}").strip()
+        data = _task_data(payload)
+        task_id = data.get("task_id") or data.get("id")
+        message = data.get("task_status_msg") or data.get("message") or data.get("error")
+        return (f"Kling 任务失败 task_id={task_id}: {_as_str(message)}").strip()
     return None
 
 
 def _extract_task_result_urls(payload: dict, collection_key: str) -> list[str]:
     """从 succeed 查询响应提取 ``data.task_result.{collection_key}[].url`` 列表（非法结构回空）。"""
-    result = _as_dict(_as_dict(payload.get("data")).get("task_result"))
+    data = _task_data(payload)
+    result = _as_dict(data.get("task_result"))
     items = result.get(collection_key)
+    if not isinstance(items, list) and collection_key == "videos":
+        # Kling 3.0 查询响应把产物放在 data.outputs[].url。
+        items = data.get("outputs")
     urls: list[str] = []
     if isinstance(items, list):
         for item in items:

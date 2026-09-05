@@ -80,7 +80,7 @@ export function UnitPreviewPanel({
 
   if (!unit) {
     return (
-      <div className="flex h-full items-center justify-center p-6 text-sm text-[var(--color-text-4)]">
+      <div className="flex h-full items-center justify-center bg-[var(--color-bg-grad-a)] p-6 text-sm text-[var(--color-text-4)]">
         {t("reference_preview_empty")}
       </div>
     );
@@ -146,7 +146,7 @@ export function UnitPreviewPanel({
         className={`relative aspect-video w-full overflow-hidden rounded-lg border border-[var(--color-hairline)] shadow-[0_16px_40px_-16px_oklch(0_0_0_/_0.7)] ${
           ready
             ? "bg-[linear-gradient(135deg,oklch(0.32_0.04_240),oklch(0.18_0.02_280))]"
-            : "bg-[oklch(0.18_0.010_265_/_0.5)]"
+            : "bg-[var(--color-shell-field)]"
         }`}
       >
         {ready && videoUrl && (
@@ -224,7 +224,7 @@ export function UnitPreviewPanel({
           disabled={inFlight || busy || restoring}
           className={`focus-ring inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2.5 text-sm font-semibold transition-colors ${
             inFlight || busy || restoring
-              ? "cursor-not-allowed border border-[var(--color-hairline)] bg-[oklch(0.22_0.011_265_/_0.6)] text-[var(--color-text-3)]"
+              ? "cursor-not-allowed border border-[var(--color-hairline)] bg-[var(--color-shell-btn)] text-[var(--color-text-3)]"
               : "text-[oklch(0.14_0_0)] [background:linear-gradient(180deg,var(--color-accent-2),var(--color-accent))] shadow-[inset_0_1px_0_oklch(1_0_0_/_0.3),0_4px_14px_-4px_var(--color-accent-glow)]"
           }`}
         >
@@ -251,7 +251,7 @@ export function UnitPreviewPanel({
         </button>
       )}
 
-      <div className="rounded-lg border border-[var(--color-hairline-soft)] bg-[oklch(0.18_0.010_265_/_0.5)] p-3">
+      <div className="rounded-lg border border-[var(--color-hairline-soft)] bg-[var(--color-shell-field)] p-3">
         <div className="mb-2 font-mono text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-4)]">
           {t("reference_preview_metadata")}
         </div>

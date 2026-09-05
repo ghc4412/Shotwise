@@ -638,6 +638,8 @@ export default {
   'image_channel': 'Image Channel',
   'video_channel': 'Video Channel',
   'audio_channel': 'Audio Channel',
+  'expand_channel': 'Expand {{channel}}',
+  'collapse_channel': 'Collapse {{channel}}',
   'cancelled_status': 'Cancelled',
   'cancelling_status': 'Cancelling…',
   'cancelled_label': 'Cancelled',
@@ -1754,6 +1756,8 @@ export default {
   'tool_name_patch_project': 'Edit project assets',
   'tool_name_rename_asset': 'Rename asset',
   'tool_name_analyze_character_relations': 'Analyze character relationships',
+  'tool_name_list_project_text_files': 'List project documents',
+  'tool_name_read_project_text': 'Read project documents',
   // Skill display names (single source of truth: user-invocable SKILL.md files
   // under agent_runtime_profile/.claude/skills/; tests/test_frontend_skill_i18n.py enforces parity)
   'skill_name_manga_workflow': 'Video workflow',

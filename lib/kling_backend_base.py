@@ -105,6 +105,14 @@ class KlingBackendBase:
 
     # ── HTTP submit / poll 骨架 ─────────────────────────────────────────
 
+    def _request_url(self, endpoint_path: str) -> str:
+        """把相对端点拼到当前协议的 API 根地址。
+
+        Kling 图像和旧版视频 API 使用 ``/v1``；视频 3.0 后端可重写此钩子，
+        在不改变共享鉴权与重试骨架的前提下使用官方根路径。
+        """
+        return f"{self._base_url}/{endpoint_path.lstrip('/')}"
+
     @with_retry_async(
         max_attempts=DEFAULT_MAX_ATTEMPTS,
         backoff_seconds=DEFAULT_BACKOFF_SECONDS,
@@ -115,7 +123,7 @@ class KlingBackendBase:
         # 避免重试重复建任务 + 重复计费；>=400 抛 HTTPStatusError 交 should_retry_submit 按状态码分流。
         resp = await submit_post(
             lambda: client.post(
-                f"{self._base_url}/{endpoint_path}",
+                self._request_url(endpoint_path),
                 json=payload,
                 headers=self._headers(),
             ),
@@ -125,7 +133,7 @@ class KlingBackendBase:
 
     async def _poll_query(self, client: httpx.AsyncClient, endpoint_path: str) -> dict:
         resp = await client.get(
-            f"{self._base_url}/{endpoint_path}",
+            self._request_url(endpoint_path),
             headers=self._headers(),
         )
         resp.raise_for_status()

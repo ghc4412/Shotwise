@@ -65,6 +65,18 @@ function runningTask(unitId: string) {
   };
 }
 
+function failedTask(unitId: string) {
+  return {
+    task_id: `task-${unitId}`,
+    project_name: "proj",
+    task_type: "reference_video",
+    resource_id: unitId,
+    status: "failed",
+    error_message: "provider failed",
+    updated_at: "2026-06-12T10:00:00Z",
+  };
+}
+
 const STUB_PROJECT: ProjectData = {
   title: "p",
   content_mode: "narration",
@@ -1073,6 +1085,23 @@ describe("ReferenceVideoCanvas", () => {
       });
       expect(genSpy).not.toHaveBeenCalled();
     });
+  });
+
+  it("失败 unit 可通过批量生成重试", async () => {
+    vi.spyOn(API, "listReferenceVideoUnits").mockResolvedValue({ units: [mkUnit("E1U1")] });
+    const genSpy = vi
+      .spyOn(API, "generateReferenceVideoUnit")
+      .mockResolvedValue({ task_id: "t-failed-retry", deduped: false } as never);
+    vi.mocked(useActiveResourceIds).mockReturnValue(new Set());
+    vi.mocked(useLatestTasksByResource).mockReturnValue(new Map([["E1U1", failedTask("E1U1") as never]]));
+
+    render(<ReferenceVideoCanvas projectName="proj" episode={1} />);
+
+    const batch = await screen.findByRole("button", { name: /Batch generate videos|批量生成视频/ });
+    await waitFor(() => expect(batch).not.toBeDisabled());
+    fireEvent.click(batch);
+
+    await waitFor(() => expect(genSpy).toHaveBeenCalledWith("proj", 1, "E1U1"));
   });
 
   it("没有待生成 unit 时批量生成按钮禁用", async () => {

@@ -11,12 +11,12 @@
 轮询端点 ``/v1/videos/{task_id}`` 是网关的旧版任务查询接口，仍受支持；成片结果查询归
 ``/agnesapi?video_id=``（网关文档指明按 video_id 查询，不要拿 task_id 打这个端点）。
 
-能力约束：fps 固定 24；时长 1–18s（内部 ``num_frames = 最近的 8n+1``，由秒 × fps 取整对齐，
-上限 441 帧）；分辨率经 aspect_size 精确算出并显式下发 ``height`` × ``width``（不显式下发时
-上游回落自身默认横屏尺寸）。
+能力约束：普通 Agnes 时长 1–18s；Flash 时长 4–12s 且仅支持 720P。Flash 请求按官方协议
+使用字符串 ``seconds``、显式 ``mode``、``aspect_ratio`` 和 ``images`` / ``first_frame`` /
+``last_frame`` 字段。
 
-关键帧 / 多图映射：无图 → 文生视频；起始图 → 顶层 ``image``；首尾帧 → ``extra_body.image=[s,e]``
-+ ``mode="keyframes"``；参考图 → ``extra_body.image=[refs]``。单通道 + mode 不叠加。
+关键帧 / 多图映射：无图 → ``mode="text"``；首帧/尾帧 → ``mode="keyframe"`` +
+``first_frame`` / ``last_frame``；参考图 → ``mode="reference"`` + 顶层 ``images``。
 """
 
 from __future__ import annotations
@@ -65,25 +65,25 @@ _VIDEOS_ENDPOINT = "/videos"
 # 成片查询端点，挂在网关根（不在 /v1 下），按 video_id 查询。
 _VIDEO_QUERY_ENDPOINT = "/agnesapi"
 
-# fps 固定 24；num_frames 必须形如 8n+1，上限 441（≈18.4s @24fps）。时长按秒 × fps 取整后
-# 对齐到最近的 8n+1。1–3s 会落到 81 帧以下（25/49/73），文档允许的合法值。
-_FPS = 24
-_FRAME_STEP = 8
-_MAX_NUM_FRAMES = 441
-
 # 后端防御时长边界，与 registry Agnes 视频型号的 supported_durations（1..18s）同步。越界请求
 # fail-loud，而非静默截断到 _MAX_NUM_FRAMES——否则 30s 请求实际只生成约 18s，却按原请求秒数计费。
 _MIN_DURATION_SECONDS = 1
 _MAX_DURATION_SECONDS = 18
+_FLASH_MIN_DURATION_SECONDS = 4
+_FLASH_MAX_DURATION_SECONDS = 12
 
-# 参考图（多图主体）上限——保守值，编排层裁剪与 backend 生成时防御同读此处（唯一声明处）。
-# 取值未经 Agnes console 核对，不硬编当既成事实。
+# 普通 Agnes 与 Flash 的参考图限制不同；Flash 上限以官方文档为准。
 _MAX_REFERENCE_IMAGES = 4
+_FLASH_MAX_REFERENCE_IMAGES = 5
 
 # 尺寸约束：长宽被 8 整除、长边收口 1920（保守值，覆盖上游 480p/720p/1080p 三档标准化）。
 # 缺 resolution 时按 720p 短边兜底。待 console / 实测核对像素上限，不硬编当既成事实。
 _VIDEO_ROUND_TO = 8
 _MAX_LONG_EDGE = 1920
+
+# Agnes Video 2.5 Flash accepts the shared request schema but is limited to 720p.
+_FLASH_VIDEO_MODELS = frozenset({"agnes-video-2.5-flash"})
+_FLASH_MAX_RESOLUTION = "720p"
 
 # submit 超时 ~300s：覆盖上游争用时的长阻塞，避免可重试的繁忙被 ReadTimeout 包成终态歧义失败。
 _SUBMIT_TIMEOUT_SECONDS = 300.0
@@ -94,14 +94,16 @@ _POLL_INTERVAL_SECONDS = 5.0
 _MIN_POLL_TIMEOUT_SECONDS = 900.0
 _POLL_TIMEOUT_PER_SECOND = 60.0
 
-_KEYFRAMES_MODE = "keyframes"
+_TEXT_MODE = "text"
+_KEYFRAME_MODE = "keyframe"
+_REFERENCE_MODE = "reference"
 
 # 失败终态集合：除文档化的 failed 外，纳入 error / cancelled / canceled，避免上游以非标准失败态
 # 收尾时被当「仍在进行」轮询到超时。
 _FAILED_STATUSES = ("failed", "error", "cancelled", "canceled")
 
 # 进日志的安全标量白名单；image / extra_body 内的 base64 一律不入日志。
-_SAFE_LOG_KEYS = ("model", "height", "width", "num_frames", "frame_rate", "seed")
+_SAFE_LOG_KEYS = ("model", "size", "seconds", "seed")
 
 # 完成态响应中可能承载成片 URL 的权威字段，按优先级探测（顶层与 metadata 同权，顶层优先）。
 _PRIMARY_URL_FIELDS = ("url", "video_url")
@@ -147,14 +149,6 @@ def _first_url_field(body: dict) -> str | None:
     return None
 
 
-def _duration_to_num_frames(duration_seconds: int) -> int:
-    """秒 → num_frames：秒 × fps 取整后对齐到最近的 ``8n+1``，上限 441。"""
-    target = max(1, duration_seconds) * _FPS
-    n = round((target - 1) / _FRAME_STEP)
-    num_frames = _FRAME_STEP * n + 1
-    return max(1, min(num_frames, _MAX_NUM_FRAMES))
-
-
 def _resolve_size(resolution: str | None, aspect_ratio: str) -> tuple[int, int]:
     """比例优先、清晰度其次：短边来自 resolution（档位 / 自定义 / None 兜底 720p），
     比例精确来自 aspect_ratio、长宽被 8 整除、长边收口 1920。返回 (宽, 高)。
@@ -173,17 +167,17 @@ def _image_to_bare_base64(image_path: Path) -> str:
 
 
 def _safe_body_for_log(body: dict) -> dict:
-    """安全日志视图：白名单标量 + prompt 仅长度 + 图像仅计数（base64 不入日志）。"""
+    """安全日志视图：白名单标量 + prompt 仅长度 + 媒体仅计数（base64 不入日志）。"""
     view: dict = {key: body[key] for key in _SAFE_LOG_KEYS if key in body}
     prompt = body.get("prompt")
     if isinstance(prompt, str):
         view["prompt_len"] = len(prompt)
-    if body.get("image"):
-        view["image"] = "<start_frame>"
-    extra = body.get("extra_body")
-    if isinstance(extra, dict) and isinstance(extra.get("image"), list):
-        mode = extra.get("mode")
-        view["extra_body"] = f"<{len(extra['image'])} img{f', mode={mode}' if mode else ''}>"
+    for key in ("first_frame", "last_frame"):
+        if body.get(key):
+            view[key] = "<encoded>"
+    images = body.get("images")
+    if isinstance(images, list):
+        view["images"] = f"<{len(images)} img>"
     return view
 
 
@@ -245,6 +239,32 @@ def _failure_reason(state: dict) -> str | None:
     return f"Agnes 视频生成失败: {message}"
 
 
+def _is_account_rate_limit(exc: Exception) -> bool:
+    """识别 Agnes 账户额度限流；该 429 重试不会恢复额度且可能制造重复建单。"""
+    if not isinstance(exc, httpx.HTTPStatusError) or exc.response.status_code != 429:
+        return False
+    try:
+        body = exc.response.json()
+    except (ValueError, TypeError):
+        body = None
+    if isinstance(body, dict):
+        error = body.get("error")
+        code = body.get("code")
+        if isinstance(error, dict):
+            code = code or error.get("code")
+        if code == "rate_limit_exceeded":
+            return True
+        detail = body.get("detail")
+        if isinstance(detail, str) and "rate limit" in detail.lower():
+            return True
+    return "rate limit" in str(exc.response.text).lower()
+
+
+def _should_retry_agnes_submit(exc: Exception) -> bool:
+    """使用通用提交重试规则，但对 Agnes 账户限流快速失败。"""
+    return not _is_account_rate_limit(exc) and should_retry_submit(exc)
+
+
 class AgnesVideoBackend(ProviderJobIdPersistenceMixin):
     """Agnes 视频后端（异步 submit/poll，裸 base64 图像，支持 resume）。"""
 
@@ -272,16 +292,12 @@ class AgnesVideoBackend(ProviderJobIdPersistenceMixin):
 
     @staticmethod
     def video_capabilities_for_model(model: str) -> VideoCapabilities:
-        """按 model_id 纯计算 caps —— 不构造 SDK client（无需 api_key）。
-
-        首帧 + 尾帧（首尾关键帧）+ 多图主体参考；参考图不与首帧叠加（单通道 + mode 不可叠加）。
-        当前全系模型能力一致，不按 model_id 分支；instance property 委托至此，
-        保持 backend 为单一真相源。
-        """
+        """按 model_id 纯计算 caps —— 不构造 SDK client（无需 api_key）。"""
+        max_reference_images = _FLASH_MAX_REFERENCE_IMAGES if model in _FLASH_VIDEO_MODELS else _MAX_REFERENCE_IMAGES
         return VideoCapabilities(
             first_frame=True,
             last_frame=True,
-            max_reference_images=_MAX_REFERENCE_IMAGES,
+            max_reference_images=max_reference_images,
         )
 
     @property
@@ -289,7 +305,7 @@ class AgnesVideoBackend(ProviderJobIdPersistenceMixin):
         return self.video_capabilities_for_model(self._model)
 
     async def generate(self, request: VideoGenerationRequest) -> VideoGenerationResult:
-        # 读盘 + base64 编码（首尾帧最多 2 张、参考图最多 4 张，可能数 MB）offload 到线程，
+        # 读盘 + base64 编码（首尾帧最多 2 张、参考图数量受型号约束，可能数 MB）offload 到线程，
         # 避免阻塞共享 worker 事件循环（与 image 后端及 grok/gemini 视频后端一致）。
         payload = await asyncio.to_thread(self._build_payload, request)
         logger.info(
@@ -312,20 +328,16 @@ class AgnesVideoBackend(ProviderJobIdPersistenceMixin):
     # ── request building ────────────────────────────────────────────────
 
     def _build_payload(self, request: VideoGenerationRequest) -> dict:
-        """构建提交体。
-
-        通道优先级（单通道，不叠加）：参考图 → ``extra_body.image=[refs]``；首+尾帧 →
-        ``extra_body.image=[s,e]`` + ``mode=keyframes``；仅起始图 → 顶层 ``image``；都无 → 文生视频。
-        """
+        """构建 Agnes 官方视频请求体，媒体通道互斥且显式声明 mode。"""
         self._reject_out_of_range_duration(request.duration_seconds)
-        width, height = _resolve_size(request.resolution, request.aspect_ratio)
+        width, height = self._resolve_model_size(request.resolution, request.aspect_ratio)
+        is_flash = self._model in _FLASH_VIDEO_MODELS
         payload: dict = {
             "model": self._model,
             "prompt": request.prompt,
-            "height": height,
-            "width": width,
-            "num_frames": _duration_to_num_frames(request.duration_seconds),
-            "frame_rate": _FPS,
+            "size": "720P" if is_flash else f"{width}x{height}",
+            "seconds": str(request.duration_seconds),
+            "aspect_ratio": request.aspect_ratio,
         }
         if request.seed is not None:
             payload["seed"] = request.seed
@@ -339,38 +351,52 @@ class AgnesVideoBackend(ProviderJobIdPersistenceMixin):
         if reference_images and (start_image is not None or end_image is not None):
             raise VideoCapabilityError("video_reference_images_with_frames_unsupported", model=self._model)
 
-        # 尾帧仅在 keyframes（首+尾）模式下生效，无独立尾帧通道。只给尾帧时 fail-loud，而非静默
-        # 退化为文生视频——video_capabilities.last_frame=True 表示支持首尾帧对，不含单独尾帧。
-        if end_image is not None and start_image is None:
-            raise VideoCapabilityError("video_end_image_requires_start_image", model=self._model)
-
         if reference_images:
-            if len(reference_images) > _MAX_REFERENCE_IMAGES:
+            max_reference_images = self.video_capabilities.max_reference_images
+            if len(reference_images) > max_reference_images:
                 raise VideoCapabilityError(
                     "video_reference_images_exceeded",
                     model=self._model,
                     count=len(reference_images),
-                    limit=_MAX_REFERENCE_IMAGES,
+                    limit=max_reference_images,
                 )
-            payload["extra_body"] = {"image": [self._encode_reference(p) for p in reference_images]}
-        elif start_image is not None and end_image is not None:
-            payload["extra_body"] = {
-                "image": [self._encode_start(start_image), self._encode_end(end_image)],
-                "mode": _KEYFRAMES_MODE,
-            }
-        elif start_image is not None:
-            payload["image"] = self._encode_start(start_image)
+            payload["mode"] = _REFERENCE_MODE
+            payload["images"] = [self._encode_reference(p) for p in reference_images]
+        elif start_image is not None or end_image is not None:
+            payload["mode"] = _KEYFRAME_MODE
+            if start_image is not None:
+                payload["first_frame"] = self._encode_start(start_image)
+            if end_image is not None:
+                payload["last_frame"] = self._encode_end(end_image)
+        else:
+            payload["mode"] = _TEXT_MODE
 
         return payload
 
+    def _resolve_model_size(self, resolution: str | None, aspect_ratio: str) -> tuple[int, int]:
+        """Resolve dimensions while guarding model-specific limits for stale saved settings."""
+        if self._model in _FLASH_VIDEO_MODELS and resolution not in (None, _FLASH_MAX_RESOLUTION):
+            raise VideoCapabilityError(
+                "video_resolution_not_supported",
+                model=self._model,
+                resolution=resolution,
+                supported=_FLASH_MAX_RESOLUTION,
+            )
+        return _resolve_size(resolution, aspect_ratio)
+
     def _reject_out_of_range_duration(self, duration_seconds: int) -> None:
-        """时长越界 [_MIN, _MAX] 时 fail-loud；上游若漏校验，避免静默截帧 + 错记计费时长。"""
-        if not _MIN_DURATION_SECONDS <= duration_seconds <= _MAX_DURATION_SECONDS:
+        """在供应商建单前按型号时长范围 fail-loud。"""
+        minimum, maximum = (
+            (_FLASH_MIN_DURATION_SECONDS, _FLASH_MAX_DURATION_SECONDS)
+            if self._model in _FLASH_VIDEO_MODELS
+            else (_MIN_DURATION_SECONDS, _MAX_DURATION_SECONDS)
+        )
+        if not minimum <= duration_seconds <= maximum:
             raise VideoCapabilityError(
                 "video_duration_not_supported",
                 model=self._model,
                 duration=duration_seconds,
-                supported=f"{_MIN_DURATION_SECONDS}-{_MAX_DURATION_SECONDS}",
+                supported=f"{minimum}-{maximum}",
             )
 
     @staticmethod
@@ -414,12 +440,12 @@ class AgnesVideoBackend(ProviderJobIdPersistenceMixin):
     @with_retry_async(
         max_attempts=DEFAULT_MAX_ATTEMPTS,
         backoff_seconds=DEFAULT_BACKOFF_SECONDS,
-        retry_if=should_retry_submit,
+        retry_if=_should_retry_agnes_submit,
     )
     async def _create_task(self, client: httpx.AsyncClient, payload: dict) -> str:
         # 非幂等的「建任务 + 计费」POST：submit_post 把歧义传输错误转 AmbiguousSubmitError 终态失败，
         # 避免重试重复建任务 + 重复计费；>=400 抛 HTTPStatusError 交 should_retry_submit 按状态码分流
-        # （5xx/408/429 重试——含上游繁忙 503；确定性 4xx 快失败）。submit 用长超时覆盖上游长阻塞。
+        # 账户额度/免费用户限流（429 rate_limit_exceeded）不重试，避免重复请求和误导性网络错误。
         resp = await submit_post(
             lambda: client.post(
                 f"{self._base_url}{_VIDEOS_ENDPOINT}",
@@ -452,7 +478,7 @@ class AgnesVideoBackend(ProviderJobIdPersistenceMixin):
         """
         resp = await client.get(
             f"{self._host}{_VIDEO_QUERY_ENDPOINT}",
-            params={"video_id": video_id},
+            params={"video_id": video_id, "model_name": self._model},
             headers=agnes_headers(self._api_key),
         )
         resp.raise_for_status()

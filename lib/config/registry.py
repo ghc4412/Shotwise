@@ -1389,6 +1389,15 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
                 resolutions=["720p", "1080p", "4k"],
                 pricing=_kling_video_pricing("kling-v3"),
             ),
+            "kling-v3-turbo": ModelInfo(
+                display_name="可灵 v3 Turbo",
+                media_type="video",
+                capabilities=[],
+                supported_durations=list(range(3, 16)),
+                resolutions=["720p", "1080p"],
+                api_model_name="kling-3.0-turbo",
+                pricing=_kling_video_pricing("kling-v3-turbo"),
+            ),
             "kling-v3-omni": ModelInfo(
                 display_name="可灵 v3 Omni",
                 media_type="video",
@@ -1484,12 +1493,13 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
                 resolutions=["480p", "720p", "1080p"],
                 pricing=_agnes_video_pricing("agnes-video-2.5", 0.005),
             ),
+            # Flash 共用 2.5 的异步请求字段，但输出上限为 720p；不要把 1080p 暴露给 UI。
             "agnes-video-2.5-flash": ModelInfo(
                 display_name="Agnes Video 2.5 Flash",
                 media_type="video",
                 capabilities=[],
-                supported_durations=list(range(1, 19)),
-                resolutions=["480p", "720p", "1080p"],
+                supported_durations=list(range(4, 13)),
+                resolutions=["720p"],
                 pricing=_agnes_video_pricing("agnes-video-2.5-flash", 0.005),
             ),
         },

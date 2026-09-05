@@ -39,7 +39,7 @@ from server.agent_runtime.sdk_tools.enqueue_videos import (
     generate_video_scene_tool,
     generate_video_selected_tool,
 )
-from server.agent_runtime.sdk_tools.file_read import read_project_text_tool
+from server.agent_runtime.sdk_tools.file_read import list_project_text_files_tool, read_project_text_tool
 from server.agent_runtime.sdk_tools.text_generation import (
     _parse_normalized_content,
     generate_episode_script_tool,
@@ -145,10 +145,17 @@ async def _call(tool_obj, args: dict[str, Any]) -> dict[str, Any]:
 
 
 @pytest.mark.unit
-async def test_read_project_text_is_paged_and_project_scoped(fake_ctx: ToolContext) -> None:
+async def test_read_project_text_requires_a_fresh_project_file_list(fake_ctx: ToolContext) -> None:
     source = fake_ctx.project_path / "source"
     source.mkdir()
     (source / "chapter.txt").write_text("一\n二\n三\n", encoding="utf-8")
+
+    before_list = await _call(read_project_text_tool(fake_ctx), {"path": "source/chapter.txt"})
+    assert before_list.get("is_error") is True
+    assert "list_project_text_files" in before_list["content"][0]["text"]
+
+    listed = await _call(list_project_text_files_tool(fake_ctx), {})
+    assert listed.get("is_error") is not True
 
     out = await _call(read_project_text_tool(fake_ctx), {"path": "source/chapter.txt", "start_line": 2, "max_lines": 1})
 
@@ -160,8 +167,56 @@ async def test_read_project_text_is_paged_and_project_scoped(fake_ctx: ToolConte
 
 
 @pytest.mark.unit
+async def test_read_project_text_rejects_stale_file_list_after_file_change(fake_ctx: ToolContext) -> None:
+    source = fake_ctx.project_path / "source"
+    source.mkdir()
+    chapter = source / "chapter.txt"
+    chapter.write_text("一\n二\n", encoding="utf-8")
+
+    listed = await _call(list_project_text_files_tool(fake_ctx), {})
+    assert listed.get("is_error") is not True
+
+    chapter.write_text("一\n二\n三\n", encoding="utf-8")
+    stale = await _call(read_project_text_tool(fake_ctx), {"path": "source/chapter.txt"})
+    assert stale.get("is_error") is True
+    assert "重新列出" in stale["content"][0]["text"]
+
+    refreshed = await _call(list_project_text_files_tool(fake_ctx), {})
+    assert refreshed.get("is_error") is not True
+    current = await _call(read_project_text_tool(fake_ctx), {"path": "source/chapter.txt"})
+    assert current.get("is_error") is not True
+    assert "三" in current["content"][0]["text"]
+
+
+@pytest.mark.unit
+async def test_list_project_text_files_prioritizes_documents_and_excludes_raw_backups(fake_ctx: ToolContext) -> None:
+    project_path = fake_ctx.project_path
+    (project_path / "source").mkdir()
+    (project_path / "source" / "raw").mkdir()
+    (project_path / "source" / "novel.txt").write_text("原稿", encoding="utf-8")
+    (project_path / "source" / "raw" / "novel.txt").write_bytes(b"backup")
+    (project_path / "drafts" / "episode_1").mkdir(parents=True)
+    (project_path / "drafts" / "episode_1" / "draft.md").write_text("草稿", encoding="utf-8")
+    (project_path / "scripts").mkdir()
+    (project_path / "scripts" / "episode_1.json").write_text("{}", encoding="utf-8")
+    (project_path / "project.json").write_text("{}", encoding="utf-8")
+
+    out = await _call(list_project_text_files_tool(fake_ctx), {})
+
+    assert out.get("is_error") is not True
+    text = out["content"][0]["text"]
+    assert "当前首选文稿候选（source/）：" in text
+    assert "备用项目文本（drafts/" in text
+    assert "备用项目文本（scripts/" in text
+    assert "source/raw/novel.txt" not in text
+    assert "项目元数据（不计入文稿候选，仅按需读取）" in text
+    assert "project.json" in text
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("path", ["../secret.txt", ".env", "storyboards/image.png", "project.json/child"])
 async def test_read_project_text_rejects_unapproved_paths(fake_ctx: ToolContext, path: str) -> None:
+    await _call(list_project_text_files_tool(fake_ctx), {})
     out = await _call(read_project_text_tool(fake_ctx), {"path": path})
 
     assert out.get("is_error") is True

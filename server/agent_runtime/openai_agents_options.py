@@ -29,6 +29,7 @@ from lib.agent_protocol import (
     normalize_protocol,
 )
 from lib.i18n import DEFAULT_LOCALE
+from server.agent_runtime.document_workflow import PROJECT_DOCUMENT_WORKFLOW
 
 _OPENAI_PERSONA_PROMPT = """你是 Shotwise 智能体，一个专业的 AI 视频内容创作助手。
 你负责把小说内容转化为可发布的短视频内容，并通过已注册的工具完成项目操作。
@@ -36,7 +37,7 @@ _OPENAI_PERSONA_PROMPT = """你是 Shotwise 智能体，一个专业的 AI 视�
 ## 工具约束
 - 只能调用系统实际提供的工具；工具名称必须来自工具列表。
 - 不得调用或臆造 Bash、Read、Write、Edit、Glob、Grep、TodoWrite、base64_writer 等未注册工具。
-- 文件检查只能使用 read_project_text，且必须按页读取；不要执行命令或直接修改文件。
+- 文稿检查必须先调用 list_project_text_files 获取清单，再使用 read_project_text 按页读取；不要执行命令或直接修改文件。
 - 项目数据修改只能使用已注册的 Shotwise 工具。
 """
 
@@ -142,17 +143,17 @@ class OpenAIAgentsOptionsAssembler:
     def _build_system_prompt(self, project_name: str, locale: str, tool_names: list[str]) -> str:
         lang = {"zh": "中文", "en": "英语", "vi": "越南语"}.get(locale, "中文")
         try:
-            project_cwd = self._resolve_project_cwd(project_name)
+            self._resolve_project_cwd(project_name)
             project_context = (
                 "\n## 当前项目上下文\n"
                 f"- 项目标识：{project_name}\n"
-                f"- 项目目录：{project_cwd.as_posix()}\n"
                 "- 项目元数据位于 project.json，需要时使用 read_project_text 分页读取。\n"
             )
         except (ValueError, FileNotFoundError):
             project_context = ""
         return (
             f"{_OPENAI_PERSONA_PROMPT}\n"
+            f"{PROJECT_DOCUMENT_WORKFLOW}\n"
             f"## 语言规范\n所有回复使用{lang}。\n"
             f"## 当前可用工具\n{', '.join(name for name in tool_names if name)}\n"
             "只可使用上述工具。"

@@ -95,24 +95,62 @@ class TestCapabilities:
 
 
 class TestNumFramesAndSize:
-    @pytest.mark.parametrize(
-        ("duration", "expected_frames"),
-        [(1, 25), (3, 73), (5, 121), (10, 241), (18, 433)],
-    )
-    def test_duration_to_num_frames_aligns_to_8n_plus_1(self, duration: int, expected_frames: int):
-        from lib.video_backends.agnes import _duration_to_num_frames
-
-        frames = _duration_to_num_frames(duration)
-        assert frames == expected_frames
-        assert (frames - 1) % 8 == 0  # 形如 8n+1
-        assert frames <= 441
-
     def test_resolve_size_portrait_explicit_hw(self):
         from lib.video_backends.agnes import _resolve_size
 
         width, height = _resolve_size("720p", "9:16")
         assert (width, height) == (720, 1280)
         assert width % 8 == 0 and height % 8 == 0
+
+
+class TestFlashModelConstraints:
+    def test_flash_rejects_1080p_before_submit(self, tmp_path: Path):
+        from lib.video_backends.agnes import AgnesVideoBackend
+
+        backend = AgnesVideoBackend(
+            api_key="sk-test",
+            model="agnes-video-2.5-flash",
+            base_url="https://apihub.agnes-ai.com/v1",
+        )
+
+        with pytest.raises(VideoCapabilityError, match="video_resolution_not_supported"):
+            backend._build_payload(
+                VideoGenerationRequest(
+                    prompt="A cat running",
+                    output_path=tmp_path / "out.mp4",
+                    aspect_ratio="9:16",
+                    resolution="1080p",
+                    duration_seconds=8,
+                )
+            )
+
+    def test_flash_builds_720p_payload(self, tmp_path: Path):
+        from lib.video_backends.agnes import AgnesVideoBackend
+
+        backend = AgnesVideoBackend(
+            api_key="sk-test",
+            model="agnes-video-2.5-flash",
+            base_url="https://apihub.agnes-ai.com/v1",
+        )
+        payload = backend._build_payload(
+            VideoGenerationRequest(
+                prompt="A cat running",
+                output_path=tmp_path / "out.mp4",
+                aspect_ratio="9:16",
+                resolution="720p",
+                duration_seconds=8,
+            )
+        )
+
+        assert payload["model"] == "agnes-video-2.5-flash"
+        assert payload["size"] == "720P"
+        assert payload["aspect_ratio"] == "9:16"
+        assert payload["seconds"] == "8"
+        assert payload["mode"] == "text"
+        assert "width" not in payload
+        assert "height" not in payload
+        assert "num_frames" not in payload
+        assert "frame_rate" not in payload
 
 
 class TestDurationCoercion:
@@ -197,13 +235,20 @@ class TestTextToVideo:
         body = post_call.kwargs["json"]
         assert body["model"] == "agnes-video-2.5"
         assert body["prompt"] == "A cat running"
-        assert body["height"] == 1280
-        assert body["width"] == 720
-        assert body["num_frames"] == 121
-        assert body["frame_rate"] == 24
+        assert body["size"] == "720x1280"
+        assert body["aspect_ratio"] == "9:16"
+        assert "width" not in body
+        assert "height" not in body
+        assert body["seconds"] == "5"
+        assert body["mode"] == "text"
+        assert "num_frames" not in body
+        assert "frame_rate" not in body
         assert body["seed"] == 7
-        # 文生视频：无任何图像通道
+        # 文生视频：无任何媒体通道
         assert "image" not in body
+        assert "images" not in body
+        assert "first_frame" not in body
+        assert "last_frame" not in body
         assert "extra_body" not in body
         assert post_call.kwargs["headers"]["Authorization"] == "Bearer sk-test"
         # submit 用长超时覆盖上游长阻塞
@@ -275,12 +320,17 @@ class TestImageChannels:
                 )
             )
 
-        sent = client.post.call_args.kwargs["json"]["image"]
+        body = client.post.call_args.kwargs["json"]
+        sent = body["first_frame"]
         expected = base64.b64encode(img_bytes).decode("ascii")
         assert sent == expected
+        assert body["mode"] == "keyframe"
         # 裸 base64，绝不带 data: 前缀
         assert not sent.startswith("data:")
-        assert "extra_body" not in client.post.call_args.kwargs["json"]
+        assert "image" not in body
+        assert "images" not in body
+        assert "last_frame" not in body
+        assert "extra_body" not in body
 
     async def test_first_last_keyframes_extra_body(self, tmp_path: Path):
         start = _write_image(tmp_path / "s.png", b"start-bytes")
@@ -314,14 +364,13 @@ class TestImageChannels:
             )
 
         body = client.post.call_args.kwargs["json"]
-        assert "image" not in body  # 单通道：keyframes 走 extra_body，不占顶层 image
-        extra = body["extra_body"]
-        assert extra["mode"] == "keyframes"
-        assert extra["image"] == [
-            base64.b64encode(b"start-bytes").decode("ascii"),
-            base64.b64encode(b"end-bytes").decode("ascii"),
-        ]
-        assert all(not s.startswith("data:") for s in extra["image"])
+        assert body["mode"] == "keyframe"
+        assert body["first_frame"] == base64.b64encode(b"start-bytes").decode("ascii")
+        assert body["last_frame"] == base64.b64encode(b"end-bytes").decode("ascii")
+        assert "image" not in body
+        assert "images" not in body
+        assert "extra_body" not in body
+        assert all(not body[key].startswith("data:") for key in ("first_frame", "last_frame"))
 
     async def test_reference_images_extra_body(self, tmp_path: Path):
         ref1 = _write_image(tmp_path / "r1.png", b"ref-1")
@@ -354,13 +403,15 @@ class TestImageChannels:
             )
 
         body = client.post.call_args.kwargs["json"]
-        assert "image" not in body
-        extra = body["extra_body"]
-        assert "mode" not in extra  # 参考生视频不带 keyframes mode
-        assert extra["image"] == [
+        assert body["mode"] == "reference"
+        assert body["images"] == [
             base64.b64encode(b"ref-1").decode("ascii"),
             base64.b64encode(b"ref-2").decode("ascii"),
         ]
+        assert "image" not in body
+        assert "first_frame" not in body
+        assert "last_frame" not in body
+        assert "extra_body" not in body
 
     async def test_reference_images_exceeded_raises(self, tmp_path: Path):
         refs = [_write_image(tmp_path / f"r{i}.png", f"r{i}".encode()) for i in range(5)]
@@ -408,27 +459,36 @@ class TestImageChannels:
             assert ei.value.code == "video_reference_images_with_frames_unsupported"
         client.post.assert_not_called()
 
-    async def test_end_image_only_fails_loud(self, tmp_path: Path):
-        """仅提供尾帧（无首帧）时 fail-loud——Agnes 无独立尾帧通道，不静默退化为文生视频。"""
+    async def test_end_image_only_uses_keyframe_mode(self, tmp_path: Path):
+        """官方 keyframe 模式允许只传尾帧。"""
         end = _write_image(tmp_path / "e.png", b"end")
-        client = _mock_client(post=AsyncMock(side_effect=AssertionError("仅尾帧不应提交")))
+        create_resp = _make_response(200, {"task_id": "t-end", "status": "queued"})
+        poll_resp = _make_response(200, _completed("t-end"))
+        client = _mock_client(post=AsyncMock(return_value=create_resp), get=AsyncMock(return_value=poll_resp))
+        fake_download = AsyncMock(side_effect=_fake_download_factory(b"v"))
 
-        with patch("httpx.AsyncClient", return_value=client):
+        with (
+            patch("httpx.AsyncClient", return_value=client),
+            patch("lib.video_backends.agnes._POLL_INTERVAL_SECONDS", 0.0),
+            patch("lib.video_backends.agnes.download_video", fake_download),
+        ):
             from lib.video_backends.agnes import AgnesVideoBackend
 
             backend = AgnesVideoBackend(api_key="k", base_url="https://x/v1")
-            with pytest.raises(VideoCapabilityError) as ei:
-                await backend.generate(
-                    VideoGenerationRequest(
-                        prompt="p",
-                        output_path=tmp_path / "o.mp4",
-                        end_image=end,
-                        aspect_ratio="9:16",
-                        duration_seconds=5,
-                    )
+            await backend.generate(
+                VideoGenerationRequest(
+                    prompt="p",
+                    output_path=tmp_path / "o.mp4",
+                    end_image=end,
+                    aspect_ratio="9:16",
+                    duration_seconds=5,
                 )
-            assert ei.value.code == "video_end_image_requires_start_image"
-        client.post.assert_not_called()
+            )
+
+        body = client.post.call_args.kwargs["json"]
+        assert body["mode"] == "keyframe"
+        assert body["last_frame"] == base64.b64encode(b"end").decode("ascii")
+        assert "first_frame" not in body
 
     async def test_missing_start_image_fails_loud(self, tmp_path: Path):
         client = _mock_client(post=AsyncMock(side_effect=AssertionError("缺图不应提交")))
@@ -502,6 +562,9 @@ class TestImageChannels:
 
         body = client.post.call_args.kwargs["json"]
         assert "image" not in body
+        assert "images" not in body
+        assert "first_frame" not in body
+        assert "last_frame" not in body
         assert "extra_body" not in body
 
 
@@ -625,7 +688,7 @@ class TestFailureAndTimeout:
         assert result.video_path.read_bytes() == b"queried-bytes"
         # 二次查询打网关根下的 /agnesapi，按 video_id 传参（不带 /v1，也不用 task_id）
         assert client.get.call_args_list[1].args[0] == "https://apihub.agnes-ai.com/agnesapi"
-        assert client.get.call_args_list[1].kwargs["params"] == {"video_id": "vid-123"}
+        assert client.get.call_args_list[1].kwargs["params"] == {"video_id": "vid-123", "model_name": "agnes-video-2.5"}
 
     async def test_completed_with_direct_url_field_skips_video_id_query(self, tmp_path: Path):
         """完成态直接带 url 字段时直接下载，不发起 video_id 二次查询。"""
@@ -1013,7 +1076,10 @@ class TestResume:
         client.post.assert_not_called()
         assert client.get.call_args_list[0].args[0].endswith("/videos/task-resume-vid")
         assert client.get.call_args_list[1].args[0] == "https://apihub.agnes-ai.com/agnesapi"
-        assert client.get.call_args_list[1].kwargs["params"] == {"video_id": "vid-resume"}
+        assert client.get.call_args_list[1].kwargs["params"] == {
+            "video_id": "vid-resume",
+            "model_name": "agnes-video-2.5",
+        }
         assert result.video_uri == "https://cdn.agnes/resume-queried.mp4"
         assert result.duration_seconds == 8
         assert (tmp_path / "out.mp4").read_bytes() == b"resume-queried"
@@ -1040,6 +1106,52 @@ class TestResume:
             assert ei.value.job_id == "task-404"
             assert ei.value.provider == PROVIDER_AGNES
             assert client.get.call_count == 1
+
+
+class TestFlashDurationValidation:
+    @pytest.mark.parametrize("duration", [3, 13])
+    async def test_flash_rejects_duration_outside_official_range(self, tmp_path: Path, duration: int):
+        from lib.video_backends.agnes import AgnesVideoBackend
+
+        backend = AgnesVideoBackend(api_key="k", model="agnes-video-2.5-flash", base_url="https://x/v1")
+        with pytest.raises(VideoCapabilityError) as ei:
+            backend._build_payload(
+                VideoGenerationRequest(
+                    prompt="p", output_path=tmp_path / "o.mp4", aspect_ratio="9:16", duration_seconds=duration
+                )
+            )
+        assert ei.value.code == "video_duration_not_supported"
+
+
+class TestAccountRateLimit:
+    async def test_rate_limit_exceeded_is_not_retried(self, tmp_path: Path):
+        request = httpx.Request("POST", "https://x/v1/videos")
+        response = httpx.Response(
+            429,
+            request=request,
+            json={"code": "rate_limit_exceeded", "detail": "You have reached the API rate limit for free users."},
+        )
+        limited = MagicMock(status_code=429)
+        limited.raise_for_status = MagicMock(
+            side_effect=httpx.HTTPStatusError("429", request=request, response=response)
+        )
+        client = _mock_client(post=AsyncMock(return_value=limited))
+
+        with (
+            patch("httpx.AsyncClient", return_value=client),
+            patch("lib.retry._compute_wait", lambda attempt, backoff: 0.0),
+        ):
+            from lib.video_backends.agnes import AgnesVideoBackend
+
+            backend = AgnesVideoBackend(api_key="k", base_url="https://x/v1")
+            with pytest.raises(httpx.HTTPStatusError):
+                await backend.generate(
+                    VideoGenerationRequest(
+                        prompt="p", output_path=tmp_path / "o.mp4", aspect_ratio="9:16", duration_seconds=5
+                    )
+                )
+
+        client.post.assert_awaited_once()
 
 
 class TestDurationValidation:

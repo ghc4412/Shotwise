@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import jwt
 import pytest
 
@@ -37,6 +38,19 @@ def _query(status: str, url: str = "", status_msg: str = "") -> dict:
     if url:
         data["task_result"] = {"videos": [{"id": "v1", "url": url}]}
     return {"code": 0, "message": "SUCCEED", "data": data}
+
+
+def _modern_submit(task_id: str = "t-1") -> dict:
+    return {"code": 0, "message": "success", "data": {"id": task_id, "status": "submitted"}}
+
+
+def _modern_query(status: str, url: str = "", status_msg: str = "", task_id: str = "t-1") -> dict:
+    data: dict = {"id": task_id, "status": status}
+    if status_msg:
+        data["message"] = status_msg
+    if url:
+        data["outputs"] = [{"id": "v1", "url": url}]
+    return {"code": 0, "message": "success", "data": [data]}
 
 
 def _client(*, post=None, get=None) -> AsyncMock:
@@ -205,25 +219,25 @@ class TestPerModelCapabilities:
 
 class TestModeAndResolution:
     @pytest.mark.unit
-    def test_resolution_4k_maps_to_mode_4k(self, tmp_path):
+    def test_resolution_4k_is_sent_in_modern_settings(self, tmp_path):
         _, payload = _jwt_backend("kling-v3")._build_payload(_request(tmp_path, resolution="4k"))
-        assert payload["mode"] == "4k"
+        assert payload["settings"]["resolution"] == "4k"
 
     @pytest.mark.unit
     def test_resolution_4k_case_insensitive(self, tmp_path):
         _, payload = _jwt_backend("kling-v3-omni")._build_payload(_request(tmp_path, resolution="4K"))
-        assert payload["mode"] == "4k"
+        assert payload["settings"]["resolution"] == "4k"
 
     @pytest.mark.unit
     def test_4k_overrides_service_tier(self, tmp_path):
-        # 4k 档优先于 std/pro（与 per_second_tiered 档位派生一致）
+        # 现代 3.0 协议直接发送 resolution；service_tier 不会污染请求体。
         _, payload = _jwt_backend("kling-v3")._build_payload(_request(tmp_path, resolution="4k", service_tier="pro"))
-        assert payload["mode"] == "4k"
+        assert payload["settings"]["resolution"] == "4k"
 
     @pytest.mark.unit
-    def test_non_4k_resolution_keeps_service_tier_mode(self, tmp_path):
+    def test_non_4k_resolution_is_sent_in_modern_settings(self, tmp_path):
         _, payload = _jwt_backend("kling-v3")._build_payload(_request(tmp_path, resolution="1080p", service_tier="pro"))
-        assert payload["mode"] == "pro"
+        assert payload["settings"]["resolution"] == "1080p"
 
 
 class TestAudioGating:
@@ -267,13 +281,13 @@ class TestAudioGating:
             _, payload = _jwt_backend(model)._build_payload(
                 _request(tmp_path, resolution="720p", service_tier="std", generate_audio=True)
             )
-            assert payload["sound"] == "on"
+            assert payload["settings"]["audio"] == "native"
 
     @pytest.mark.unit
     def test_audio_capable_model_sends_off_when_not_requested(self, tmp_path):
         # 有能力但请求不要人声：显式发 "off"，与官方默认值一致
         _, payload = _jwt_backend("kling-v3")._build_payload(_request(tmp_path, generate_audio=False))
-        assert payload["sound"] == "off"
+        assert payload["settings"]["audio"] == "off"
 
     @pytest.mark.unit
     def test_no_audio_model_omits_sound_field(self, tmp_path):
@@ -296,30 +310,39 @@ class TestMultiImageSubpath:
         return paths
 
     @pytest.mark.unit
-    def test_reference_images_select_multi_image2video(self, tmp_path):
+    def test_reference_images_select_modern_omni_endpoint(self, tmp_path):
         refs = self._refs(tmp_path, 2)
         subpath, payload = _jwt_backend("kling-v3-omni")._build_payload(_request(tmp_path, reference_images=refs))
-        assert subpath == "multi-image2video"
-        # image_list 为 [{"image": <base64>}] 形态，无单首帧
-        assert isinstance(payload["image_list"], list) and len(payload["image_list"]) == 2
-        assert all(set(e) == {"image"} and isinstance(e["image"], str) and e["image"] for e in payload["image_list"])
-        assert not payload["image_list"][0]["image"].startswith("data:")
-        assert "image" not in payload and "image_tail" not in payload
+        assert subpath == "modern/omni-video/kling-3.0-omni"
+        contents = payload["contents"]
+        assert sum(item["type"] == "refer_image" for item in contents) == 2
+        assert all(
+            item["url"] and not item["url"].startswith("data:") for item in contents if item["type"] == "refer_image"
+        )
+        assert payload["settings"]["aspect_ratio"] == "9:16"
+        assert "image_list" not in payload
 
     @pytest.mark.unit
-    def test_multi_image2video_omits_sound(self, tmp_path):
+    def test_modern_omni_reference_defaults_aspect_ratio_when_missing(self, tmp_path):
+        refs = self._refs(tmp_path, 1)
+        _, payload = _jwt_backend("kling-v3-omni")._build_payload(
+            _request(tmp_path, reference_images=refs, aspect_ratio=None)
+        )
+        assert payload["settings"]["aspect_ratio"] == "9:16"
+
+    @pytest.mark.unit
+    def test_modern_omni_reference_images_support_native_audio(self, tmp_path):
         refs = self._refs(tmp_path, 1)
         _, payload = _jwt_backend("kling-v3-omni")._build_payload(
             _request(tmp_path, reference_images=refs, resolution="1080p", generate_audio=True)
         )
-        # multi-image2video 原生 schema 不含音频开关；有声决策同步归 False，避免按有声价出账
-        assert "sound" not in payload
+        assert payload["settings"]["audio"] == "native"
         assert (
             _jwt_backend("kling-v3-omni")._effective_audio(
                 _request(tmp_path, reference_images=refs, resolution="1080p", generate_audio=True),
-                subpath="multi-image2video",
+                subpath="modern/omni-video/kling-3.0-omni",
             )
-            is False
+            is True
         )
 
     @pytest.mark.unit
@@ -336,7 +359,7 @@ class TestMultiImageSubpath:
     @pytest.mark.unit
     def test_empty_reference_images_falls_through(self, tmp_path):
         subpath, _ = _jwt_backend("kling-v3-omni")._build_payload(_request(tmp_path, reference_images=[]))
-        assert subpath == "text2video"
+        assert subpath == "modern/text-to-video/kling-3.0"
 
     @pytest.mark.unit
     def test_unreadable_reference_image_raises(self, tmp_path):
@@ -388,8 +411,8 @@ class TestCapabilityValidation:
         subpath, payload = _jwt_backend("kling-v3-omni")._build_payload(
             _request(tmp_path, reference_images=self._refs(tmp_path, 4))
         )
-        assert subpath == "multi-image2video"
-        assert len(payload["image_list"]) == 4
+        assert subpath == "modern/omni-video/kling-3.0-omni"
+        assert sum(item["type"] == "refer_image" for item in payload["contents"]) == 4
 
 
 class TestAuthHeaders:
@@ -472,7 +495,7 @@ class TestPayloadBuilding:
         first.write_bytes(b"\x89PNG\r\n1")
         last.write_bytes(b"\x89PNG\r\n2")
         _, payload = _jwt_backend("kling-v3")._build_payload(_request(tmp_path, start_image=first, end_image=last))
-        assert "image" in payload and "image_tail" in payload
+        assert [item["type"] for item in payload["contents"]] == ["prompt", "first_frame", "last_frame"]
 
     @pytest.mark.unit
     def test_image2video_empty_end_frame_is_omitted(self, tmp_path):
@@ -622,6 +645,51 @@ class TestGenerateHappyPath:
         assert persist.await_args.args[1] == "image2video:task-i:0"
 
 
+class TestModernProtocol:
+    @pytest.mark.unit
+    def test_v3_image_to_video_contract(self, tmp_path):
+        image = tmp_path / "first.png"
+        image.write_bytes(b"\x89PNG\r\n")
+        endpoint, payload = _jwt_backend("kling-v3")._build_payload(
+            _request(tmp_path, start_image=image, resolution="1080p", generate_audio=True)
+        )
+        assert endpoint == "modern/image-to-video/kling-3.0"
+        assert [item["type"] for item in payload["contents"]] == ["prompt", "first_frame"]
+        assert payload["settings"]["duration"] == 5
+        assert payload["settings"]["audio"] == "native"
+
+    @pytest.mark.unit
+    def test_turbo_uses_modern_endpoint_and_omits_audio(self, tmp_path):
+        endpoint, payload = _jwt_backend("kling-v3-turbo")._build_payload(
+            _request(tmp_path, resolution="1080p", generate_audio=True)
+        )
+        assert endpoint == "modern/text-to-video/kling-3.0-turbo"
+        assert payload["settings"]["duration"] == 5
+        assert "audio" not in payload["settings"]
+
+    @pytest.mark.unit
+    def test_turbo_rejects_4k(self, tmp_path):
+        with pytest.raises(VideoCapabilityError) as exc:
+            _jwt_backend("kling-v3-turbo")._build_payload(_request(tmp_path, resolution="4k"))
+        assert exc.value.code == "video_resolution_duration_unsupported"
+
+    @pytest.mark.unit
+    async def test_modern_resume_only_polls_tasks(self, tmp_path):
+        post = AsyncMock()
+        get = AsyncMock(return_value=_resp(_modern_query("succeeded", url="https://x/r.mp4", task_id="task-modern")))
+        client = _client(post=post, get=get)
+        with (
+            patch("lib.video_backends.kling.httpx.AsyncClient", return_value=client),
+            patch("lib.video_backends.kling._KLING_VIDEO_POLL_INTERVAL_SECONDS", 0),
+            patch("lib.video_backends.kling.download_video", new=AsyncMock()),
+        ):
+            result = await _jwt_backend("kling-v3").resume_video("modern:task-modern:1", _request(tmp_path))
+        post.assert_not_called()
+        assert result.task_id == "task-modern"
+        assert result.generate_audio is True
+        assert get.await_args.args[0].endswith("/tasks?task_ids=task-modern")
+
+
 class TestResume:
     @pytest.mark.unit
     async def test_resume_polls_without_resubmit(self, tmp_path):
@@ -728,9 +796,9 @@ class TestAudioGatingResult:
 
     @pytest.mark.unit
     async def test_v3_audio_result_true(self, tmp_path):
-        # v3 支持音画同出且无分辨率约束：请求有声 → result.generate_audio=True
-        post = AsyncMock(return_value=_resp(_submit("task-b")))
-        get = AsyncMock(return_value=_resp(_query("succeed", url="https://x/v.mp4")))
+        # v3 现代协议支持音画同出且无分辨率约束：请求有声 → result.generate_audio=True
+        post = AsyncMock(return_value=_resp(_modern_submit("task-b")))
+        get = AsyncMock(return_value=_resp(_modern_query("succeeded", url="https://x/v.mp4", task_id="task-b")))
         client = _client(post=post, get=get)
         with (
             patch("lib.video_backends.kling.httpx.AsyncClient", return_value=client),
@@ -739,6 +807,8 @@ class TestAudioGatingResult:
         ):
             result = await _jwt_backend("kling-v3").generate(_request(tmp_path, generate_audio=True))
         assert result.generate_audio is True
+        assert post.await_args.args[0].endswith("/text-to-video/kling-3.0")
+        assert get.await_args.args[0].endswith("/tasks?task_ids=task-b")
 
     @pytest.mark.unit
     async def test_turbo_audio_gated_result_false(self, tmp_path):
@@ -755,13 +825,28 @@ class TestAudioGatingResult:
         assert result.generate_audio is False
 
     @pytest.mark.unit
-    async def test_v3_omni_multi_image_audio_result_false(self, tmp_path):
-        # multi-image2video 子路径不携带 sound（原生 schema 无此字段），成片必然无声：
-        # result.generate_audio 必须同步为 False，否则按有声价出账却拿到无声片
+    async def test_v3_omni_reference_error_uses_modern_endpoint(self, tmp_path):
         ref = tmp_path / "ref0.png"
         ref.write_bytes(b"\x89PNG\r\n")
-        post = AsyncMock(return_value=_resp(_submit("task-b3")))
-        get = AsyncMock(return_value=_resp(_query("succeed", url="https://x/v.mp4")))
+        response = httpx.Response(
+            400,
+            json={"code": 1201, "message": "model is not supported"},
+            request=httpx.Request("POST", "https://api-beijing.klingai.com/omni-video/kling-3.0-omni"),
+        )
+        post = AsyncMock(return_value=response)
+        client = _client(post=post)
+        with patch("lib.video_backends.kling.httpx.AsyncClient", return_value=client):
+            with pytest.raises(httpx.HTTPStatusError):
+                await _jwt_backend("kling-v3-omni").generate(_request(tmp_path, reference_images=[ref]))
+        assert post.await_args.args[0].endswith("/omni-video/kling-3.0-omni")
+
+    @pytest.mark.unit
+    async def test_v3_omni_reference_audio_result_true(self, tmp_path):
+        # 现代 Omni 参考图接口支持 settings.audio=native，结果计费标志必须保持为 True。
+        ref = tmp_path / "ref0.png"
+        ref.write_bytes(b"\x89PNG\r\n")
+        post = AsyncMock(return_value=_resp(_modern_submit("task-b3")))
+        get = AsyncMock(return_value=_resp(_modern_query("succeeded", url="https://x/v.mp4", task_id="task-b3")))
         client = _client(post=post, get=get)
         with (
             patch("lib.video_backends.kling.httpx.AsyncClient", return_value=client),
@@ -771,8 +856,8 @@ class TestAudioGatingResult:
             result = await _jwt_backend("kling-v3-omni").generate(
                 _request(tmp_path, reference_images=[ref], resolution="1080p", generate_audio=True)
             )
-        assert post.await_args.args[0].endswith("/videos/multi-image2video")
-        assert result.generate_audio is False
+        assert post.await_args.args[0].endswith("/omni-video/kling-3.0-omni")
+        assert result.generate_audio is True
 
     @pytest.mark.unit
     async def test_v2_6_persists_audio_bit_in_job_id(self, tmp_path):

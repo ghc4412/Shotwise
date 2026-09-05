@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 
@@ -54,7 +55,9 @@ DEFAULT_MODEL = "kling-v2-5-turbo"
 _TEXT2VIDEO = "text2video"
 _IMAGE2VIDEO = "image2video"
 _MULTI_IMAGE2VIDEO = "multi-image2video"
-_RESUMABLE_SUBPATHS = frozenset({_TEXT2VIDEO, _IMAGE2VIDEO, _MULTI_IMAGE2VIDEO})
+_MODERN = "modern"
+_MODERN_ROUTE_PREFIX = "modern/"
+_RESUMABLE_SUBPATHS = frozenset({_TEXT2VIDEO, _IMAGE2VIDEO, _MULTI_IMAGE2VIDEO, _MODERN})
 
 # 多图主体（R2V）参考图上限，由 backend caps 单独声明（编排层裁剪与生成时防御同读）。
 # 取保守值：官方文档未明确列出该上限。
@@ -116,6 +119,24 @@ _KLING_VIDEO_CAPS: dict[str, _KlingVideoModelCaps] = {
         generate_audio=True,
         audio_requires_1080p=False,
     ),
+    "kling-v3-turbo": _KlingVideoModelCaps(
+        text_to_video=True,
+        last_frame=False,
+        last_frame_requires_pro=False,
+        reference_images=False,
+        max_reference_images=0,
+        generate_audio=False,
+        audio_requires_1080p=False,
+    ),
+    "kling-3.0-turbo": _KlingVideoModelCaps(
+        text_to_video=True,
+        last_frame=False,
+        last_frame_requires_pro=False,
+        reference_images=False,
+        max_reference_images=0,
+        generate_audio=False,
+        audio_requires_1080p=False,
+    ),
     "kling-v2-6": _KlingVideoModelCaps(
         text_to_video=True,
         last_frame=True,
@@ -141,11 +162,11 @@ def _lookup_video_caps(model: str) -> _KlingVideoModelCaps:
     """按 model 取能力位：剥厂商前缀后 + 去首尾空白 + lower 归一化，再做【精确】命中 _KLING_VIDEO_CAPS。
     中转前缀分隔符仅认仓库既有约定 ``/``（``vendor/kling-v3-omni``）与 ``:``（``provider:kling-v3-omni``）
     ——把 ``:`` 统一成 ``/`` 后取最后一段。刻意不把 ``_``/``.`` 当分隔符：它们是 model 名合法字符
-    （wan2. / image-01 / kling-v3-omni 都含），当分隔符会切坏真实 model 名。未登记 model（含未来版本
-    kling-v4、归一化后仍不精确匹配的中转自定义 id）回落保守默认（首尾帧、无参考/音频）——绝不按子串猜
-    未知 model 的能力上限：未知 model 的限额可能与已知档不同，误报参考图能力会在请求期触发 provider 400
-    或计费漂移，宁可保守。"""
+    （wan2. / image-01 / kling-v3-omni 都含），当分隔符会切坏真实 model 名。官方 API 别名
+    ``kling-3.0`` / ``kling-3.0-omni`` 归一到对应的 UI model key；未登记 model（含未来版本
+    kling-v4、归一化后仍不精确匹配的中转自定义 id）回落保守默认——绝不按子串猜未知 model 的能力上限。"""
     key = model.replace(":", "/").rsplit("/", 1)[-1].strip().lower()
+    key = {"kling-3.0": "kling-v3", "kling-3.0-omni": "kling-v3-omni"}.get(key, key)
     return _KLING_VIDEO_CAPS.get(key, _DEFAULT_VIDEO_CAPS)
 
 
@@ -202,6 +223,7 @@ class KlingVideoBackend(KlingBackendBase, ProviderJobIdPersistenceMixin):
         model: str | None = None,
         base_url: str | None = None,
         http_timeout: float = 60.0,
+        api_model_name: str | None = None,
     ) -> None:
         super().__init__(
             auth_mode=auth_mode,
@@ -212,8 +234,9 @@ class KlingVideoBackend(KlingBackendBase, ProviderJobIdPersistenceMixin):
             base_url=base_url,
             http_timeout=http_timeout,
         )
+        self._api_model_name = api_model_name or self._model
         # 按 model 取能力位（归一化前缀/大小写后精确命中）；未登记 model（bearer 透传）回落保守默认。
-        self._caps = _lookup_video_caps(self._model)
+        self._caps = _lookup_video_caps(self._api_model_name)
 
     @staticmethod
     def video_capabilities_for_model(model: str) -> VideoCapabilities:
@@ -277,6 +300,131 @@ class KlingVideoBackend(KlingBackendBase, ProviderJobIdPersistenceMixin):
     # ── request building ────────────────────────────────────────────────
 
     @staticmethod
+    def _model_key(model: str) -> str:
+        return model.replace(":", "/").rsplit("/", 1)[-1].strip().lower()
+
+    def _modern_model_name(self) -> str | None:
+        key = self._model_key(self._api_model_name)
+        if key in {"kling-v3", "kling-3.0"}:
+            return "kling-3.0"
+        if key == "kling-v3-omni":
+            return "kling-3.0-omni"
+        if key in {"kling-v3-turbo", "kling-3.0-turbo"}:
+            return "kling-3.0-turbo"
+        return None
+
+    def _is_modern_model(self) -> bool:
+        return self._modern_model_name() is not None
+
+    def _modern_base_url(self) -> str:
+        base_url = self._base_url.rstrip("/")
+        if base_url.lower().endswith("/v1"):
+            return base_url[:-3].rstrip("/")
+        return base_url
+
+    def _request_url(self, endpoint_path: str) -> str:
+        if endpoint_path.startswith(_MODERN_ROUTE_PREFIX):
+            return f"{self._modern_base_url()}/{endpoint_path[len(_MODERN_ROUTE_PREFIX) :].lstrip('/')}"
+        return super()._request_url(endpoint_path)
+
+    def _modern_standard_model_name(self) -> str | None:
+        """Return the model name used by the ordinary v3 text/image routes.
+
+        Kling 3.0 Omni has a separate route only when Omni-specific reference
+        content is supplied. Plain text/image generation uses the ordinary
+        ``kling-3.0`` routes, not ``kling-3.0-omni``.
+        """
+        model_name = self._modern_model_name()
+        if model_name == "kling-3.0-omni":
+            return "kling-3.0"
+        return model_name
+
+    def _modern_endpoint(self, request: VideoGenerationRequest, *, has_references: bool) -> str:
+        model_name = self._modern_model_name()
+        assert model_name is not None
+        if has_references:
+            if model_name != "kling-3.0-omni":
+                raise VideoCapabilityError("video_reference_images_unsupported", model=self._model)
+            return f"{_MODERN_ROUTE_PREFIX}omni-video/{model_name}"
+        route = "image-to-video" if request.start_image else "text-to-video"
+        standard_model_name = self._modern_standard_model_name()
+        assert standard_model_name is not None
+        return f"{_MODERN_ROUTE_PREFIX}{route}/{standard_model_name}"
+
+    def _modern_resolution(
+        self,
+        request: VideoGenerationRequest,
+        model_name: str,
+        *,
+        has_references: bool,
+    ) -> str:
+        resolution = (request.resolution or "720p").lower()
+        if resolution == "4k":
+            resolution = "4k"
+        # The ordinary v3 route documents 4K. Keep Omni-specific reference
+        # requests conservative until that route explicitly documents 4K.
+        standard_v3 = model_name == "kling-3.0" or (model_name == "kling-3.0-omni" and not has_references)
+        supported = {"720p", "1080p", "4k"} if standard_v3 else {"720p", "1080p"}
+        if resolution not in supported:
+            raise VideoCapabilityError(
+                "video_resolution_duration_unsupported",
+                model=self._model,
+                resolution=request.resolution or "720p",
+                duration=request.duration_seconds,
+                supported=", ".join(sorted(supported)),
+            )
+        return resolution
+
+    def _build_modern_payload(self, request: VideoGenerationRequest) -> tuple[str, dict]:
+        model_name = self._modern_model_name()
+        assert model_name is not None
+        references = self._valid_frames(request.reference_images)
+        start_image = request.start_image
+        end_image = request.end_image
+        if references and model_name != "kling-3.0-omni":
+            raise VideoCapabilityError("video_reference_images_unsupported", model=self._model)
+        if references and (start_image or end_image):
+            raise VideoCapabilityError("video_reference_images_with_frames_unsupported", model=self._model)
+        if end_image and not start_image:
+            raise VideoCapabilityError("video_end_image_requires_start_image", model=self._model)
+        if end_image and not self._caps.last_frame:
+            raise VideoCapabilityError("video_last_frame_unsupported", provider=self.name, model=self._model)
+        if not start_image and not references and not self._caps.text_to_video:
+            raise VideoCapabilityError("video_capability_missing_t2v", provider=self.name, model=self._model)
+
+        contents: list[dict[str, object]] = [{"type": "prompt", "text": request.prompt}]
+        if start_image:
+            contents.append({"type": "first_frame", "url": self._encode_frame(Path(start_image))})
+        if end_image:
+            contents.append({"type": "last_frame", "url": self._encode_frame(Path(end_image))})
+        if references:
+            if len(references) > self._caps.max_reference_images:
+                raise VideoCapabilityError(
+                    "video_reference_images_exceeded",
+                    model=self._model,
+                    count=len(references),
+                    limit=self._caps.max_reference_images,
+                )
+            contents.extend({"type": "refer_image", "url": self._encode_frame(path)} for path in references)
+
+        settings: dict[str, object] = {
+            "resolution": self._modern_resolution(request, model_name, has_references=bool(references)),
+            "duration": int(request.duration_seconds),
+        }
+        if not start_image:
+            # Omni 参考图不会被当作首帧；无首帧时官方要求显式提供宽高比。
+            settings["aspect_ratio"] = request.aspect_ratio or "9:16"
+        if model_name != "kling-3.0-turbo":
+            settings["audio"] = "native" if request.generate_audio and self._caps.generate_audio else "off"
+            settings["multi_shot"] = False
+        payload: dict[str, object] = {
+            "contents": contents,
+            "settings": settings,
+            "options": {"watermark_info": {"enabled": False}},
+        }
+        return self._modern_endpoint(request, has_references=bool(references)), payload
+
+    @staticmethod
     def _resolve_mode_from(resolution: str | None, service_tier: str | None) -> str:
         """质量档 → mode：resolution=4k 独立成 ``4k`` 档（仅 v3/v3-omni 可达），否则 service_tier→std/pro。
 
@@ -301,6 +449,8 @@ class KlingVideoBackend(KlingBackendBase, ProviderJobIdPersistenceMixin):
         （见 ``media_generator.resume_video_async``），按参考图推断会把旧格式 job_id 的多图主体
         任务判成有声。generate 侧由 ``_build_payload`` 给出，resume 侧由 job_id 解码得出。
         """
+        if self._is_modern_model():
+            return bool(request.generate_audio and self._caps.generate_audio)
         if not (request.generate_audio and self._caps.generate_audio):
             return False
         # multi-image2video 原生 schema 不含音频开关，``_build_payload`` 不会携带 sound，成片必然
@@ -324,11 +474,10 @@ class KlingVideoBackend(KlingBackendBase, ProviderJobIdPersistenceMixin):
         return [Path(img) for img in images if str(img)]
 
     def _build_payload(self, request: VideoGenerationRequest) -> tuple[str, dict]:
-        """返回 (子路径, 请求体)。
+        """返回 (端点路径, 请求体)，现代 3.0 与旧版协议并行。"""
+        if self._is_modern_model():
+            return self._build_modern_payload(request)
 
-        子路径优先级：有 reference_images → multi-image2video（多图主体 R2V）；
-        有 start_image → image2video（含可选尾帧）；都无 → text2video。
-        """
         payload: dict = {
             "model_name": self._model,
             "prompt": request.prompt,
@@ -395,37 +544,81 @@ class KlingVideoBackend(KlingBackendBase, ProviderJobIdPersistenceMixin):
         """
         prompt = payload.get("prompt")
         image_list = payload.get("image_list")
+        contents = payload.get("contents")
+        modern_prompt_len = 0
+        modern_reference_count = 0
+        if isinstance(contents, list):
+            for item in contents:
+                if isinstance(item, dict):
+                    if item.get("type") == "prompt" and isinstance(item.get("text"), str):
+                        modern_prompt_len = len(item["text"])
+                    if item.get("type") == "refer_image":
+                        modern_reference_count += 1
         return {
             "endpoint": subpath,
             "model_name": payload.get("model_name"),
             "mode": payload.get("mode"),
-            "duration": payload.get("duration"),
-            "aspect_ratio": payload.get("aspect_ratio"),
-            # 空串 = 该档不携带音频开关，与显式 "off" 区分开
-            "sound": payload.get("sound", ""),
-            "has_image": "image" in payload,
-            "has_image_tail": "image_tail" in payload,
-            "reference_count": len(image_list) if isinstance(image_list, list) else 0,
-            "prompt_len": len(prompt) if isinstance(prompt, str) else 0,
+            "duration": payload.get("duration") or (payload.get("settings") or {}).get("duration"),
+            "aspect_ratio": payload.get("aspect_ratio") or (payload.get("settings") or {}).get("aspect_ratio"),
+            "sound": payload.get("sound", "") or (payload.get("settings") or {}).get("audio", ""),
+            "has_image": "image" in payload
+            or any(isinstance(item, dict) and item.get("type") == "first_frame" for item in contents or []),
+            "has_image_tail": "image_tail" in payload
+            or any(isinstance(item, dict) and item.get("type") == "last_frame" for item in contents or []),
+            "reference_count": len(image_list) if isinstance(image_list, list) else modern_reference_count,
+            "prompt_len": len(prompt) if isinstance(prompt, str) else modern_prompt_len,
         }
 
     # ── generate / resume ───────────────────────────────────────────────
 
+    def _translate_multi_image_submit_error(
+        self, exc: httpx.HTTPStatusError, *, subpath: str
+    ) -> VideoCapabilityError | None:
+        """将 Kling 对多图模型/端点组合的确定性 400 转为可操作的配置错误。"""
+        if subpath != _MULTI_IMAGE2VIDEO or self._model.strip().lower() != "kling-v3-omni":
+            return None
+        response = exc.response
+        if response.status_code != 400:
+            return None
+        try:
+            body = response.json()
+        except ValueError:
+            return None
+        if not isinstance(body, dict):
+            return None
+        if str(body.get("code")) != "1201" or str(body.get("message", "")).strip().lower() != "model is not supported":
+            return None
+        return VideoCapabilityError(
+            "video_kling_model_endpoint_unsupported",
+            provider=self.name,
+            model=self._model,
+            endpoint=f"{self._base_url}/videos/{subpath}",
+        )
+
     async def generate(self, request: VideoGenerationRequest) -> VideoGenerationResult:
-        subpath, payload = self._build_payload(request)
-        generate_audio = self._effective_audio(request, subpath=subpath)
-        logger.info("调用 Kling 视频 API payload=%s", self._safe_log_view(subpath, payload))
+        endpoint, payload = self._build_payload(request)
+        generate_audio = self._effective_audio(request, subpath=endpoint)
+        logger.info("调用 Kling 视频 API payload=%s", self._safe_log_view(endpoint, payload))
         async with httpx.AsyncClient(timeout=self._http_timeout) as client:
-            task_id = await self._submit_task(client, f"videos/{subpath}", payload)
+            try:
+                if self._is_modern_model():
+                    task_id = await self._submit_task(client, endpoint, payload)
+                    job_subpath = _MODERN
+                else:
+                    task_id = await self._submit_task(client, f"videos/{endpoint}", payload)
+                    job_subpath = endpoint
+            except httpx.HTTPStatusError as exc:
+                translated = self._translate_multi_image_submit_error(exc, subpath=endpoint)
+                if translated is not None:
+                    raise translated from exc
+                raise
             logger.info("Kling 视频任务已创建: task_id=%s model=%s", task_id, self._model)
-            # 持久化「子路径:task_id:有声标志」而非裸 task_id：resume 据此复原查询端点
-            # 与 submit 时的有声决策（见 _encode_job_id）。
             await self._persist_provider_job_id(
                 request,
-                _encode_job_id(subpath, task_id, generate_audio=generate_audio),
+                _encode_job_id(job_subpath, task_id, generate_audio=generate_audio),
                 provider=PROVIDER_KLING,
             )
-            return await self._poll_and_build(client, subpath, task_id, request, generate_audio=generate_audio)
+            return await self._poll_and_build(client, endpoint, task_id, request, generate_audio=generate_audio)
 
     async def resume_video(self, job_id: str, request: VideoGenerationRequest) -> VideoGenerationResult:
         """接续已 submit 的 Kling task：仅轮询 + 取 url + 下载，不重新提交（ADR 0007）。
@@ -453,8 +646,12 @@ class KlingVideoBackend(KlingBackendBase, ProviderJobIdPersistenceMixin):
         *,
         generate_audio: bool,
     ) -> VideoGenerationResult:
+        if subpath == _MODERN or subpath.startswith(_MODERN_ROUTE_PREFIX):
+            poll_path = f"{_MODERN_ROUTE_PREFIX}tasks?task_ids={quote(task_id, safe='')}"
+        else:
+            poll_path = f"videos/{subpath}/{task_id}"
         final = await self._poll_until_terminal(
-            lambda: self._poll_query(client, f"videos/{subpath}/{task_id}"),
+            lambda: self._poll_query(client, poll_path),
             poll_interval=_KLING_VIDEO_POLL_INTERVAL_SECONDS,
             max_wait=self._max_wait(request.duration_seconds),
         )

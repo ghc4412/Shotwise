@@ -11,6 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from lib.config.resolver import ConfigResolver, VideoCapability, constrain_durations_for_project
 from lib.db import async_session_factory
 from lib.project_manager import ProjectManager
+from server.services.project_files import project_text_files_signature
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,23 @@ class ToolContext:
         # Avoid ``ProjectManager.from_cwd()`` — the server main process cwd is
         # the repo root, not ``projects/<name>/``. Tests may inject a fake pm.
         self.pm: ProjectManager = pm if pm is not None else ProjectManager(str(projects_root))
+        self.text_files_listed = False
+        self.text_files_signature: str | None = None
+
+    def mark_text_files_listed(self, signature: str) -> None:
+        """Record the version of the bound project file list just collected."""
+        self.text_files_listed = True
+        self.text_files_signature = signature
+
+    def has_fresh_text_file_list(self) -> bool:
+        """Return whether the session's text-file list still matches disk."""
+        if not self.text_files_listed or self.text_files_signature is None:
+            return False
+        try:
+            current_signature = project_text_files_signature(self.project_path.resolve())
+        except (OSError, ValueError):
+            return False
+        return current_signature == self.text_files_signature
 
     @property
     def project_path(self) -> Path:

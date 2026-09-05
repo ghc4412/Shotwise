@@ -54,6 +54,7 @@ from lib.source_loader import (
     UnsupportedFormatError,
 )
 from server.routers._script_review_errors import raise_review_error
+from server.services.project_files import enumerate_project_files
 from server.services.script_review import ScriptReviewError, ScriptReviewService
 
 router = APIRouter()
@@ -567,42 +568,7 @@ async def list_project_files(project_name: str, _t: Translator):
         def _sync():
             project_dir = get_project_manager().get_project_path(project_name)
 
-            files = {
-                "source": [],
-                "characters": [],
-                "scenes": [],
-                "props": [],
-                "products": [],
-                "storyboards": [],
-                "videos": [],
-                "output": [],
-            }
-
-            for subdir, file_list in files.items():
-                subdir_path = project_dir / subdir
-                if not subdir_path.exists():
-                    continue
-                # source 子目录额外列出 raw 备份映射
-                raw_by_stem: dict[str, str] = {}
-                if subdir == "source":
-                    raw_dir = subdir_path / "raw"
-                    if raw_dir.exists():
-                        # sorted 保证多个 raw 同 stem 时的确定性（后者覆盖前者，字典序末位胜出）
-                        for raw_f in sorted(raw_dir.iterdir()):
-                            if raw_f.is_file():
-                                raw_by_stem[raw_f.stem] = raw_f.name
-                for f in subdir_path.iterdir():
-                    if f.is_file() and not f.name.startswith("."):
-                        entry = {
-                            "name": f.name,
-                            "size": f.stat().st_size,
-                            "url": f"/api/v1/files/{project_name}/{subdir}/{f.name}",
-                        }
-                        if subdir == "source":
-                            entry["raw_filename"] = raw_by_stem.get(Path(f.name).stem)
-                        file_list.append(entry)
-
-            return {"files": files}
+            return {"files": enumerate_project_files(project_dir, project_name)}
 
         return await asyncio.to_thread(_sync)
 

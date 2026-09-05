@@ -285,4 +285,45 @@ describe("TaskHud status filter", () => {
       expect(screen.getByText(`MANY${index}`)).toBeTruthy();
     }
   });
+
+  it("collapses and expands image and video channels independently", async () => {
+    useTasksStore.setState({
+      tasks: [
+        makeTask({
+          task_id: "image-1",
+          media_type: "image",
+          task_type: "image",
+          resource_id: "IMAGE1",
+        }),
+        makeTask({
+          task_id: "video-1",
+          media_type: "video",
+          task_type: "video",
+          resource_id: "VIDEO1",
+        }),
+      ],
+    });
+    const user = userEvent.setup();
+    render(<HostedTaskHud />);
+
+    expect(screen.getByText("IMAGE1")).toBeTruthy();
+    expect(screen.getByText("VIDEO1")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "收起图片通道" }));
+
+    expect(screen.queryByText("IMAGE1")).toBeNull();
+    expect(screen.getByText("VIDEO1")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "展开图片通道" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+
+    await user.click(screen.getByRole("button", { name: "展开图片通道" }));
+
+    expect(screen.getByText("IMAGE1")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "收起图片通道" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
 });
