@@ -14,7 +14,7 @@ pytestmark = pytest.mark.unit
 def test_ledger_source_range_is_used_before_other_source_candidates(tmp_path: Path) -> None:
     source = tmp_path / "source" / "novel.txt"
     source.parent.mkdir()
-    source.write_text("前文\r\n第二集内容", encoding="utf-8")
+    source.write_bytes("前文\r\n\r\n第二集内容".encode())
     (source.parent / "episode_2.txt").write_text("错误的回退内容", encoding="utf-8")
 
     resolved = resolve_episode_source(
@@ -47,20 +47,20 @@ def test_derived_episode_file_is_preferred_for_omitted_source(tmp_path: Path) ->
 def test_derived_episode_file_is_source_when_original_source_is_missing(tmp_path: Path) -> None:
     path = tmp_path / "source" / "episode_01.txt"
     path.parent.mkdir()
-    path.write_text("第一集\r\n内容", encoding="utf-8")
+    path.write_bytes("第一集\r\n内容".encode())
 
     resolved = resolve_episode_source(tmp_path, 1, project={"episodes": []})
 
     assert resolved.path == path
     assert resolved.relative_path == "source/episode_01.txt"
-    assert resolved.text == "第一集\n\n内容"
+    assert resolved.text == "第一集\n内容"
     assert resolved.is_derived is True
 
 
 def test_explicit_source_has_priority_and_normalizes_text(tmp_path: Path) -> None:
     source = tmp_path / "source" / "chosen.txt"
     source.parent.mkdir()
-    source.write_text("Café\r\n正文", encoding="utf-8")
+    source.write_bytes("Café\r\n正文".encode())
     (source.parent / "episode_1.txt").write_text("派生文件", encoding="utf-8")
 
     resolved = resolve_episode_source(
@@ -68,11 +68,11 @@ def test_explicit_source_has_priority_and_normalizes_text(tmp_path: Path) -> Non
         1,
         source="source/chosen.txt",
         project={
-            "episodes": [{"episode": 1, "source_range": {"source_file": "source/chosen.txt", "start": 0, "end": 8}}]
+            "episodes": [{"episode": 1, "source_range": {"source_file": "source/chosen.txt", "start": 0, "end": 7}}]
         },
     )
 
-    assert resolved.text == "Café\n\n正文"
+    assert resolved.text == "Café\n正文"
     assert resolved.relative_path == "source/chosen.txt"
     assert resolved.is_derived is False
 
