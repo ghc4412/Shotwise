@@ -22,7 +22,6 @@ from pydantic import BaseModel, ValidationError
 from lib import script_review
 from lib.asset_types import BUCKET_KEY
 from lib.config.resolver import ConfigResolver
-from lib.custom_provider.duration_presets import DEFAULT_FALLBACK
 from lib.db import async_session_factory
 from lib.episode_ledger import episode_outline_context
 from lib.episode_paths import (
@@ -32,9 +31,9 @@ from lib.episode_paths import (
     STEP1_LEGACY_FILENAMES,
     episode_drafts_dir,
 )
+from lib.episode_source import resolve_episode_source
 from lib.i18n import _ as translate
 from lib.json_io import atomic_write_json, load_json_or_none
-from lib.path_safety import PathTraversalError, safe_join
 from lib.project_manager import DEFAULT_SOURCE_KIND, is_reference_video_project
 from lib.prompt_builders_reference import build_reference_units_split_prompt
 from lib.prompt_builders_script import append_user_instructions, build_narration_split_prompt, build_normalize_prompt
@@ -51,6 +50,7 @@ from lib.reference_video.quarantine import (
     QUARANTINE_KIND_STEP2,
     STEP1_EDIT_TOOL_NAME,
     QuarantinedDraft,
+    UnsupportedQuarantineSchemaError,
     clear_quarantine,
     quarantine_and_report,
     quarantine_exists,
@@ -78,6 +78,7 @@ from lib.speech_rate import project_speech_rate_override
 from lib.text_backends.base import DEFAULT_MAX_OUTPUT_TOKENS, TextGenerationRequest, TextTaskType
 from lib.text_generator import TextGenerator
 from lib.text_utils import strip_json_code_fences
+from lib.video_backends.base import VideoCapabilityError
 from server.agent_runtime.sdk_tools._context import (
     MAX_INSTRUCTIONS_LEN,
     ToolContext,
@@ -129,44 +130,18 @@ def _parse_normalized_content(response_text: str, model: type[BaseModel]) -> dic
     return _parse_step1_json(response_text, model, label="step1 规范化内容", top_shape="{title, scenes}")
 
 
-def _load_novel_source(project_path: Path, source: str | None) -> str:
-    """读取 step1 工具的源文：指定 source 文件或 ``source/`` 目录全部文本；异常情况抛 ValueError。
-
-    normalize / split 两类 step1 工具共用：路径越界、文件缺失、目录为空、内容为空均 fail-fast，
-    调用方把消息包装为工具错误信封。
-
-    ``source`` 除工具自己产出外，也会被 ``revalidate_reference_step1_draft`` 传入隔离草稿的
-    ``meta.source``——那是 agent 可编辑的 JSON 字段，类型标注管不住运行时值。非 str/None 时
-    直接抛 ValueError 而非让它落进 ``safe_join``：那里对非路径类型是 ``TypeError``，本函数
-    的调用方一律只接 ValueError，放行 TypeError 会在 web 审核 gate 的读时重算里变成未处理的
-    500，而不是「无法重算」这个本该有的降级态。
-    """
-    if source is not None and not isinstance(source, str):
-        raise ValueError(f"meta.source 类型非法，须为字符串或 null：{source!r}")
-    if source:
-        try:
-            source_path = safe_join(project_path, source)
-        except PathTraversalError as exc:
-            raise ValueError(f"路径超出项目目录: {source}") from exc
-        if not source_path.is_file():
-            # 存在但不是文件（如指向目录）同样按「未找到源文件」处理：直接 read_text() 对目录
-            # 会抛 IsADirectoryError，落进本函数调用方一律只接的 ValueError 之外，在 web 审核
-            # gate 的读时重算里会变成未处理的 500。
-            raise ValueError(f"未找到源文件: {source_path}")
-        novel_text = source_path.read_text(encoding="utf-8")
-    else:
-        source_dir = project_path / "source"
-        if not source_dir.exists() or not any(source_dir.iterdir()):
-            raise ValueError(f"source/ 目录为空或不存在: {source_dir}")
-        texts = [
-            f.read_text(encoding="utf-8")
-            for f in sorted(source_dir.iterdir())
-            if f.is_file() and f.suffix in (".txt", ".md", ".text")
-        ]
-        novel_text = "\n\n".join(texts)
-    if not novel_text.strip():
-        raise ValueError("小说原文为空")
-    return novel_text
+def _load_novel_source(
+    project_path: Path,
+    source: str | None,
+    *,
+    episode: int | None = None,
+    project: dict[str, Any] | None = None,
+) -> str:
+    """读取统一解析的源文；异常情况抛 ValueError。"""
+    if episode is None:
+        # 保留没有集号的内部调用兼容性；有集号的入口必须走分集解析。
+        episode = 1
+    return resolve_episode_source(project_path, episode, source=source, project=project).text
 
 
 # ---------------------------------------------------------------------------
@@ -430,31 +405,14 @@ def confirm_script_review_tool(ctx: ToolContext):
 
 
 async def _fetch_caps_with_fallback(project: dict[str, Any], episode: int) -> tuple[int | None, list[int]]:
-    """Script normalization is best-effort: prompt生成 不该被能力查询失败堵住。
-
-    Soft-fallbacks to ``duration_presets.DEFAULT_FALLBACK`` so the LLM still
-    receives a usable duration constraint set if the resolver hiccups —— 与
-    自定义供应商写入层的保守默认同一真相源，避免软回退口径含供应商未必支持的时长。
-
-    时长已按项目分辨率经联动约束收窄。参考图约束不在此施加：走参考生视频的项目 step1 用
-    ``split_reference_video_units``（见 ``_fetch_reference_caps_with_fallback``），本 helper
-    服务的 drama normalize / narration 拆分两个工具按分工不服务该路径。
-
-    ``default_duration`` 非返回集合成员时按 None 处理（即回到「auto」档，由模型按内容节奏选）：
-    项目存的是用户配置的原样值，收窄后（或软回退到 ``DEFAULT_FALLBACK`` 后）它可能落在集合外，
-    而 ``build_normalize_prompt`` 对非成员 default 是 fail-loud 的——不归 None 会把「已保存的
-    越界默认时长」变成整个工具的硬失败。与 ``_fetch_reference_caps_with_fallback`` 同口径。
-    """
+    """解析剧本拆分所需的视频能力；能力未知时停止，不伪造供应商支持的时长。"""
     try:
         default_int, durations = await fetch_video_caps(project, generation_mode=None)
-    except (FileNotFoundError, ValueError) as exc:
-        logger.info("video_capabilities 不可解析，使用 fallback %s：%s", DEFAULT_FALLBACK, exc)
-        return None, list(DEFAULT_FALLBACK)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("video_capabilities 查询异常，使用 fallback %s：%s", DEFAULT_FALLBACK, exc)
-        return None, list(DEFAULT_FALLBACK)
+        logger.warning("video_capabilities 查询失败，停止剧本拆分：%s", exc)
+        raise VideoCapabilityError("video_capabilities_unresolved", name="project video model") from exc
     if not durations:
-        durations = list(DEFAULT_FALLBACK)
+        raise VideoCapabilityError("video_capabilities_unresolved", name="project video model")
     if default_int is not None and default_int not in durations:
         default_int = None
     return default_int, durations
@@ -494,7 +452,7 @@ def normalize_drama_script_tool(ctx: ToolContext):
             project = ctx.pm.load_project(ctx.project_name)
 
             try:
-                novel_text = _load_novel_source(project_path, source)
+                novel_text = _load_novel_source(project_path, source, episode=episode, project=project)
             except ValueError as exc:
                 return {"content": [{"type": "text", "text": f"❌ {exc}"}], "is_error": True}
 
@@ -613,42 +571,19 @@ class ReferenceSplitCaps(NamedTuple):
 
 
 async def _fetch_reference_caps_with_fallback(project: dict[str, Any], episode: int) -> ReferenceSplitCaps:
-    """解析 rv 拆分所需的视频能力（见 ``ReferenceSplitCaps``）。
-
-    与 ``_fetch_caps_with_fallback`` 同口径 best-effort：resolver 故障时回退
-    ``duration_presets.DEFAULT_FALLBACK``、``max_refs`` 视为未声明。
-
-    unit 是一次生成调用的单元，拆分阶段定的时长就是真正发给供应商的那个值，故档位取**经时长
-    联动约束收窄后**的集合：不收窄的话（海螺 1080p 只接受 6 秒）step1 会按全集拆出超标的 unit，
-    step2 的枚举 schema 再把它判非法。
-
-    收窄逐 unit 分两套（``reference_unit_duration_tiers``）：「参考图↔时长」约束只对真的带参考图
-    的请求生效，整集一律按带图收窄会把无引用 unit 本可申请的短档也收掉。schema 枚举与 prompt
-    候选取两套的并集——落在任一套内的时长都可能合法，具体归属由该 unit 的 references 决定，
-    在正文派生出 references 之后逐 unit 判（见 ``_build_reference_units_from_flat``）。
-    ``max_duration`` 随之是并集的最大值。
-    ``default_duration`` 非并集成员（用户配置漂移）按 None 处理，避免 prompt 自相矛盾。
-    """
+    """解析参考视频拆分所需的视频能力；能力未知时停止，不伪造时长档位。"""
     try:
         caps = await resolve_video_caps(project)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("video_capabilities 查询异常，使用 fallback %s：%s", DEFAULT_FALLBACK, exc)
-        caps = {}
-        # requested_generate_audio 不依赖能力接口（见 generation_context.py 同名字段注释），
-        # 能力解析失败也不能连带丢失，否则本该报的 WARN_SILENT_EPISODE 会静默消失。
-        try:
-            resolver = ConfigResolver(async_session_factory)
-            caps["requested_generate_audio"] = await resolver.video_generate_audio_for_project(project)
-        except Exception as inner_exc:  # noqa: BLE001
-            # 与其余能力字段的「不明时不额外收紧」相反：这里不明时收紧到 False——静默丢掉
-            # 一次声音提示，好过在双重解析失败时把用户的无声意图错读成有声。
-            logger.warning("video_generate_audio 独立解析也失败，声音提示按无声降级：%s", inner_exc)
-            caps["requested_generate_audio"] = False
+        logger.warning("video_capabilities 查询失败，停止参考视频拆分：%s", exc)
+        raise VideoCapabilityError("video_capabilities_unresolved", name="project video model") from exc
     durations = [int(d) for d in caps.get("supported_durations") or []]
     if not durations:
-        durations = list(DEFAULT_FALLBACK)
+        raise VideoCapabilityError("video_capabilities_unresolved", name="project video model")
     with_refs, without_refs = await reference_unit_duration_tiers(project, caps, durations)
     unit_durations = sorted(set(with_refs) | set(without_refs))
+    if not unit_durations:
+        raise VideoCapabilityError("video_capabilities_unresolved", name="project video model")
     max_duration = max(unit_durations)
     raw_refs = caps.get("max_reference_images")
     max_refs = int(raw_refs) if isinstance(raw_refs, int | float) else None
@@ -763,7 +698,7 @@ def _build_reference_units_from_flat(
                 "unit_id": unit_id,
                 "shots": [s.model_dump() for s in shots],
                 "duration_seconds": flat["duration_seconds"],
-                "references": [r.model_dump() for r in refs],
+                "references": [r.model_dump(exclude_none=True) for r in refs],
                 "source_text": flat["source_text"],
             }
         )
@@ -877,7 +812,13 @@ async def revalidate_reference_step1_draft(
     # 源文可能达数百 KB（整个 source/ 目录拼接），同步读盘直接放在这个 async 函数体里会占用
     # 事件循环——晋升工具走的是独立会话线程不敏感，但 web 审核 gate 的读时重算（同一份代码）
     # 在请求协程里跑，卸到线程避免拖慢并发的其它请求。
-    novel_text = await asyncio.to_thread(_load_novel_source, project_path, draft.meta["source"])
+    novel_text = await asyncio.to_thread(
+        _load_novel_source,
+        project_path,
+        draft.meta["source"],
+        episode=episode,
+        project=project,
+    )
     split_caps = await _fetch_reference_caps_with_fallback(project, episode)
 
     # 手改过的草稿先过产出时那份 schema：拆分侧由 response_schema 与 _parse_step1_json 卡住时长
@@ -940,6 +881,7 @@ async def _promote_reference_step1(ctx: ToolContext, episode: int, draft: Quaran
             content=draft.content,
             violations=violations,
             meta=draft.meta,
+            extra=draft.extra,
         )
         return {"content": [{"type": "text", "text": report}], "is_error": True}
     if violations:
@@ -950,6 +892,7 @@ async def _promote_reference_step1(ctx: ToolContext, episode: int, draft: Quaran
             content={"units": flat_units},
             violations=violations,
             meta=draft.meta,
+            extra=draft.extra,
         )
         return {"content": [{"type": "text", "text": report}], "is_error": True}
 
@@ -1095,7 +1038,7 @@ def open_reference_step1_for_edit_tool(ctx: ToolContext):
             # 无效参数不留持久副作用。
             if source is not None:
                 try:
-                    _load_novel_source(project_path, source)
+                    _load_novel_source(project_path, source, episode=episode, project=project_data)
                 except ValueError as exc:
                     return {"content": [{"type": "text", "text": f"❌ {exc}"}], "is_error": True}
 
@@ -1218,7 +1161,7 @@ def split_reference_video_units_tool(ctx: ToolContext):
             project = ctx.pm.load_project(ctx.project_name)
 
             try:
-                novel_text = _load_novel_source(project_path, source)
+                novel_text = _load_novel_source(project_path, source, episode=episode, project=project)
             except ValueError as exc:
                 return {"content": [{"type": "text", "text": f"❌ {exc}"}], "is_error": True}
 
@@ -1384,7 +1327,21 @@ def validate_and_promote_reference_draft_tool(ctx: ToolContext):
 
             # step1 优先：step2 的保结构 diff 以正式 step1 为基底，step1 还在隔离态时判 step2
             # 只会拿旧基底得出误导性的结论。
-            step1_draft = read_quarantine(project_path, episode, QUARANTINE_KIND_STEP1)
+            try:
+                step1_draft = read_quarantine(project_path, episode, QUARANTINE_KIND_STEP1)
+            except UnsupportedQuarantineSchemaError as exc:
+                return {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                f"❌ 第 {episode} 集 step1 隔离草稿使用了不支持的 schema_version={exc.version}；"
+                                "请先升级应用后再继续"
+                            ),
+                        }
+                    ],
+                    "is_error": True,
+                }
             if step1_draft is not None:
                 return await _promote_reference_step1(ctx, episode, step1_draft)
             if quarantine_exists(project_path, episode, QUARANTINE_KIND_STEP1):
@@ -1394,6 +1351,23 @@ def validate_and_promote_reference_draft_tool(ctx: ToolContext):
                 )
 
             if quarantine_exists(project_path, episode, QUARANTINE_KIND_STEP2):
+                # 先解析 envelope 版本，再进入生成器：未来版本必须给出可行动的升级提示，不能
+                # 被生成器内部的通用异常处理包装成「晋升失败」并丢失版本信息。
+                try:
+                    read_quarantine(project_path, episode, QUARANTINE_KIND_STEP2)
+                except UnsupportedQuarantineSchemaError as exc:
+                    return {
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": (
+                                    f"❌ step2 隔离草稿（{exc.path or '未知路径'}）使用了不支持的 "
+                                    f"schema_version={exc.version}；请先升级应用后再继续"
+                                ),
+                            }
+                        ],
+                        "is_error": True,
+                    }
                 # 晋升同样受 step1 审核 gate 约束：隔离期间用户在 Web 端改过 step1 会让确认指纹
                 # 失效、该集回到 pending_review，此时晋升等于拿一份用户没确认过的 step1 合成正式
                 # 剧本——常规生成路径在工具入口就被 gate 拦下，两条路不该在这一位上分叉。
@@ -1418,6 +1392,19 @@ def validate_and_promote_reference_draft_tool(ctx: ToolContext):
 
             return {
                 "content": [{"type": "text", "text": f"❌ 第 {episode} 集没有待处置的隔离草稿"}],
+                "is_error": True,
+            }
+        except UnsupportedQuarantineSchemaError as exc:
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            f"❌ step2 隔离草稿（{exc.path or '未知路径'}）使用了不支持的 "
+                            f"schema_version={exc.version}；请先升级应用后再继续"
+                        ),
+                    }
+                ],
                 "is_error": True,
             }
         except DraftViolation as exc:
@@ -1539,7 +1526,7 @@ def split_narration_segments_tool(ctx: ToolContext):
             project = ctx.pm.load_project(ctx.project_name)
 
             try:
-                novel_text = _load_novel_source(project_path, source)
+                novel_text = _load_novel_source(project_path, source, episode=episode, project=project)
             except ValueError as exc:
                 return {"content": [{"type": "text", "text": f"❌ {exc}"}], "is_error": True}
 

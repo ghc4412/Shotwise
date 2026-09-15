@@ -24,7 +24,12 @@ from lib.episode_ledger import discover_episode_files, register_orphan_episode_e
 from lib.json_io import atomic_write_json, load_json_or_none
 from lib.project_manager import ProjectManager
 from lib.reference_video import rederive_unit_references
-from lib.reference_video.quarantine import QUARANTINE_KIND_STEP1, read_quarantine, violation_entries
+from lib.reference_video.quarantine import (
+    QUARANTINE_KIND_STEP1,
+    UnsupportedQuarantineSchemaError,
+    read_quarantine,
+    violation_entries,
+)
 from lib.script_models import DramaNormalizedScript, NarrationStep1Draft, ReferenceStep1Draft
 from server.agent_runtime.sdk_tools._context import reference_unit_duration_tiers, resolve_video_caps
 
@@ -262,7 +267,27 @@ class ScriptReviewService:
         quarantine_path = script_review.step1_quarantine_path(project_path, project, episode)
         if quarantine_path is None or not quarantine_path.exists():
             return None
-        draft = await asyncio.to_thread(read_quarantine, project_path, episode, QUARANTINE_KIND_STEP1)
+        try:
+            draft = await asyncio.to_thread(read_quarantine, project_path, episode, QUARANTINE_KIND_STEP1)
+        except UnsupportedQuarantineSchemaError as exc:
+            logger.warning(
+                "隔离草稿 schema 版本过新 project=%s episode=%s version=%s",
+                project_name,
+                episode,
+                exc.version,
+            )
+            return {
+                "content": None,
+                "violations": [
+                    {
+                        "code": "quarantine_schema_unsupported",
+                        "label": "",
+                        "message": str(exc),
+                        "line": None,
+                        "schema_version": exc.version,
+                    }
+                ],
+            }
         if draft is None:
             if not quarantine_path.exists():
                 # 存在性检查与读取之间的窗口内，agent 的晋升/重拆分工具把文件清掉了（正式内容

@@ -28,10 +28,13 @@ export async function createDurableBatch(
   }));
   try {
     const response = await API.createBatch(projectName, payload);
-    const taskIds = new Map(response.tasks.map((task) => [task.item_id, task.task_id]));
+    const results = new Map(response.tasks.map((task) => [task.item_id, task]));
     for (const mark of marks) {
-      const taskId = taskIds.get(mark.itemId);
-      mark.handle.settle(taskId ? [taskId] : []);
+      const task = results.get(mark.itemId);
+      // A task id means the queue owns this item, including an already-failed
+      // task that should remain visible for retry. Missing ids are rejected
+      // before admission and must release the optimistic occupation.
+      mark.handle.settle(task?.task_id ? [task.task_id] : []);
     }
     registerDurableBatch(projectName, response.batch_id);
     useAppStore.getState().setTaskHudOpen(true);

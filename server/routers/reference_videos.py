@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from lib.api_errors import ApiError, NotFoundError
 from lib.asset_types import BUCKET_KEY, normalize_asset_bucket, normalize_asset_name
+from lib.generation_preflight import AssetPreflightResult, validate_asset_references
 from lib.generation_queue import get_generation_queue
 from lib.generation_queue_client import TaskSpec, TaskSpecValidationError
 from lib.i18n import Translator
@@ -25,6 +26,7 @@ from lib.project_change_hints import project_change_source
 from lib.project_manager import EpisodeScriptReboundError, get_project_manager, is_reference_video_project
 from lib.reference_video import assemble_shots_text, parse_prompt
 from lib.reference_video.ad_units import (
+    ad_unit_references,
     annotate_ad_unit_staleness,
     render_ad_unit_prompt,
     resolve_ad_unit_shots,
@@ -57,6 +59,21 @@ from server.services.upload_finalize import (
 from server.services.video_caps import project_video_caps
 
 logger = logging.getLogger(__name__)
+
+
+def _raise_asset_preflight(result: AssetPreflightResult, _t: Translator) -> None:
+    if not result.has_errors:
+        return
+    raise HTTPException(
+        status_code=400,
+        detail=_t(
+            "generation_asset_preflight_failed",
+            unregistered=", ".join(result.unregistered) or "—",
+            missing_images=", ".join(result.missing_images) or "—",
+            missing_variants=", ".join(result.missing_variants) or "—",
+        ),
+    )
+
 
 router = APIRouter(
     prefix="/projects/{project_name}/reference-videos",
@@ -488,7 +505,7 @@ async def preview_script(
     )
     return {
         "shots": [{"index": i, "text": s.text} for i, s in enumerate(preview.shots, start=1)],
-        "references": [r.model_dump() for r in preview.references],
+        "references": [r.model_dump(exclude_none=True) for r in preview.references],
         "utterances": [
             {
                 "shot_index": u.shot_index,
@@ -529,6 +546,26 @@ async def generate_unit(
         unit = _find_unit(script, unit_id, _t)  # raises 404 if missing
         unit_shots = None
         guard_prompt = assemble_shots_text(unit.get("shots") or [])
+
+    project_path = get_project_manager().get_project_path(project_name)
+    if is_ad:
+        references = ad_unit_references(unit_shots or [])
+    else:
+        references = unit.get("references") or []
+    typed_references: list[tuple[str, str]] = []
+    for ref in references:
+        if not isinstance(ref, dict):
+            continue
+        ref_type = ref.get("type")
+        ref_name = ref.get("name")
+        if isinstance(ref_type, str) and isinstance(ref_name, str):
+            typed_references.append((ref_type, ref_name))
+    # ad 参考集由镜头字段继承而不是人工挑选，缺图在执行层按软口径跳过并记 warning
+    # （ref_ad_reference_skipped），所以这里只硬拦未登记资产与缺失变体，不拦缺图。
+    _raise_asset_preflight(
+        validate_asset_references(project, project_path, typed_references, require_sheet_images=not is_ad),
+        _t,
+    )
 
     # 经统一守卫点构造：空提示词的结构校验在此当场拒绝（400），与 SDK 入队路径一致，
     # 不再漏到执行层失败（见 ADR-0001）。

@@ -19,7 +19,7 @@ from lib.db.base import DEFAULT_USER_ID, dt_to_iso, utc_now
 from lib.db.models.task import Task, WorkerLease
 from lib.db.repositories.base import BaseRepository, rowcount
 from lib.prompt_preview import PROMPT_PREVIEW_PAYLOAD_KEY, build_enqueue_prompt_preview
-from lib.task_failure import bound_reason, collapse_cascade_reason, encode_failure
+from lib.task_failure import bound_reason, collapse_cascade_reason, encode_failure, sanitize_failure_reason
 from lib.task_terminal_events import TERMINAL_TASK_STATUSES
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,7 @@ def _active_dedupe_clauses(
 
 
 def _encode_bounded_cascade_failure(*, dependency_task_id: str, reason: str) -> str:
+    reason = sanitize_failure_reason(reason)
     # 上游原因本身是级联串时先折叠到根本原因：逐层包裹近指数增长，深链上裁剪只能把内层信封
     # 切在 JSON 中途，读侧会把残缺内层当普通文本嵌进本地化文案。折叠后串长与链深无关。
     reason = collapse_cascade_reason(reason)
@@ -115,6 +116,10 @@ def _task_to_dict(row: Task) -> dict[str, Any]:
         "provider_id": row.provider_id,
         "provider_job_id": row.provider_job_id,
         "provider_endpoint": row.provider_endpoint,
+        "progress": row.progress,
+        "progress_source": row.progress_source,
+        "phase_code": row.phase_code,
+        "lease_until": dt_to_iso(row.lease_until),
         "queued_at": dt_to_iso(row.queued_at),
         "started_at": dt_to_iso(row.started_at),
         "finished_at": dt_to_iso(row.finished_at),
@@ -476,6 +481,9 @@ class TaskRepository(BaseRepository):
         rows=0 表示外部已把 DB 翻成 cancelling/cancelled/succeeded 等非 running 状态，
         worker finally 走 0-rows-cancelled 协议。级联失败（依赖 task）走独立路径。
         """
+        # This is the single persistence boundary for provider failures, including
+        # the root reason propagated to queued dependents.
+        error_message = sanitize_failure_reason(error_message)
         affected = await self._mark_failed_running(task_id=task_id, error_message=error_message)
         if affected == 0:
             return 0
@@ -492,7 +500,7 @@ class TaskRepository(BaseRepository):
             .where(Task.task_id == task_id, Task.status == "running")
             .values(
                 status="failed",
-                error_message=bound_reason(error_message, _MAX_ERROR_MESSAGE_LEN),
+                error_message=bound_reason(sanitize_failure_reason(error_message), _MAX_ERROR_MESSAGE_LEN),
                 finished_at=now,
                 updated_at=now,
             )
@@ -520,7 +528,7 @@ class TaskRepository(BaseRepository):
             .where(Task.task_id == task_id, Task.status == "queued")
             .values(
                 status="failed",
-                error_message=bound_reason(error_message, _MAX_ERROR_MESSAGE_LEN),
+                error_message=bound_reason(sanitize_failure_reason(error_message), _MAX_ERROR_MESSAGE_LEN),
                 finished_at=now,
                 updated_at=now,
             )

@@ -11,11 +11,13 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from lib.api_errors import BadRequestError, ConflictError, NotFoundError, ServiceUnavailableError
+from lib.db.base import DEFAULT_USER_ID
 from lib.i18n import Translator, get_locale
 from server.agent_runtime.models import Heartbeat, LiveMessage
 from server.agent_runtime.result_status import resolve_result_status
 from server.agent_runtime.service import AssistantService
 from server.agent_runtime.session_manager import AgentStartupError, SessionBusyError, SessionCapacityError
+from server.auth import CurrentUser
 from server.routers.assistant import agent_startup_failure_detail, get_assistant_service
 
 logger = logging.getLogger(__name__)
@@ -83,6 +85,8 @@ async def _collect_reply(
     service: AssistantService,
     session_id: str,
     timeout: float,
+    *,
+    user_id: str = DEFAULT_USER_ID,
 ) -> tuple[str, str]:
     """消费会话消息流，收集 assistant 回复直到完成或超时。
 
@@ -99,7 +103,7 @@ async def _collect_reply(
     deadline = loop.time() + timeout
     status = "timeout"
 
-    async with service.session_manager.stream_messages(session_id, idle_timeout=5.0) as stream:
+    async with service.session_manager.stream_messages(session_id, idle_timeout=5.0, user_id=user_id) as stream:
         async for event in stream:
             # deadline 必须每轮都查：持续 <idle_timeout 间隔的消息流会让心跳永不触发，
             # 若只在心跳上判超时，跑飞/刷屏的会话会让本同步请求无界挂起。
@@ -109,7 +113,7 @@ async def _collect_reply(
 
             if isinstance(event, Heartbeat):
                 # 无 request 对象：在心跳事件上判会话状态（deadline 已在循环顶部统一判）。
-                live_status = await service.session_manager.get_status(session_id)
+                live_status = await service.session_manager.get_status(session_id, user_id=user_id)
                 if live_status and live_status != "running":
                     status = "completed" if live_status in {"idle", "completed"} else live_status
                     break
@@ -152,6 +156,7 @@ async def agent_chat(
     body: AgentChatRequest,
     request: Request,
     _t: Translator,
+    user: CurrentUser,
 ) -> AgentChatResponse:
     """同步 Agent 对话端点。
 
@@ -171,19 +176,11 @@ async def agent_chat(
 
     # 若传入 session_id，先校验会话归属
     if body.session_id:
-        session = await service.get_session(body.session_id)
+        session = await service.get_session(body.session_id, user_id=user.id)
         if session is None:
             raise HTTPException(status_code=404, detail=_t("session_not_found", session_id=body.session_id))
         if session.project_name != body.project_name:
-            raise HTTPException(
-                status_code=400,
-                detail=_t(
-                    "session_project_mismatch",
-                    session_id=body.session_id,
-                    session_project=session.project_name,
-                    request_project=body.project_name,
-                ),
-            )
+            raise HTTPException(status_code=404, detail=_t("session_not_found", session_id=body.session_id))
 
     # 统一通过 send_or_create 创建或复用会话并发送消息。
     try:
@@ -192,6 +189,7 @@ async def agent_chat(
             body.message,
             session_id=body.session_id,
             locale=get_locale(request),
+            user_id=user.id,
         )
         session_id = result["session_id"]
     except SessionCapacityError as exc:
@@ -221,7 +219,7 @@ async def agent_chat(
         raise HTTPException(status_code=500, detail=_t("internal_server_error"))
 
     # 收集回复（带超时）
-    reply, status = await _collect_reply(service, session_id, SYNC_CHAT_TIMEOUT)
+    reply, status = await _collect_reply(service, session_id, SYNC_CHAT_TIMEOUT, user_id=user.id)
     truncated = False
 
     # 事件日志是唯一可靠读源，两类情形需要回读兜底：
@@ -233,7 +231,7 @@ async def agent_chat(
         try:
             user_entry = result.get("entry")
             user_seq = user_entry.get("seq", -1) if isinstance(user_entry, dict) else -1
-            payload = await service.list_session_entries(session_id, after_seq=user_seq)
+            payload = await service.list_session_entries(session_id, after_seq=user_seq, user_id=user.id)
             log_reply = _extract_reply_from_entries(payload.get("entries", []), user_seq)
             session_running = payload.get("status") == "running"
             if not reply:

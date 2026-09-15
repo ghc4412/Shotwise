@@ -11,3 +11,5 @@ export * from "./cost";
 export * from "./reference-video";
 export * from "./workflow";
 export * from "./batch";
+export * from "./memory";
+export * from "./assembly-plan";

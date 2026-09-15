@@ -13,7 +13,7 @@ from lib.api_errors import BadRequestError, NotFoundError
 from lib.asset_types import localize_asset_type
 from lib.generation_queue import get_generation_queue
 from lib.i18n import Translator
-from lib.task_failure import render_failure
+from lib.task_failure import render_failure, sanitize_failure_reason
 
 router = APIRouter()
 
@@ -74,18 +74,19 @@ def _render_warnings(warnings: Any, translate: Callable[..., str]) -> list[str]:
 def _localize_task(task: dict[str, Any], translate: Callable[..., str]) -> dict[str, Any]:
     """Return ``task`` with its stored failure reason and warnings rendered for the request locale.
 
-    Known structured codes become localized text; raw exception text and legacy
-    rows pass through unchanged (see ``lib.task_failure.render_failure``). Generation
-    warnings stored as ``result.warnings`` (``{key, params}`` entries written by the
-    reference-video pipeline) are rendered in place into a list of strings, mirroring
-    how ``error_message`` is rendered. The input dict is never mutated — a rendered copy
-    is returned — so dicts owned by the queue layer stay locale-neutral and cannot be
-    polluted across requests.
+    Known structured codes become localized text. Raw exception text and legacy rows
+    are sanitized before rendering so historical database rows cannot leak provider
+    credentials. Generation warnings stored as ``result.warnings`` (``{key, params}``
+    entries written by the reference-video pipeline) are rendered in place into a list
+    of strings, mirroring how ``error_message`` is rendered. The input dict is never
+    mutated — a rendered copy is returned — so dicts owned by the queue layer stay
+    locale-neutral and cannot be polluted across requests.
     """
     localized = task
     message = localized.get("error_message")
     if message:
-        localized = {**localized, "error_message": render_failure(message, translate)}
+        safe_message = sanitize_failure_reason(message)
+        localized = {**localized, "error_message": render_failure(safe_message, translate)}
     result = localized.get("result")
     if isinstance(result, dict):
         result_dict = cast(dict[str, Any], result)

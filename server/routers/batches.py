@@ -20,6 +20,7 @@ from lib.generation_batches import (
     GenerationBatchRequest,
 )
 from lib.generation_queue import GenerationQueue, get_generation_queue
+from lib.task_failure import sanitize_failure_reason
 from server.auth import CurrentUser
 
 router = APIRouter()
@@ -79,11 +80,22 @@ async def _response(orchestrator: BatchOrchestrator, batch: GenerationBatch) -> 
     tasks: list[dict[str, Any]] = []
     for item, task_id in zip(batch.items, batch.task_ids, strict=True):
         task = await orchestrator.get_task(task_id)
+        task_status = str(task.get("status")) if task is not None else "failed"
         tasks.append(
             {
                 "item_id": item.item_id,
+                "resource_id": str(item.task.get("resource_id", "")),
                 "task_id": task_id,
-                "status": str(task.get("status")) if task is not None else "failed",
+                "status": task_status,
+                "occupied": task_status in {"queued", "running", "cancelling"},
+                "progress": task.get("progress") if task is not None else None,
+                "progress_source": task.get("progress_source") if task is not None else None,
+                "phase_code": task.get("phase_code") if task is not None else None,
+                "reason": (
+                    sanitize_failure_reason(str(task.get("error_message")))
+                    if task is not None and task.get("error_message")
+                    else None
+                ),
             }
         )
     return {

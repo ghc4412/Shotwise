@@ -31,10 +31,10 @@ class _FakeMetaStore:
     def __init__(self, meta):
         self._meta = meta
 
-    async def get(self, session_id):
+    async def get(self, session_id, user_id=None):
         return self._meta if session_id == self._meta.id else None
 
-    async def update_status(self, session_id, status):
+    async def update_status(self, session_id, status, user_id=None):
         if session_id == self._meta.id:
             self._meta.status = status
 
@@ -57,17 +57,17 @@ class _FakeEntrySessionManager:
         self.draft_state = draft_state or {"draft": None, "rev": 0}
         self.pending = pending or []
 
-    async def get_status(self, session_id):
+    async def get_status(self, session_id, user_id=None):
         return self.status_value
 
-    def get_draft_state(self, session_id):
+    def get_draft_state(self, session_id, user_id=None):
         return dict(self.draft_state)
 
-    async def get_pending_questions_snapshot(self, session_id):
+    async def get_pending_questions_snapshot(self, session_id, user_id=None):
         return list(self.pending)
 
     @contextlib.asynccontextmanager
-    async def stream_messages(self, session_id, *, idle_timeout=20.0, locale=DEFAULT_LOCALE):
+    async def stream_messages(self, session_id, *, idle_timeout=20.0, locale=DEFAULT_LOCALE, user_id=None):
         async def _iter():
             yield SubscriptionReady()
             while True:
@@ -281,14 +281,14 @@ class _CursorCapturingService:
         self.captured_after = None
         self.meta = make_session_meta(id=SESSION_ID, status="idle", project_name=PROJECT)
 
-    async def get_session(self, session_id):
+    async def get_session(self, session_id, user_id=None):
         return self.meta if session_id == SESSION_ID else None
 
-    async def stream_entry_events(self, session_id, *, meta=None, request=None, after_seq=-1):
+    async def stream_entry_events(self, session_id, *, meta=None, request=None, after_seq=-1, user_id=None):
         self.captured_after = after_seq
         yield ServerSentEvent(event="status", data={"status": "idle"})
 
-    async def list_session_entries(self, session_id, *, meta=None, after_seq=-1):
+    async def list_session_entries(self, session_id, *, meta=None, after_seq=-1, user_id=None):
         self.captured_after = after_seq
         return {"session_id": session_id, "status": "idle", "entries": [], "draft": None, "draft_rev": 0}
 

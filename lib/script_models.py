@@ -865,6 +865,8 @@ class ReferenceResource(BaseModel):
 
     type: Literal["character", "scene", "prop"] = Field(description="引用的资源类型")
     name: str = Field(description="角色/场景/道具名称，必须在 project.json 对应 bucket 中已注册")
+    variant_id: str | None = Field(default=None, description="角色衍生形态的稳定 ID")
+    variant_slug: str | None = Field(default=None, description="角色衍生形态的 slug")
 
 
 class ReferenceVideoUnit(BaseModel):

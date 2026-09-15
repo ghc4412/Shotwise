@@ -7,6 +7,12 @@ from typing import Any
 
 from claude_agent_sdk import tool
 
+from lib.generation_preflight import (
+    collect_item_references,
+    format_preflight_error,
+    merge_preflight_results,
+    validate_asset_references,
+)
 from lib.generation_queue_client import enqueue_task_only, wait_for_task
 from lib.grid.layout import calculate_grid_layout, video_aspect_ratio_of
 from lib.grid.models import GridGeneration
@@ -37,7 +43,7 @@ def _list_groups(
 
     ``allow_large_grid`` 与实际生成分支同源，非 4K 项目的预览里不会出现 4×4 / 5×5。
     """
-    items, id_field, _, _, _ = get_storyboard_items(script)
+    items, id_field, char_field, scene_field, prop_field = get_storyboard_items(script)
     aspect_ratio = video_aspect_ratio_of(project)
     groups = group_scenes_by_segment_break(items, id_field)
     if scene_ids is not None:
@@ -106,7 +112,7 @@ def generate_grid_tool(ctx: ToolContext):
 
             episode = ProjectManager.resolve_episode_from_script(script, script_filename)
             project_path = ctx.project_path
-            items, id_field, _, _, _ = get_storyboard_items(script)
+            items, id_field, char_field, scene_field, prop_field = get_storyboard_items(script)
             aspect_ratio = video_aspect_ratio_of(project)
             style = project.get("style", "")
             groups = group_scenes_by_segment_break(items, id_field)
@@ -129,9 +135,12 @@ def generate_grid_tool(ctx: ToolContext):
 
             gm = GridManager(project_path)
             pending: list[tuple[GridGeneration, str]] = []
+            staged: list[dict[str, Any]] = []
             skipped: list[str] = []
             enqueue_failures: list[tuple[str, list[str], str]] = []
+            preflight_results = []
 
+            # 第一阶段只构造生成数据并完成全部资产预检；此阶段绝不保存记录或入队。
             for group in groups:
                 group_ids = [item[id_field] for item in group]
                 layout = calculate_grid_layout(len(group_ids), aspect_ratio, allow_large_grid=allow_large_grid)
@@ -149,6 +158,40 @@ def generate_grid_tool(ctx: ToolContext):
                     grid_aspect_ratio=layout.grid_aspect_ratio,
                 )
 
+                preflight_results.append(
+                    merge_preflight_results(
+                        *(
+                            validate_asset_references(
+                                project,
+                                project_path,
+                                collect_item_references(
+                                    item,
+                                    char_field=char_field,
+                                    scene_field=scene_field,
+                                    prop_field=prop_field,
+                                ),
+                            )
+                            for item in group
+                        )
+                    )
+                )
+                staged.append(
+                    {
+                        "group_ids": group_ids,
+                        "layout": layout,
+                        "prompt": prompt,
+                    }
+                )
+
+            preflight_error = format_preflight_error(merge_preflight_results(*preflight_results))
+            if preflight_error:
+                raise ValueError(preflight_error)
+
+            # 第二阶段在所有组通过预检后才创建持久化记录并入队。
+            for entry in staged:
+                group_ids = entry["group_ids"]
+                layout = entry["layout"]
+                prompt = entry["prompt"]
                 grid = GridGeneration.create(
                     episode=episode,
                     script_file=script_filename,
@@ -161,9 +204,6 @@ def generate_grid_tool(ctx: ToolContext):
                     video_aspect_ratio=aspect_ratio,
                     prompt=prompt,
                 )
-                # 先 save 后 enqueue 给 worker 提供可读的 grid 文件；入队失败时
-                # 用 ``gm.delete`` 回收孤儿记录，并把该组并入 failures——前面已
-                # 入队成功的分组继续跑，调用方不会被一组失败导致全量重试。
                 gm.save(grid)
                 try:
                     enqueue_result = await enqueue_task_only(

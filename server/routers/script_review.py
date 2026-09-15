@@ -45,6 +45,11 @@ def _localize_quarantine_violations(quarantine: dict | None, _t: Translator) -> 
     for violation in quarantine["violations"]:
         if violation["code"] == "quarantine_unreadable":
             violation["message"] = _t("script_review_quarantine_unreadable")
+        elif violation["code"] == "quarantine_schema_unsupported":
+            violation["message"] = _t(
+                "script_review_quarantine_schema_unsupported",
+                version=violation.get("schema_version", "?"),
+            )
     return quarantine
 
 

@@ -10,6 +10,7 @@ import { ProjectsPage } from "@/components/pages/ProjectsPage";
 import { SystemConfigPage } from "@/components/pages/SystemConfigPage";
 import { ProjectSettingsPage } from "@/components/pages/ProjectSettingsPage";
 import { AssetLibraryPage } from "@/components/pages/AssetLibraryPage";
+import { PublishingPage } from "@/components/pages/publishing/PublishingPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { ToastOverlay } from "@/components/layout/ToastOverlay";
@@ -32,6 +33,7 @@ import {
   ROUTE_APP,
   ROUTE_APP_ASSETS,
   ROUTE_APP_PROJECTS,
+  ROUTE_APP_PUBLISHING,
   ROUTE_APP_SETTINGS,
   WORKSPACE_ROUTE_SETTINGS,
 } from "@/app-routes";
@@ -241,6 +243,13 @@ export function AppRoutes() {
         <Route path={ROUTE_APP_ASSETS}>
           <AuthGuard>
             <AssetLibraryPage />
+          </AuthGuard>
+        </Route>
+
+        {/* Publishing status and release entry point */}
+        <Route path={ROUTE_APP_PUBLISHING}>
+          <AuthGuard>
+            <PublishingPage />
           </AuthGuard>
         </Route>
 

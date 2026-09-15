@@ -264,6 +264,16 @@
   font-weight: 500;
 }
 
+/* Reference-video script editor surface. Keep the editor opaque so the page shell
+   cannot tint it gray when the light theme is active. */
+.reference-video-script-editor {
+  background: var(--color-surface-2);
+}
+
+html.theme-light .reference-video-script-editor {
+  background: #ffffff;
+}
+
 /* === Agent Handoff Hint ===
  * 文件分析成功后引导用户去 agent 侧的一次性动效。
  * 卡片贴向右侧 agent 面板，左下→右上 fade-in，尾巴指向面板，

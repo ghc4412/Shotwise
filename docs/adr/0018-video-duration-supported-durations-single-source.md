@@ -9,5 +9,5 @@ backend 内的桶映射（把 6 静默改成 8）和 `or [4,6,8]` 隐性 fallbac
 ## Consequences
 
 - schema 层不引入连续区间类型，改用 list 全展开 + 前端检测连续性的折中。
-- 自定义供应商缺省时由 model_id 启发式预设表预填（未命中回退保守默认），Alembic 回填迁移内联复制预设快照而非 import 模块，以保历史迁移确定性。
+- 自定义供应商未命中已知声明、缺失 endpoint、`supported_durations` 为空，或请求引用未知型号时，必须 fail loud 并返回配置错误；不再伪造 `[4, 8]` 或其他隐式默认，也不以 model_id 启发式值掩盖缺失能力声明。已保存但没有合法能力声明的配置同样不能静默继续执行。
 - 一处受限例外：Vidu 因 API 按 endpoint 列出差异很大的合法时长集，保留 `_coerce_duration` 端点级就近校正 + warning，与 model 级单一真相源是不同维度。

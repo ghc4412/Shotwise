@@ -15,6 +15,7 @@ from uuid import uuid4
 
 from lib.agent_session_store import make_project_key
 from lib.agent_session_store.prefix_fork import InvalidAnchorError, SessionStoreLike, copy_session_prefix
+from lib.db.base import DEFAULT_USER_ID
 from server.agent_runtime.event_log import EventLogService
 from server.agent_runtime.session_store import SessionMetaStore
 
@@ -62,7 +63,9 @@ class SessionBranchService:
         self._event_log = event_log
         self._resolve_project_cwd = resolve_project_cwd
 
-    async def branch(self, session_id: str, anchor_user_entry_uuid: str) -> BranchedSession:
+    async def branch(
+        self, session_id: str, anchor_user_entry_uuid: str, user_id: str = DEFAULT_USER_ID
+    ) -> BranchedSession:
         """从 ``anchor_user_entry_uuid`` 处分叉 ``session_id``，返回新会话。
 
         ``anchor_user_entry_uuid`` 是事件日志里那条用户条目的 uuid，由事件日志
@@ -75,7 +78,7 @@ class SessionBranchService:
                 "session branching requires the DB transcript store (ARCREEL_SDK_SESSION_STORE=db)"
             )
 
-        meta = await self._meta_store.get(session_id)
+        meta = await self._meta_store.get(session_id, user_id=user_id)
         if meta is None:
             raise SessionBranchError(f"session {session_id} not found")
 
@@ -110,8 +113,9 @@ class SessionBranchService:
                 new_session_id,
                 fork_parent_session_id=session_id,
                 fork_anchor_uuid=anchor_uuid,
+                user_id=meta.user_id,
             )
-            if not await self._meta_store.mark_superseded(session_id, new_session_id):
+            if not await self._meta_store.mark_superseded(session_id, new_session_id, user_id=meta.user_id):
                 raise SessionBranchError(f"session {session_id} has already been superseded by another branch")
         except InvalidAnchorError as exc:
             # 锚点校验在任何写入之前，没有可撤回的东西。
@@ -119,7 +123,7 @@ class SessionBranchService:
                 f"anchor {anchor_user_entry_uuid} is not a user message of session {session_id}: {exc}"
             ) from exc
         except BaseException:
-            await self._discard(store, project_key, session_id, new_session_id)
+            await self._discard(store, project_key, session_id, new_session_id, user_id=meta.user_id)
             raise
 
         logger.info(
@@ -131,7 +135,7 @@ class SessionBranchService:
         )
         return BranchedSession(session_id=new_session_id, resumable=copied.entries_copied > 0)
 
-    async def discard(self, origin_session_id: str, new_session_id: str) -> None:
+    async def discard(self, origin_session_id: str, new_session_id: str, user_id: str = DEFAULT_USER_ID) -> None:
         """撤回一次已发布的分支，让原会话回到可再次改写的状态。
 
         供编排层在「分支已建好、改写后的消息却没能派发出去」时收尾：那一步失败
@@ -141,13 +145,20 @@ class SessionBranchService:
         store = self._store
         if store is None:
             return
-        meta = await self._meta_store.get(new_session_id)
+        meta = await self._meta_store.get(new_session_id, user_id=user_id)
         project_cwd = self._resolve_project_cwd(meta.project_name) if meta is not None else None
         project_key = make_project_key(project_cwd) if project_cwd is not None else None
-        await self._discard(store, project_key, origin_session_id, new_session_id)
+        await self._discard(
+            store, project_key, origin_session_id, new_session_id, user_id=meta.user_id if meta else user_id
+        )
 
     async def _discard(
-        self, store: SessionStoreLike, project_key: str | None, origin_session_id: str, new_session_id: str
+        self,
+        store: SessionStoreLike,
+        project_key: str | None,
+        origin_session_id: str,
+        new_session_id: str,
+        user_id: str = DEFAULT_USER_ID,
     ) -> None:
         """撤回半成品分支：原会话的指针、新会话的 transcript 与元数据行都清掉。
 
@@ -156,7 +167,7 @@ class SessionBranchService:
         的会话，且自己也从会话列表里消失。
         """
         try:
-            await self._meta_store.clear_superseded(origin_session_id, new_session_id)
+            await self._meta_store.clear_superseded(origin_session_id, new_session_id, user_id=user_id)
         except Exception:
             logger.exception("failed to discard superseded pointer of session %s", origin_session_id)
         if project_key is None:
@@ -170,6 +181,6 @@ class SessionBranchService:
             except Exception:
                 logger.exception("failed to discard transcript of incomplete branch %s", new_session_id)
         try:
-            await self._meta_store.delete(new_session_id)
+            await self._meta_store.delete(new_session_id, user_id=user_id)
         except Exception:
             logger.exception("failed to discard metadata of incomplete branch %s", new_session_id)

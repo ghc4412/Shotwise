@@ -173,15 +173,15 @@ def test_voiceover_text_excluded_ambiance_kept_as_prose():
     assert "环境音：环境音" in rendered.prompt
 
 
-def test_speakerless_dialogue_warns_on_silent_model():
-    # 无 speaker 的裸台词渲染为「画外音说」，无声模型下仍需知会——与剧集路径的
-    # voiceover utterance 同一口径（derive_voice_bindings 只要有台词即知会）。
+def test_speakerless_dialogue_is_excluded_without_silent_model_warning():
+    # 无 speaker 的旁白保留在派生 utterances 中供预览/TTS 使用，但不进入视频生成 prompt。
     shots = [_shot("E1S1", dialogue=[{"line": "颈椎终于舒服了"}])]
 
     rendered = render_ad_backend_prompt(shots, [], _project(), VoiceRenderSettings(voice_consistency="none"))
 
-    assert "画外音说 {颈椎终于舒服了}" in rendered.prompt
-    assert any(w["key"] == WARN_SILENT_MODEL for w in rendered.warnings)
+    assert "颈椎终于舒服了" not in rendered.prompt
+    assert "画外音说" not in rendered.prompt
+    assert all(w["key"] != WARN_SILENT_MODEL for w in rendered.warnings)
 
 
 def test_non_string_dialogue_line_produces_no_utterance():

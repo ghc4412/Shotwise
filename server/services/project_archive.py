@@ -35,6 +35,9 @@ logger = logging.getLogger(__name__)
 ARCHIVE_MANIFEST_NAME = "shotwise-export.json"
 ARCHIVE_FORMAT_VERSION = 2
 ARCHIVE_SCRIPT_SCHEMA_VERSION = 2
+PROJECT_MEMORY_ARCHIVE_PATH = ("memory", "project_memories.json")
+PROJECT_MEMORY_FORMAT = "shotwise-agent-memory"
+PROJECT_MEMORY_VERSION = 1
 DEFAULT_IMPORT_FILENAME = "imported-project.zip"
 
 
@@ -152,6 +155,7 @@ class ProjectImportResult:
     warnings: list[ValidationMessage]
     conflict_resolution: str
     diagnostics: dict[str, list[dict[str, Any]]]
+    project_memory_payload: dict[str, Any] | None = None
 
 
 class ProjectArchiveValidationError(ValueError):
@@ -229,6 +233,7 @@ class ProjectArchiveService:
         project_name: str,
         *,
         scope: str = "full",
+        project_memories: list[dict[str, Any]] | None = None,
     ) -> tuple[Path, str]:
         self._validate_scope(scope)
         if not self.project_manager.project_exists(project_name):
@@ -243,7 +248,11 @@ class ProjectArchiveService:
 
         temp_dir: tempfile.TemporaryDirectory[str] | None = None
         try:
-            temp_dir, snapshot_dir, manifest, _ = self._prepare_export_snapshot(project_name, scope=scope)
+            temp_dir, snapshot_dir, manifest, _ = self._prepare_export_snapshot(
+                project_name,
+                scope=scope,
+                project_memory_count=self._count_exportable_project_memories(project_memories),
+            )
             with zipfile.ZipFile(
                 archive_path,
                 mode="w",
@@ -263,6 +272,11 @@ class ProjectArchiveService:
                     snapshot_dir,
                     project_name=project_name,
                     scope=scope,
+                )
+                self._write_project_memory_member(
+                    archive,
+                    project_name=project_name,
+                    project_memories=project_memories,
                 )
         except Exception:
             archive_path.unlink(missing_ok=True)
@@ -343,6 +357,9 @@ class ProjectArchiveService:
                         project_title=str(project.get("title") or "").strip(),
                         conflict_policy=conflict_policy,
                     )
+                    project_memory_payload = self._load_project_memory_payload(
+                        archive, members, root_parts, project_name=target_name
+                    )
 
                     self._ensure_standard_subdirs(staging_dir)
 
@@ -365,6 +382,7 @@ class ProjectArchiveService:
                         warnings=diagnostics.warning_messages(),
                         conflict_resolution=conflict_resolution,
                         diagnostics=diagnostics.to_import_success_payload(translate),
+                        project_memory_payload=project_memory_payload,
                     )
         except zipfile.BadZipFile as exc:
             raise ProjectArchiveValidationError(
@@ -430,6 +448,7 @@ class ProjectArchiveService:
         project_name: str,
         *,
         scope: str,
+        project_memory_count: int = 0,
     ) -> tuple[tempfile.TemporaryDirectory[str], Path, dict[str, Any], ArchiveDiagnostics]:
         source_dir = self.project_manager.get_project_path(project_name)
         temp_dir = tempfile.TemporaryDirectory(prefix="shotwise-export-")
@@ -458,6 +477,7 @@ class ProjectArchiveService:
             # 面向请求的渲染只发生在 router 边界。
             diagnostics=diagnostics.to_export_payload(),
             pass_through_entries=excluded_entries,
+            project_memory_count=project_memory_count,
         )
         return temp_dir, snapshot_dir, manifest, diagnostics
 
@@ -469,6 +489,7 @@ class ProjectArchiveService:
         scope: str,
         diagnostics: dict[str, Any],
         pass_through_entries: list[str],
+        project_memory_count: int = 0,
     ) -> dict[str, Any]:
         project_payload = project or {}
         return {
@@ -481,7 +502,126 @@ class ProjectArchiveService:
             "exported_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "export_diagnostics": diagnostics,
             "pass_through_entries": pass_through_entries,
+            "project_memory_version": PROJECT_MEMORY_VERSION,
+            "project_memory_count": project_memory_count,
         }
+
+    @staticmethod
+    def _count_exportable_project_memories(project_memories: list[dict[str, Any]] | None) -> int:
+        if not project_memories:
+            return 0
+        return sum(
+            1
+            for item in project_memories
+            if isinstance(item, dict)
+            and item.get("scope", "project") == "project"
+            and item.get("confirmed", True) is not False
+            and isinstance(item.get("content"), str)
+            and bool(item["content"].strip())
+        )
+
+    @classmethod
+    def _normalize_project_memories_for_export(cls, project_memories: list[dict[str, Any]] | None) -> dict[str, Any]:
+        entries: list[dict[str, Any]] = []
+        for item in project_memories or []:
+            if (
+                not isinstance(item, dict)
+                or item.get("scope", "project") != "project"
+                or item.get("confirmed", True) is False
+            ):
+                continue
+            # Do not place user ids, session ids, or database ids in a project archive.
+            entry = {
+                key: item[key] for key in ("category", "content", "source", "created_at", "updated_at") if key in item
+            }
+            if isinstance(entry.get("content"), str) and entry["content"].strip():
+                entries.append(entry)
+        return {
+            "format": PROJECT_MEMORY_FORMAT,
+            "version": PROJECT_MEMORY_VERSION,
+            "project_memories": entries,
+        }
+
+    @classmethod
+    def _write_project_memory_member(
+        cls,
+        archive: zipfile.ZipFile,
+        *,
+        project_name: str,
+        project_memories: list[dict[str, Any]] | None,
+    ) -> None:
+        payload = cls._normalize_project_memories_for_export(project_memories)
+        archive.writestr(
+            "/".join((project_name, *PROJECT_MEMORY_ARCHIVE_PATH)),
+            json.dumps(payload, ensure_ascii=False, indent=2),
+        )
+
+    @staticmethod
+    def _is_project_memory_member(relative_parts: tuple[str, ...]) -> bool:
+        return relative_parts == PROJECT_MEMORY_ARCHIVE_PATH
+
+    @classmethod
+    def _normalize_project_memory_payload(cls, payload: Any, *, project_name: str) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ProjectArchiveValidationError(
+                ValidationMessage("arch_import_validation_failed"),
+                errors=[ValidationMessage.literal("Project memory payload must be an object")],
+            )
+        raw_entries = payload.get("project_memories")
+        if not isinstance(raw_entries, list):
+            raise ProjectArchiveValidationError(
+                ValidationMessage("arch_import_validation_failed"),
+                errors=[ValidationMessage.literal("Project memory payload is invalid")],
+            )
+
+        # Import only the archive's project scope. Any user scope or unconfirmed
+        # record is ignored rather than allowed to cross the archive boundary.
+        entries: list[dict[str, Any]] = []
+        from server.services.memory_service import MemoryService
+
+        for raw in raw_entries:
+            if not isinstance(raw, dict) or raw.get("scope", "project") != "project" or raw.get("confirmed") is False:
+                continue
+            try:
+                _, _, category, content, _ = MemoryService._validate_record(
+                    scope="project",
+                    project_name=project_name,
+                    category=str(raw.get("category", "other")),
+                    content=raw.get("content", ""),
+                    source="import",
+                )
+            except Exception as exc:
+                raise ProjectArchiveValidationError(
+                    ValidationMessage("arch_import_validation_failed"),
+                    errors=[ValidationMessage.literal("Project memory payload contains an invalid entry")],
+                ) from exc
+            entries.append({"category": category, "content": content})
+
+        return {
+            "format": PROJECT_MEMORY_FORMAT,
+            "version": PROJECT_MEMORY_VERSION,
+            "project_memories": entries,
+        }
+
+    def _load_project_memory_payload(
+        self,
+        archive: zipfile.ZipFile,
+        members: list[ArchiveMember],
+        root_parts: tuple[str, ...],
+        *,
+        project_name: str,
+    ) -> dict[str, Any] | None:
+        target_parts = (*root_parts, *PROJECT_MEMORY_ARCHIVE_PATH)
+        matching = [member for member in members if member.parts == target_parts and not member.is_dir]
+        if not matching:
+            return None
+        if len(matching) != 1:
+            raise ProjectArchiveValidationError(
+                ValidationMessage("arch_import_validation_failed"),
+                errors=[ValidationMessage.literal("Project memory payload is duplicated")],
+            )
+        payload = self._load_member_json(archive, matching[0], "project memory")
+        return self._normalize_project_memory_payload(payload, project_name=project_name)
 
     @staticmethod
     def _write_directory_entry(
@@ -1647,6 +1787,49 @@ class ProjectArchiveService:
                 ],
             ) from exc
 
+    @staticmethod
+    def _manifest_version(
+        manifest: dict[str, Any],
+        field: str,
+        *,
+        default: int | None = None,
+    ) -> int:
+        """Validate one version field at the archive boundary."""
+        raw = manifest.get(field, default)
+        if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
+            raise ProjectArchiveValidationError(
+                ValidationMessage("arch_import_validation_failed"),
+                errors=[ValidationMessage("arch_manifest_invalid", {"field": field})],
+            )
+        return raw
+
+    @classmethod
+    def _validate_archive_manifest(cls, manifest: object) -> dict[str, Any]:
+        """Validate manifest metadata without rejecting manifest-less legacy ZIPs."""
+        if not isinstance(manifest, dict):
+            raise ProjectArchiveValidationError(
+                ValidationMessage("arch_import_validation_failed"),
+                errors=[ValidationMessage("arch_manifest_invalid", {"field": "manifest"})],
+            )
+        format_version = cls._manifest_version(manifest, "format_version")
+        script_default = 1 if format_version == 1 else None
+        script_schema_version = cls._manifest_version(
+            manifest,
+            "script_schema_version",
+            default=script_default,
+        )
+        if format_version > ARCHIVE_FORMAT_VERSION:
+            raise ProjectArchiveValidationError(
+                ValidationMessage("arch_import_validation_failed"),
+                errors=[ValidationMessage("arch_manifest_future_version", {"field": "format_version"})],
+            )
+        if script_schema_version > ARCHIVE_SCRIPT_SCHEMA_VERSION:
+            raise ProjectArchiveValidationError(
+                ValidationMessage("arch_import_validation_failed"),
+                errors=[ValidationMessage("arch_manifest_future_version", {"field": "script_schema_version"})],
+            )
+        return manifest
+
     def _locate_project_root(
         self,
         archive: zipfile.ZipFile,
@@ -1675,7 +1858,7 @@ class ProjectArchiveService:
                 manifest_members[0],
                 ARCHIVE_MANIFEST_NAME,
             )
-            return root_parts, manifest
+            return root_parts, self._validate_archive_manifest(manifest)
 
         project_members = [
             member for member in visible_members if member.parts[-1] == self.project_manager.PROJECT_FILE
@@ -1710,7 +1893,7 @@ class ProjectArchiveService:
             relative_parts = member.parts[root_length:]
             if not relative_parts:
                 continue
-            if relative_parts == (ARCHIVE_MANIFEST_NAME,):
+            if relative_parts == (ARCHIVE_MANIFEST_NAME,) or self._is_project_memory_member(relative_parts):
                 continue
             if self._is_hidden_member(relative_parts):
                 continue

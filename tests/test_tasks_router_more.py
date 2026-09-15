@@ -117,6 +117,25 @@ class TestTaskErrorLocalization:
             "Provider vidu does not support task resumption; please retry manually to avoid duplicate billing"
         )
 
+    def test_task_api_sanitizes_legacy_provider_credentials(self, monkeypatch):
+        task = {
+            "task_id": "legacy-secret",
+            "status": "failed",
+            "error_message": (
+                "provider rejected https://provider.test/jobs/1?token=tok123&signature=sig456 "
+                "Authorization: Bearer bearer789 X-API-Key: key000 password=pw999"
+            ),
+        }
+        client = self._client(monkeypatch, _RenderQueue(task=task))
+        body = client.get("/api/v1/tasks/legacy-secret", headers={"Accept-Language": "en"}).json()["task"]
+        message = body["error_message"]
+        assert "tok123" not in message
+        assert "sig456" not in message
+        assert "bearer789" not in message
+        assert "key000" not in message
+        assert "pw999" not in message
+        assert message.count("[REDACTED]") >= 5
+
     def test_project_tasks_renders_error_message(self, monkeypatch):
         from lib.task_failure import encode_failure
 

@@ -121,6 +121,7 @@ def _video_model(**overrides) -> dict:
         "endpoint": VIDEO_ENDPOINT,
         "is_default": True,
         "is_enabled": True,
+        "supported_durations": [5, 10],
     }
     model.update(overrides)
     return model

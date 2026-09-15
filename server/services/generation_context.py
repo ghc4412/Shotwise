@@ -31,6 +31,7 @@ from lib.db.base import DEFAULT_USER_ID
 from lib.gemini_shared import get_shared_rate_limiter
 from lib.media_generator import MediaGenerator
 from lib.project_manager import get_project_manager
+from lib.video_backends.base import VideoCapabilityError
 
 if TYPE_CHECKING:
     from lib.config.resolver import ProviderModel
@@ -308,7 +309,7 @@ async def resolve_generation_context(
 
     lane 传即声明、None 跳过，任务只为用到的 lane 付出配置要求与构造成本。任一声明 lane
     的解析或构造失败即原样上抛、整次调用失败——无部分结果、无跨 provider 兜底；仅能力
-    查询失败降级空值放行。``project`` 是调用方已加载的项目快照，本函数不读盘。
+    查询失败直接报告结构化能力错误。``project`` 是调用方已加载的项目快照，本函数不读盘。
 
     video lane 的定桶随 ``VideoLaneRequest.capability``：None 时按项目生成路线解析（见
     ``lib.config.resolver.caps_generation_mode``）——路线创建即定、整个项目按同一条路径生成，
@@ -372,11 +373,15 @@ async def resolve_generation_context(
                 reference_audio_per_image = bool(caps.get("reference_audio_per_image") or False)
             except Exception as exc:
                 logger.info(
-                    "无法解析 video capabilities（%s/%s），能力值降级为空：%s",
+                    "无法解析 video capabilities（%s/%s），停止生成：%s",
                     resolved.provider_id,
                     actual_model,
                     exc,
                 )
+                raise VideoCapabilityError(
+                    "video_capabilities_unresolved",
+                    name=f"{resolved.provider_id}/{actual_model}",
+                ) from exc
             video_result = VideoLaneResult(
                 provider_model=resolved,
                 backend_name=video_backend.name,

@@ -28,6 +28,14 @@ from datetime import UTC
 _ORPHAN_RESCAN_LEASE_LOST_MULT = 3
 
 from lib.config.resolver import VideoBucketCapabilityError
+from lib.generation_preflight import (
+    collect_ad_shot_references,
+    collect_item_references,
+    collect_reference_entries,
+    format_preflight_error,
+    merge_preflight_results,
+    validate_asset_references,
+)
 from lib.generation_queue import (
     TASK_POLL_INTERVAL_SEC,
     TASK_WORKER_HEARTBEAT_SEC,
@@ -39,7 +47,7 @@ from lib.generation_queue import (
 from lib.image_backends.base import ImageCapabilityError
 from lib.reference_compression import ReferencePayloadFloorError
 from lib.script_editor import ScriptEditError
-from lib.task_failure import encode_failure
+from lib.task_failure import encode_failure, sanitize_failure_reason
 from lib.video_backends.base import VideoCapabilityError
 
 # Default provider used when a task payload does not specify one.
@@ -84,14 +92,139 @@ def _encode_task_failure_message(exc: Exception) -> str:
     """
     if isinstance(exc, ScriptEditError):
         # 编不出来时退到通用 script_edit_error，保住"是剧本编辑失败"这一层信息。
-        return _try_encode_failure(exc.key, exc.params) or encode_failure("script_edit_error")
+        return sanitize_failure_reason(_try_encode_failure(exc.key, exc.params) or encode_failure("script_edit_error"))
     if isinstance(
         exc, ImageCapabilityError | VideoCapabilityError | ReferencePayloadFloorError | VideoBucketCapabilityError
     ):
         # 能力类异常没有通用兜底 code 可退，退回 str(exc)（即 code 本身）——
         # 非结构化文本在读侧原样透传，不会丢失原因。
-        return _try_encode_failure(exc.code, exc.params) or str(exc)
-    return str(exc)
+        return sanitize_failure_reason(_try_encode_failure(exc.code, exc.params) or str(exc))
+    return sanitize_failure_reason(str(exc))
+
+
+def _preflight_task_assets(task: dict[str, Any]) -> None:
+    """Re-check referenced assets immediately before provider execution.
+
+    Admission-time validation prevents normal callers from enqueueing bad work, but
+    queued tasks can outlive edits to ``project.json`` or the script. This second
+    check closes that race. Legacy/unit-test tasks without queue metadata are left
+    to the executor; production queue admission already requires these fields.
+    """
+    task_type = str(task.get("task_type") or "")
+    if task_type not in {"storyboard", "video", "reference_video", "grid"}:
+        return
+
+    payload = task.get("payload")
+    payload = payload if isinstance(payload, dict) else {}
+    project_name = task.get("project_name")
+    resource_id = task.get("resource_id")
+    script_file = payload.get("script_file") or task.get("script_file")
+    if not project_name or not resource_id or not script_file:
+        return
+
+    from lib.project_manager import get_project_manager
+    from lib.reference_video.ad_units import resolve_ad_unit_shots
+    from lib.script_models import resolve_content_mode
+    from lib.storyboard_sequence import get_storyboard_items
+
+    pm = get_project_manager()
+    project = pm.load_project(str(project_name))
+    project_path = pm.get_project_path(str(project_name))
+    script = pm.load_script(str(project_name), str(script_file))
+    results = []
+
+    if task_type in {"storyboard", "video"}:
+        items, id_field, char_field, scene_field, prop_field = get_storyboard_items(script)
+        item = next(
+            (
+                candidate
+                for candidate in items
+                if str(candidate.get(id_field, "")) == str(resource_id)
+                or str(candidate.get("scene_id", "")) == str(resource_id)
+            ),
+            None,
+        )
+        if item is None:
+            raise ValueError(f"生成前检查失败：找不到分镜/场景 {resource_id}")
+        results.append(
+            validate_asset_references(
+                project,
+                project_path,
+                collect_item_references(
+                    item,
+                    char_field=char_field,
+                    scene_field=scene_field,
+                    prop_field=prop_field,
+                ),
+            )
+        )
+    elif task_type == "grid":
+        scene_ids = payload.get("scene_ids")
+        if not isinstance(scene_ids, list):
+            scene_ids = []
+        items, id_field, char_field, scene_field, prop_field = get_storyboard_items(script)
+        wanted = {str(scene_id) for scene_id in scene_ids}
+        matched = [
+            item for item in items if str(item.get(id_field, "")) in wanted or str(item.get("scene_id", "")) in wanted
+        ]
+        if not matched:
+            raise ValueError("生成前检查失败：宫格未找到对应分镜")
+        for item in matched:
+            results.append(
+                validate_asset_references(
+                    project,
+                    project_path,
+                    collect_item_references(
+                        item,
+                        char_field=char_field,
+                        scene_field=scene_field,
+                        prop_field=prop_field,
+                    ),
+                )
+            )
+    else:
+        is_ad = resolve_content_mode(script, project) == "ad"
+        if is_ad:
+            units = script.get("reference_units")
+            unit = next(
+                (
+                    candidate
+                    for candidate in (units if isinstance(units, list) else [])
+                    if isinstance(candidate, dict) and str(candidate.get("unit_id", "")) == str(resource_id)
+                ),
+                None,
+            )
+            if unit is None:
+                raise ValueError(f"生成前检查失败：找不到参考单元 {resource_id}")
+            # ad 缺图在执行层按软口径跳过（ref_ad_reference_skipped），复检与准入同口径：
+            # 只硬拦未登记资产与缺失变体。
+            results.append(
+                validate_asset_references(
+                    project,
+                    project_path,
+                    collect_ad_shot_references(resolve_ad_unit_shots(script, unit)),
+                    require_sheet_images=False,
+                )
+            )
+        else:
+            units = script.get("video_units")
+            unit = next(
+                (
+                    candidate
+                    for candidate in (units if isinstance(units, list) else [])
+                    if isinstance(candidate, dict) and str(candidate.get("unit_id", "")) == str(resource_id)
+                ),
+                None,
+            )
+            if unit is None:
+                raise ValueError(f"生成前检查失败：找不到参考单元 {resource_id}")
+            results.append(
+                validate_asset_references(project, project_path, collect_reference_entries(unit.get("references")))
+            )
+
+    error = format_preflight_error(merge_preflight_results(*results))
+    if error:
+        raise ValueError(error)
 
 
 def _try_encode_failure(code: str, params: dict[str, Any]) -> str | None:
@@ -755,6 +888,7 @@ class GenerationWorker:
         from server.services.generation_tasks import execute_generation_task
 
         try:
+            _preflight_task_assets(task)
             result = await execute_generation_task(task)
             result = await self._index_successful_media(task, result)
         except asyncio.CancelledError:

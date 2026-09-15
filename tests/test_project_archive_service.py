@@ -263,6 +263,86 @@ class TestProjectArchiveService:
             assert "demo/.DS_Store" not in names
             assert "demo/.hidden/secret.txt" not in names
 
+    @pytest.mark.unit
+    def test_export_includes_only_confirmed_project_memories(self, tmp_path):
+        pm = ProjectManager(tmp_path / "projects")
+        _create_project(pm)
+        service = ProjectArchiveService(pm)
+
+        archive_path, _ = service.export_project(
+            "demo",
+            project_memories=[
+                {
+                    "id": "project-memory-id",
+                    "user_id": "user-a",
+                    "scope": "project",
+                    "category": "style",
+                    "content": "Use a restrained cinematic palette.",
+                    "confirmed": True,
+                    "source_session_id": "session-id",
+                },
+                {
+                    "id": "user-memory-id",
+                    "user_id": "user-a",
+                    "scope": "user",
+                    "category": "preference",
+                    "content": "Prefer concise prompts.",
+                    "confirmed": True,
+                },
+                {
+                    "id": "candidate-id",
+                    "scope": "project",
+                    "category": "world",
+                    "content": "This unconfirmed memory must not be exported.",
+                    "confirmed": False,
+                },
+            ],
+        )
+
+        with zipfile.ZipFile(archive_path) as archive:
+            payload = json.loads(archive.read("demo/memory/project_memories.json"))
+            manifest = json.loads(archive.read(f"demo/{ARCHIVE_MANIFEST_NAME}"))
+
+        assert payload["project_memories"] == [
+            {
+                "category": "style",
+                "content": "Use a restrained cinematic palette.",
+            }
+        ]
+        assert "user_id" not in json.dumps(payload)
+        assert "project-memory-id" not in json.dumps(payload)
+        assert "session-id" not in json.dumps(payload)
+        assert "metadata" not in payload["project_memories"][0]
+        assert "confirmed" not in payload["project_memories"][0]
+        assert manifest["project_memory_count"] == 1
+
+    @pytest.mark.unit
+    def test_import_project_memories_returns_payload_without_extracting_memory_file(self, tmp_path):
+        pm = ProjectManager(tmp_path / "projects")
+        _create_project(pm)
+        service = ProjectArchiveService(pm)
+        archive_path, _ = service.export_project(
+            "demo",
+            project_memories=[
+                {
+                    "scope": "project",
+                    "category": "world",
+                    "content": "The project uses a coastal setting.",
+                    "confirmed": True,
+                }
+            ],
+        )
+        shutil.rmtree(pm.get_project_path("demo"))
+
+        result = service.import_project_archive(archive_path, uploaded_filename="demo.zip")
+
+        assert result.project_memory_payload == {
+            "format": "shotwise-agent-memory",
+            "version": 1,
+            "project_memories": [{"category": "world", "content": "The project uses a coastal setting."}],
+        }
+        assert not (pm.get_project_path("demo") / "memory" / "project_memories.json").exists()
+
     @pytest.mark.integration
     @pytest.mark.parametrize("scope", ["full", "current"])
     def test_export_includes_end_frame_snapshots(self, tmp_path, scope):
@@ -369,10 +449,92 @@ class TestProjectArchiveService:
             archive_path,
             uploaded_filename="manual.zip",
         )
+        assert result.project_memory_payload is None
 
         assert result.project["title"] == "Demo"
         assert result.project_name != "demo"
         assert (pm.get_project_path(result.project_name) / "project.json").exists()
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize(
+        "field, value",
+        [
+            ("format_version", None),
+            ("format_version", True),
+            ("format_version", "2"),
+            ("format_version", 0),
+            ("format_version", -1),
+            ("script_schema_version", None),
+            ("script_schema_version", True),
+            ("script_schema_version", "2"),
+            ("script_schema_version", 0),
+            ("script_schema_version", -1),
+        ],
+        ids=[
+            "format_missing",
+            "format_bool",
+            "format_string",
+            "format_zero",
+            "format_negative",
+            "script_missing",
+            "script_bool",
+            "script_string",
+            "script_zero",
+            "script_negative",
+        ],
+    )
+    def test_manifest_version_fields_reject_invalid_values(self, field, value):
+        manifest = {"format_version": 2, "script_schema_version": 2}
+        if value is None:
+            manifest.pop(field)
+        else:
+            manifest[field] = value
+
+        with pytest.raises(ProjectArchiveValidationError) as exc_info:
+            ProjectArchiveService._validate_archive_manifest(manifest)
+
+        assert exc_info.value.errors[0].key == "arch_manifest_invalid"
+        assert exc_info.value.errors[0].params["field"] == field
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("field", ["format_version", "script_schema_version"])
+    def test_manifest_rejects_future_versions(self, field):
+        manifest = {"format_version": 2, "script_schema_version": 2}
+        manifest[field] = 3
+
+        with pytest.raises(ProjectArchiveValidationError) as exc_info:
+            ProjectArchiveService._validate_archive_manifest(manifest)
+
+        assert exc_info.value.errors[0].key == "arch_manifest_future_version"
+        assert exc_info.value.errors[0].params["field"] == field
+
+    @pytest.mark.unit
+    def test_v1_manifest_defaults_missing_script_schema_and_preserves_unknown_fields(self):
+        manifest = {
+            "format_version": 1,
+            "project_name": "demo",
+            "future_metadata": {"producer": "legacy-exporter"},
+        }
+
+        validated = ProjectArchiveService._validate_archive_manifest(manifest)
+
+        assert validated is manifest
+        assert validated["format_version"] == 1
+        assert "script_schema_version" not in validated
+        assert validated["future_metadata"] == {"producer": "legacy-exporter"}
+
+    @pytest.mark.unit
+    def test_manifestless_archive_remains_compatible_with_preflight(self, tmp_path):
+        pm = ProjectManager(tmp_path / "projects")
+        project_dir = _create_project(pm)
+        service = ProjectArchiveService(pm)
+        archive_path = tmp_path / "manual.zip"
+        _make_manual_zip(project_dir, archive_path)
+
+        result = service.preflight_project_archive(archive_path, uploaded_filename="manual.zip")
+
+        assert result["project_title"] == "Demo"
+        assert set(result["diagnostics"]) == {"auto_fixed", "warnings"}
 
     @pytest.mark.unit
     def test_import_legacy_v1_archive_runs_migration(self, tmp_path):

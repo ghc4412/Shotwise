@@ -18,8 +18,23 @@ export interface ProjectOverview {
   generated_at?: string;
 }
 
+export type CharacterVariantStatus = "draft" | "ready" | "missing" | "archived";
+
+export interface CharacterVariant {
+  id: string;
+  character_id: string;
+  slug: string;
+  display_name: string;
+  description: string;
+  image_path: string;
+  status: CharacterVariantStatus;
+  metadata: Record<string, unknown>;
+  image_asset_id?: string;
+}
+
 export interface Character {
   description: string;
+  variants?: Record<string, CharacterVariant>;
   character_sheet?: string;
   /** 独立角色头像文件；不直接复用 character_sheet。 */
   character_avatar?: string;
@@ -243,6 +258,14 @@ export interface ProjectData {
  * Note: `status` may be an empty object `{}` when the project
  * has no project.json or encounters an error during loading.
  */
+export interface MediaIndexSummary {
+  asset_count: number;
+  last_indexed_at: string | null;
+  status: "ready" | "syncing" | "stale" | "failed";
+  summary_version: number;
+  error: string | null;
+}
+
 export interface ProjectSummary {
   name: string;
   title: string;
@@ -253,6 +276,7 @@ export interface ProjectSummary {
   created_at?: string | null;
   updated_at?: string | null;
   status: ProjectStatus | Record<string, never>;
+  media_summary?: MediaIndexSummary;
 }
 
 export type ImportConflictPolicy = "prompt" | "rename" | "overwrite";

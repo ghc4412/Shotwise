@@ -199,6 +199,8 @@ MESSAGES = {
     "arch_zip_traversal_entry": "The ZIP contains a path-traversal entry: {name}",
     "arch_zip_symlink_entry": "The ZIP contains a symlink entry: {name}",
     "arch_zip_unparsable_member": "Cannot parse {label}: {path}",
+    "arch_manifest_invalid": "The archive manifest field {field} is missing or has an invalid type",
+    "arch_manifest_future_version": "The archive manifest field {field} uses a newer unsupported version",
     "arch_multiple_manifests": (
         "The ZIP contains multiple shotwise-export.json files; the project root cannot be determined"
     ),

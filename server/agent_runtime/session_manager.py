@@ -210,6 +210,7 @@ class ManagedSession:
 
     session_id: str  # sdk_session_id（已有会话）或临时 UUID（新会话等待中）
     actor: "SessionActor"  # per-session actor owning the SDK client
+    user_id: str = DEFAULT_USER_ID
     status: SessionStatus = "idle"
     project_name: str = ""  # 用于 _register_new_session
     sdk_id_event: asyncio.Event = field(default_factory=asyncio.Event)
@@ -423,6 +424,8 @@ class SessionManager:
             resolve_project_cwd=self._resolve_project_cwd,
             max_turns_provider=lambda: self.max_turns,
             history_loader=self._load_session_event_entries,
+            session_factory_provider=lambda: getattr(self, "_session_factory", None),
+            user_id_provider=lambda: getattr(self, "_user_id", DEFAULT_USER_ID),
         )
 
     def configure_sandbox_runtime(self, *, in_docker: bool, sandbox_enabled: bool) -> None:
@@ -472,6 +475,7 @@ class SessionManager:
         stderr: Callable[[str], None] | None = None,
         session_id: str | None = None,
         context_append: str | None = None,
+        user_id: str = DEFAULT_USER_ID,
     ) -> Any:
         """委派给 ``OptionsAssembler.build``——SessionManager 不再直接构建 options 与
         hook，仅调用装配器；凭证注入、prompt 装配、hook 工厂均由装配器持有。"""
@@ -483,6 +487,7 @@ class SessionManager:
             stderr=stderr,
             session_id=session_id,
             context_append=context_append,
+            user_id=user_id,
         )
 
     async def _build_client_factory(
@@ -495,6 +500,7 @@ class SessionManager:
         locale: str,
         startup_stderr: _StartupStderrCollector,
         session_id: str | None = None,
+        user_id: str = DEFAULT_USER_ID,
     ) -> tuple[Callable[[], Any], str, Any]:
         """按 sdk_type 装配 SDK client 工厂，返回 (client_factory, assistant_model, cleanup)。
 
@@ -508,6 +514,7 @@ class SessionManager:
                 project_name,
                 session_id=resume_sdk_id or session_id or "",
                 locale=locale,
+                user_id=user_id,
             )
             client_factory = lambda: OpenAIAgentsSessionClient(  # noqa: E731
                 provider=built.provider,
@@ -533,6 +540,7 @@ class SessionManager:
             locale=locale,
             stderr=startup_stderr,
             context_append=context_append,
+            user_id=user_id,
         )
         if isinstance(options, OptionsBuildResult):
             sdk_options = options.options
@@ -668,6 +676,7 @@ class SessionManager:
         locale: str = DEFAULT_LOCALE,
         user_entry: dict[str, Any] | None = None,
         client_key: str | None = None,
+        user_id: str = DEFAULT_USER_ID,
     ) -> str:
         """Create a new session via send-first: start actor, send query, wait for sdk_session_id.
 
@@ -702,6 +711,7 @@ class SessionManager:
                 managed_ref=managed_ref,
                 locale=locale,
                 startup_stderr=startup_stderr,
+                user_id=user_id,
             )
         except Exception as exc:
             sdk_stderr = startup_stderr.render()
@@ -724,6 +734,7 @@ class SessionManager:
                 actor=actor,
                 status="running",
                 project_name=project_name,
+                user_id=user_id,
                 assistant_model=assistant_model,
                 sdk_type=sdk_type,
             )
@@ -873,7 +884,7 @@ class SessionManager:
             managed.status = "error"
             await _cleanup_on_error()
             try:
-                await self.meta_store.update_status(sdk_id, "error")
+                await self.meta_store.update_status(sdk_id, "error", user_id=managed.user_id)
             except Exception:
                 logger.exception("持久化 error 状态失败 session_id=%s", sdk_id)
             raise RuntimeError("新会话首条用户消息写入事件日志失败") from managed.initial_user_entry_error
@@ -974,6 +985,7 @@ class SessionManager:
         meta: SessionMeta | None = None,
         locale: str = DEFAULT_LOCALE,
         resumable: bool = True,
+        user_id: str = DEFAULT_USER_ID,
     ) -> ManagedSession:
         """Get existing managed session or spin up an actor for resumed session.
 
@@ -1009,10 +1021,11 @@ class SessionManager:
                     return managed
 
             if meta is None:
-                meta = await self.meta_store.get(session_id)
+                meta = await self.meta_store.get(session_id, user_id=user_id)
                 if meta is None:
                     raise FileNotFoundError(f"session not found: {session_id}")
 
+            user_id = meta.user_id
             sdk_type = getattr(meta, "sdk_type", None) or SDK_TYPE_CLAUDE
 
             await self._ensure_capacity()
@@ -1030,6 +1043,7 @@ class SessionManager:
                     managed_ref=managed_ref,
                     locale=locale,
                     startup_stderr=startup_stderr,
+                    user_id=meta.user_id,
                 )
             except Exception as exc:
                 sdk_stderr = startup_stderr.render()
@@ -1055,6 +1069,7 @@ class SessionManager:
                     actor=actor,
                     status=resumed_status,
                     project_name=meta.project_name,
+                    user_id=meta.user_id,
                     assistant_model=assistant_model,
                     sdk_type=sdk_type,
                     resolved_sdk_id=meta.id,  # 标记为已注册，防止重复创建 DB 记录
@@ -1105,6 +1120,7 @@ class SessionManager:
         user_entry: dict[str, Any] | None = None,
         client_key: str | None = None,
         resumable: bool = True,
+        user_id: str = DEFAULT_USER_ID,
     ) -> dict[str, Any] | None:
         """Send a message via the session actor.
 
@@ -1118,7 +1134,7 @@ class SessionManager:
 
         ``resumable`` 透传给 ``get_or_connect``，见其文档。
         """
-        managed = await self.get_or_connect(session_id, meta=meta, locale=locale, resumable=resumable)
+        managed = await self.get_or_connect(session_id, meta=meta, locale=locale, resumable=resumable, user_id=user_id)
         managed.last_activity = time.monotonic()
 
         # 幂等预检先于 running 拦截：受理已成功（响应在网络层丢失）的重试
@@ -1162,7 +1178,7 @@ class SessionManager:
                 managed.pending_user_echoes.pop(0)
         managed.last_user_prompt = display_text
 
-        await self.meta_store.update_status(session_id, "running")
+        await self.meta_store.update_status(session_id, "running", user_id=user_id)
 
         # Send the query via the actor. send_query flips status to error on
         # cmd.error and re-raises; we ensure meta store reflects that too.
@@ -1181,7 +1197,7 @@ class SessionManager:
                 except Exception:
                     logger.exception("回滚受理条目失败 session_id=%s seq=%s", session_id, log_entry.get("seq"))
             try:
-                await self.meta_store.update_status(session_id, "error")
+                await self.meta_store.update_status(session_id, "error", user_id=user_id)
             except Exception:
                 logger.exception("持久化 error 状态失败 session_id=%s", session_id)
             raise
@@ -1191,16 +1207,16 @@ class SessionManager:
             managed.channel.broadcast({"type": "log_entry", "session_id": session_id, "entry": log_entry})
         return log_entry
 
-    async def interrupt_session(self, session_id: str) -> SessionStatus:
+    async def interrupt_session(self, session_id: str, user_id: str = DEFAULT_USER_ID) -> SessionStatus:
         """Interrupt a running session via the actor."""
-        meta = await self.meta_store.get(session_id)
+        meta = await self.meta_store.get(session_id, user_id=user_id)
         if meta is None:
             raise FileNotFoundError(f"session not found: {session_id}")
 
         managed = self.sessions.get(session_id)
         if managed is None:
             if meta.status == "running":
-                await self.meta_store.update_status(session_id, "interrupted")
+                await self.meta_store.update_status(session_id, "interrupted", user_id=user_id)
                 return "interrupted"
             return meta.status
 
@@ -1286,7 +1302,7 @@ class SessionManager:
             await self._record_assistant_usage(managed, result_msg, final_status)
         except Exception:
             logger.exception("记录 assistant usage 失败 session_id=%s", managed.session_id)
-        await self.meta_store.update_status(managed.session_id, final_status)
+        await self.meta_store.update_status(managed.session_id, final_status, user_id=managed.user_id)
         managed.interrupt_requested = False
         if final_status != "running":
             self._schedule_cleanup(managed.session_id)
@@ -1309,7 +1325,7 @@ class SessionManager:
             model=resolve_assistant_model(result_msg, managed.assistant_model),
             prompt=managed.last_user_prompt[:500] if managed.last_user_prompt else None,
             provider=PROVIDER_ANTHROPIC,
-            user_id=getattr(self, "_user_id", DEFAULT_USER_ID),
+            user_id=managed.user_id,
             status="success" if final_status == "completed" else "failed",
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -1324,7 +1340,7 @@ class SessionManager:
         managed.cancel_pending_questions(reason)
         managed.status = status
         managed.last_activity = time.monotonic()
-        await self.meta_store.update_status(managed.session_id, status)
+        await self.meta_store.update_status(managed.session_id, status, user_id=managed.user_id)
         managed.interrupt_requested = False
 
         # 事件日志侧补写 typed 中断条目：此路径下 inbox 处理已终止，
@@ -1386,6 +1402,7 @@ class SessionManager:
         sdk_type: str,
         *,
         meta: SessionMeta | None = None,
+        user_id: str = DEFAULT_USER_ID,
     ) -> SessionMeta:
         """切换会话当前活跃的 Agent SDK 类型（claude ↔ openai）。
 
@@ -1397,7 +1414,7 @@ class SessionManager:
         if sdk_type not in SDK_TYPES:
             raise ValueError(f"unknown sdk_type: {sdk_type!r}")
         if meta is None:
-            meta = await self.meta_store.get(session_id)
+            meta = await self.meta_store.get(session_id, user_id=user_id)
             if meta is None:
                 raise FileNotFoundError(f"session not found: {session_id}")
         current = getattr(meta, "sdk_type", None) or SDK_TYPE_CLAUDE
@@ -1415,12 +1432,14 @@ class SessionManager:
             claude_id = meta.claude_resume_id
             if claude_id is None and (meta.sdk_type or SDK_TYPE_CLAUDE) == SDK_TYPE_CLAUDE:
                 claude_id = meta.id
-            await self.meta_store.update_sdk_type(session_id, sdk_type, claude_resume_id=claude_id)
+            await self.meta_store.update_sdk_type(
+                session_id, sdk_type, claude_resume_id=claude_id, user_id=meta.user_id
+            )
         else:
             # OpenAI Agents SDK 会话历史由 SQLiteSession 按 sdk_session_id 持久化，
             # 无需落额外 id，仅更新 sdk_type。
-            await self.meta_store.update_sdk_type(session_id, sdk_type)
-        updated = await self.meta_store.get(session_id)
+            await self.meta_store.update_sdk_type(session_id, sdk_type, user_id=meta.user_id)
+        updated = await self.meta_store.get(session_id, user_id=meta.user_id)
         if updated is None:  # pragma: no cover
             raise FileNotFoundError(f"session not found: {session_id}")
         return updated
@@ -1517,7 +1536,9 @@ class SessionManager:
                     managed.status = "interrupted"
                 if managed.status in ("interrupted", "error"):
                     with contextlib.suppress(BaseException):
-                        await self.meta_store.update_status(managed.resolved_sdk_id, managed.status)
+                        await self.meta_store.update_status(
+                            managed.resolved_sdk_id, managed.status, user_id=managed.user_id
+                        )
         finally:
             self.sessions.pop(session_id, None)
             self._connect_locks.pop(session_id, None)
@@ -1763,10 +1784,12 @@ class SessionManager:
 
                 tag_coro = _tag()
             await asyncio.gather(
-                self.meta_store.create(managed.project_name, sdk_id, sdk_type=managed.sdk_type),
+                self.meta_store.create(
+                    managed.project_name, sdk_id, sdk_type=managed.sdk_type, user_id=managed.user_id
+                ),
                 *([] if tag_coro is None else [tag_coro]),
             )
-            await self.meta_store.update_status(sdk_id, "running")
+            await self.meta_store.update_status(sdk_id, "running", user_id=managed.user_id)
             # 新会话首条用户消息先写日志分配身份（seq 0）：本方法在 inbox 任务
             # 内串行执行于任何 assistant 条目定型之前，保证时间线顺序；写入
             # 完成后才 set sdk_id_event，send_new_session 醒来即可拿到权威条目。
@@ -1844,7 +1867,9 @@ class SessionManager:
         if not managed.resolve_pending_question(question_id, answers):
             raise ValueError("未找到待回答的问题")
 
-    async def _subscribe(self, session_id: str, *, locale: str = DEFAULT_LOCALE) -> tuple[SseChannel, asyncio.Queue]:
+    async def _subscribe(
+        self, session_id: str, *, locale: str = DEFAULT_LOCALE, user_id: str = DEFAULT_USER_ID
+    ) -> tuple[SseChannel, asyncio.Queue]:
         """Register a live-message queue for a session.
 
         ``locale`` is forwarded to ``get_or_connect`` so reviving a cold session
@@ -1854,7 +1879,7 @@ class SessionManager:
         Private: the only consumer is :meth:`stream_messages`, which owns the
         deterministic unsubscribe via its context-manager ``__aexit__``.
         """
-        managed = await self.get_or_connect(session_id, locale=locale)
+        managed = await self.get_or_connect(session_id, locale=locale, user_id=user_id)
         queue = managed.channel.subscribe()
         return managed.channel, queue
 
@@ -1865,7 +1890,12 @@ class SessionManager:
 
     @contextlib.asynccontextmanager
     async def stream_messages(
-        self, session_id: str, *, idle_timeout: float = 20.0, locale: str = DEFAULT_LOCALE
+        self,
+        session_id: str,
+        *,
+        idle_timeout: float = 20.0,
+        locale: str = DEFAULT_LOCALE,
+        user_id: str = DEFAULT_USER_ID,
     ) -> AsyncIterator[AsyncIterator[SessionStreamEvent]]:
         """Subscribe to a session's messages as a self-cleaning async iterator.
 
@@ -1889,7 +1919,7 @@ class SessionManager:
         ``locale`` only matters when this subscription revives a cold session; an
         already-resident session ignores it (session-fixed system prompt).
         """
-        channel, queue = await self._subscribe(session_id, locale=locale)
+        channel, queue = await self._subscribe(session_id, locale=locale, user_id=user_id)
 
         async def _iter() -> AsyncIterator[SessionStreamEvent]:
             # NOTE: intentionally NO ``finally: _unsubscribe`` here. Cleanup is owned
@@ -1905,11 +1935,11 @@ class SessionManager:
         finally:
             await self._unsubscribe(session_id, queue)
 
-    async def get_status(self, session_id: str) -> SessionStatus | None:
+    async def get_status(self, session_id: str, user_id: str = DEFAULT_USER_ID) -> SessionStatus | None:
         """Get session status."""
         if session_id in self.sessions:
             return self.sessions[session_id].status
-        meta = await self.meta_store.get(session_id)
+        meta = await self.meta_store.get(session_id, user_id=user_id)
         return meta.status if meta else None
 
     async def shutdown_gracefully(self, timeout: float = 30.0) -> None:

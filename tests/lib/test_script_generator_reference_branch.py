@@ -12,6 +12,8 @@ from lib.reference_video.draft_validation import DraftViolation
 from lib.reference_video.quarantine import (
     QUARANTINE_KIND_STEP1,
     QUARANTINE_KIND_STEP2,
+    QUARANTINE_SCHEMA_VERSION,
+    UnsupportedQuarantineSchemaError,
     quarantine_path,
     write_quarantine,
 )
@@ -1044,6 +1046,34 @@ async def test_promote_step2_draft_revalidates_edited_step1(reference_project: P
 async def test_promote_step2_draft_without_draft(reference_project: Path):
     with pytest.raises(FileNotFoundError, match="没有可晋升的 step2 隔离草稿"):
         await ScriptGenerator(reference_project).promote_reference_step2_draft(episode=1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_promote_step2_draft_rejects_future_schema_without_touching_script(reference_project: Path):
+    """未来版本的 step2 信封必须明确拒绝，不能按普通坏 JSON 处理或生成正式剧本。"""
+    path = quarantine_path(reference_project, 1, QUARANTINE_KIND_STEP2)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        _json.dumps(
+            {
+                "schema_version": QUARANTINE_SCHEMA_VERSION + 1,
+                "kind": QUARANTINE_KIND_STEP2,
+                "episode": 1,
+                "meta": {},
+                "violations": [],
+                "content": {"title": "t", "units": [{"text": STEP2_UNIT_TEXT}]},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(UnsupportedQuarantineSchemaError, match="schema_version=3"):
+        await ScriptGenerator(reference_project).promote_reference_step2_draft(episode=1)
+
+    assert path.exists()
+    assert not _script_path(reference_project).exists()
 
 
 @pytest.mark.asyncio

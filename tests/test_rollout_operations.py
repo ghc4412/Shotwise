@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from lib import feature_flags
+from lib.media_catalog import MediaCatalog
 from server import media_index_cli
 from server.services.media_indexing import scan_project_media_assets
 
@@ -102,3 +103,34 @@ def test_media_index_cli_rejects_retry_and_dry_run_together(monkeypatch: pytest.
         media_index_cli.main()
 
     assert exc_info.value.code == 2
+
+
+def test_media_index_scan_marks_summary_ready(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project_root = tmp_path / "project"
+    (project_root / "uploads").mkdir(parents=True)
+    (project_root / "uploads" / "image.png").write_bytes(b"image")
+    monkeypatch.setenv("SHOTWISE_MEDIA_ASSET_INDEX", "1")
+
+    result = scan_project_media_assets("project", project_root)
+    summary = MediaCatalog(project_root / ".media-assets.json").summary()
+
+    assert result["summary"]["status"] == "ready"
+    assert summary.status == "ready"
+    assert summary.asset_count == 1
+    assert summary.last_indexed_at is not None
+
+
+def test_media_index_scan_marks_summary_failed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    monkeypatch.setenv("SHOTWISE_MEDIA_ASSET_INDEX", "1")
+    monkeypatch.setattr(
+        "server.services.media_indexing._scan_paths", lambda _root: (_ for _ in ()).throw(OSError("denied"))
+    )
+
+    with pytest.raises(OSError, match="denied"):
+        scan_project_media_assets("project", project_root)
+
+    summary = MediaCatalog(project_root / ".media-assets.json").summary()
+    assert summary.status == "failed"
+    assert summary.error == "denied"

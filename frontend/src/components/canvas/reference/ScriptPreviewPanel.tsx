@@ -140,7 +140,7 @@ export function ScriptPreviewPanel({ projectName, episode, text, lookup }: Scrip
       <ScriptHighlight
         text={text}
         lookup={lookup}
-        className="rounded-md border border-[var(--color-hairline-soft)] bg-[oklch(0.16_0.010_265_/_0.6)] p-3"
+        className="rounded-md border border-[var(--color-hairline-soft)] bg-[var(--color-surface-2)] p-3"
       />
 
       <dl
@@ -161,7 +161,7 @@ export function ScriptPreviewPanel({ projectName, episode, text, lookup }: Scrip
                 const palette = assetColor(ref.type);
                 return (
                   <span
-                    key={`${ref.type}:${ref.name}`}
+                    key={`${ref.type}:${ref.variant_slug ? `${ref.name} / ${ref.variant_slug}` : ref.name}:${ref.variant_id ?? ref.variant_slug ?? ""}`}
                     translate="no"
                     className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 ${palette.textClass} ${palette.bgClass} ${palette.borderClass}`}
                   >

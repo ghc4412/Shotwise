@@ -170,6 +170,8 @@ MESSAGES = {
     "arch_zip_traversal_entry": "ZIP 包含路径穿越条目: {name}",
     "arch_zip_symlink_entry": "ZIP 包含符号链接条目: {name}",
     "arch_zip_unparsable_member": "无法解析 {label}: {path}",
+    "arch_manifest_invalid": "归档 manifest 的 {field} 字段缺失或类型无效",
+    "arch_manifest_future_version": "归档 manifest 的 {field} 版本高于当前支持范围",
     "arch_multiple_manifests": "ZIP 中包含多个 shotwise-export.json，无法确定项目根目录",
     "arch_manifest_missing_project_json": "官方导出包缺少 project.json",
     "arch_no_project_json": "ZIP 中未找到 project.json",

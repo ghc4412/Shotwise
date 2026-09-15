@@ -10,7 +10,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from lib.config.resolver import ConfigResolver, VideoCapability, constrain_durations_for_project
 from lib.db import async_session_factory
+from lib.db.base import DEFAULT_USER_ID
 from lib.project_manager import ProjectManager
+from lib.task_failure import bound_reason, sanitize_failure_reason
 from server.services.project_files import project_text_files_signature
 
 logger = logging.getLogger(__name__)
@@ -23,9 +25,21 @@ class ToolContext:
     to ``project_name`` via ``build_shotwise_mcp_server(project_name=...)``.
     """
 
-    def __init__(self, project_name: str, projects_root: Path, pm: ProjectManager | None = None):
+    def __init__(
+        self,
+        project_name: str,
+        projects_root: Path,
+        pm: ProjectManager | None = None,
+        *,
+        user_id: str = DEFAULT_USER_ID,
+        session_id: str | None = None,
+        message_id: str | None = None,
+    ):
         self.project_name = project_name
         self.projects_root = projects_root
+        self.user_id = user_id
+        self.session_id = session_id
+        self.message_id = message_id
         # Avoid ``ProjectManager.from_cwd()`` — the server main process cwd is
         # the repo root, not ``projects/<name>/``. Tests may inject a fake pm.
         self.pm: ProjectManager = pm if pm is not None else ProjectManager(str(projects_root))
@@ -52,10 +66,15 @@ class ToolContext:
         return self.pm.get_project_path(self.project_name)
 
 
+_TOOL_ERROR_REASON_LIMIT = 2000
+
+
 def tool_error(name: str, exc: BaseException, log: list[str] | None = None) -> dict[str, Any]:
-    """Build the ``{"is_error": True}`` response every SDK tool handler emits on failure."""
-    msg = f"{name} 失败: {exc}"
-    text = "\n".join([msg, *log]) if log else msg
+    """Build a bounded, sanitized ``{"is_error": True}`` SDK tool response."""
+    safe_exc = bound_reason(sanitize_failure_reason(str(exc)), _TOOL_ERROR_REASON_LIMIT)
+    safe_log = [bound_reason(sanitize_failure_reason(str(entry)), _TOOL_ERROR_REASON_LIMIT) for entry in (log or [])]
+    msg = f"{name} 失败: {safe_exc}"
+    text = "\n".join([msg, *safe_log]) if safe_log else msg
     return {"content": [{"type": "text", "text": text}], "is_error": True}
 
 

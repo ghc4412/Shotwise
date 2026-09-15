@@ -8,6 +8,8 @@ import type { AssetKind } from "@/types/reference-video";
 export interface RefChipProps {
   kind: AssetKind;
   name: string;
+  /** Optional accessible/display label; name remains the stable parent asset name. */
+  displayName?: string;
   imageUrl: string | null;
   /** Optional `[图N]` index prefix; rendered to the left of the chip when set. */
   index?: number;
@@ -32,6 +34,7 @@ export const RefChip = forwardRef<HTMLDivElement, RefChipProps>(function RefChip
   {
     kind,
     name,
+    displayName,
     imageUrl,
     index,
     removable,
@@ -68,9 +71,9 @@ export const RefChip = forwardRef<HTMLDivElement, RefChipProps>(function RefChip
           isDragging ? "opacity-60" : ""
         } active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400`}
       >
-        <RefAvatar kind={kind} name={name} imageUrl={imageUrl} size={18} />
-        <span className="truncate text-gray-200" title={name}>
-          {name}
+        <RefAvatar kind={kind} name={displayName ?? name} imageUrl={imageUrl} size={18} />
+        <span className="truncate text-gray-200" title={displayName ?? name}>
+          {displayName ?? name}
         </span>
         <span
           aria-hidden="true"
@@ -87,7 +90,7 @@ export const RefChip = forwardRef<HTMLDivElement, RefChipProps>(function RefChip
               e.stopPropagation();
               onRemove?.();
             }}
-            aria-label={t("reference_panel_remove_aria", { name })}
+            aria-label={t("reference_panel_remove_aria", { name: displayName ?? name })}
             className="grid place-items-center rounded text-gray-400 transition-colors hover:text-red-400 focus-visible:text-red-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-400"
           >
             <X className="h-3 w-3" aria-hidden="true" />

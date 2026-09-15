@@ -92,6 +92,9 @@ async def test_create_get_and_scope_batch_to_current_user_and_project(batch_api)
     body = response.json()
     assert body["status"] == "running"
     assert [task["status"] for task in body["tasks"]] == ["queued", "queued"]
+    assert [task["occupied"] for task in body["tasks"]] == [True, True]
+    assert all(task["progress"] is None for task in body["tasks"])
+    assert all(task["phase_code"] is None for task in body["tasks"])
     batch_id = body["batch_id"]
 
     assert (await client.get(f"/api/v1/projects/demo/batches/{batch_id}")).status_code == 200
@@ -129,6 +132,7 @@ async def test_cancel_skips_terminal_tasks_and_reports_partial_success(batch_api
     body = response.json()
     assert body["status"] == "partially_succeeded"
     assert [task["status"] for task in body["tasks"]] == ["succeeded", "cancelled"]
+    assert [task["occupied"] for task in body["tasks"]] == [False, False]
     assert body["cancel_requested"] is True
 
 
@@ -146,3 +150,30 @@ async def test_retry_failed_replaces_only_failed_item(batch_api) -> None:
     new_ids = [task["task_id"] for task in response.json()["tasks"]]
     assert new_ids[0] != old_ids[0]
     assert new_ids[1] == old_ids[1]
+
+
+async def test_batch_projects_progress_phase_and_occupied_without_lease_owner(batch_api) -> None:
+    client, factory, _queue, _user = batch_api
+    created = (await client.post("/api/v1/projects/demo/batches", json=_body())).json()
+    first_task_id = created["tasks"][0]["task_id"]
+    async with factory() as session:
+        from sqlalchemy import update
+
+        await session.execute(
+            update(Task)
+            .where(Task.task_id == first_task_id)
+            .values(
+                progress=0.42, progress_source="provider", phase_code="provider_polling", lease_owner="worker-secret"
+            )
+        )
+        await session.commit()
+
+    response = await client.get(f"/api/v1/projects/demo/batches/{created['batch_id']}")
+
+    assert response.status_code == 200
+    task = response.json()["tasks"][0]
+    assert task["occupied"] is True
+    assert task["progress"] == pytest.approx(0.42)
+    assert task["progress_source"] == "provider"
+    assert task["phase_code"] == "provider_polling"
+    assert "lease_owner" not in task

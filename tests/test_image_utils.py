@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+from base64 import b64encode
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image
@@ -155,3 +157,70 @@ class TestUploadPixelBudget:
     def test_grid_sized_composite_passes_default_budget(self):
         """4K 见方的联合图在默认上限内，不被误拦。"""
         assert 4096 * 4096 < image_utils.MAX_UPLOAD_PIXELS
+
+
+class TestNormalizeChatImages:
+    """服务端聊天附件的格式、体积和像素边界。"""
+
+    @staticmethod
+    def _image(width: int = 32, height: int = 24, image_format: str = "PNG") -> bytes:
+        buf = BytesIO()
+        Image.new("RGB", (width, height), color="red").save(buf, format=image_format)
+        return buf.getvalue()
+
+    @staticmethod
+    def _attachment(raw: bytes, media_type: str = "image/png") -> SimpleNamespace:
+        return SimpleNamespace(data=b64encode(raw).decode("ascii"), media_type=media_type)
+
+    def test_normalizes_supported_image_to_jpeg(self):
+        result = image_utils.normalize_chat_images([self._attachment(self._image())])
+        assert len(result) == 1
+        assert result[0].media_type == "image/jpeg"
+        with Image.open(BytesIO(__import__("base64").b64decode(result[0].data))) as image:
+            assert image.format == "JPEG"
+
+    @pytest.mark.parametrize("media_type", ["image/svg+xml", "image/gif", "application/octet-stream"])
+    def test_rejects_unsupported_declared_media_type(self, media_type: str):
+        with pytest.raises(image_utils.ChatImageError) as exc_info:
+            image_utils.normalize_chat_images([self._attachment(self._image(), media_type)])
+        assert exc_info.value.key == "assistant_image_type_unsupported"
+
+    def test_rejects_declared_type_that_does_not_match_image_bytes(self):
+        with pytest.raises(image_utils.ChatImageError) as exc_info:
+            image_utils.normalize_chat_images([self._attachment(self._image(), "image/jpeg")])
+        assert exc_info.value.key == "assistant_image_invalid"
+
+    def test_rejects_invalid_base64(self):
+        attachment = SimpleNamespace(data="not-base64", media_type="image/png")
+        with pytest.raises(image_utils.ChatImageError) as exc_info:
+            image_utils.normalize_chat_images([attachment])
+        assert exc_info.value.key == "assistant_image_invalid"
+
+    def test_rejects_pixels_over_server_budget(self, monkeypatch):
+        monkeypatch.setattr(image_utils, "MAX_UPLOAD_PIXELS", 10 * 10 - 1)
+        with pytest.raises(image_utils.ChatImageError) as exc_info:
+            image_utils.normalize_chat_images([self._attachment(self._image(10, 10))])
+        assert exc_info.value.key == "assistant_image_pixels_too_large"
+
+    def test_rejects_single_normalized_image_over_limit(self, monkeypatch):
+        monkeypatch.setattr(
+            image_utils, "compress_image_bytes", lambda _: b"x" * (image_utils.CHAT_IMAGE_MAX_BYTES + 1)
+        )
+        with pytest.raises(image_utils.ChatImageError) as exc_info:
+            image_utils.normalize_chat_images([self._attachment(self._image())])
+        assert exc_info.value.key == "assistant_image_too_large"
+
+    def test_rejects_total_normalized_images_over_limit(self, monkeypatch):
+        monkeypatch.setattr(image_utils, "CHAT_IMAGE_MAX_BYTES", 1024)
+        monkeypatch.setattr(image_utils, "CHAT_IMAGES_MAX_BYTES", 15)
+        monkeypatch.setattr(image_utils, "compress_image_bytes", lambda _: b"x" * 10)
+        with pytest.raises(image_utils.ChatImageError) as exc_info:
+            image_utils.normalize_chat_images([self._attachment(self._image()), self._attachment(self._image())])
+        assert exc_info.value.key == "assistant_images_too_large"
+
+    def test_rejects_base64_message_budget_before_decoding(self, monkeypatch):
+        monkeypatch.setattr(image_utils, "CHAT_IMAGES_MAX_BASE64_CHARS", 3)
+        attachment = SimpleNamespace(data="AAAA", media_type="image/png")
+        with pytest.raises(image_utils.ChatImageError) as exc_info:
+            image_utils.normalize_chat_images([attachment])
+        assert exc_info.value.key == "assistant_images_too_large"

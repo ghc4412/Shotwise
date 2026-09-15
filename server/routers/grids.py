@@ -14,6 +14,11 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from lib.api_errors import BadRequestError, ConflictError, NotFoundError
+from lib.generation_preflight import (
+    collect_item_references,
+    merge_preflight_results,
+    validate_asset_references,
+)
 from lib.generation_queue import get_generation_queue
 from lib.grid.layout import calculate_grid_layout, grid_aspect_ratio_for, max_cell_count, video_aspect_ratio_of
 from lib.grid.models import GridGeneration
@@ -39,6 +44,45 @@ from server.services.upload_finalize import (
 )
 
 router = APIRouter(prefix="/projects/{project_name}", tags=["grids"])
+
+
+def _raise_grid_asset_preflight(result) -> None:
+    if not result.has_errors:
+        return
+    raise BadRequestError(
+        "generation_asset_preflight_failed",
+        unregistered=", ".join(result.unregistered) or "—",
+        missing_images=", ".join(result.missing_images) or "—",
+        missing_variants=", ".join(result.missing_variants) or "—",
+    )
+
+
+def _validate_grid_items(
+    project: dict,
+    project_path: Path,
+    items: list[dict],
+    *,
+    char_field: str | None,
+    scene_field: str,
+    prop_field: str,
+) -> None:
+    result = merge_preflight_results(
+        *(
+            validate_asset_references(
+                project,
+                project_path,
+                collect_item_references(
+                    item,
+                    char_field=char_field,
+                    scene_field=scene_field,
+                    prop_field=prop_field,
+                    include_products=project.get("content_mode") == "ad",
+                ),
+            )
+            for item in items
+        )
+    )
+    _raise_grid_asset_preflight(result)
 
 
 def _build_grid_task_payload(
@@ -111,7 +155,7 @@ async def generate_grid(
         script = get_project_manager().load_script(project_name, req.script_file)
     project_path = get_project_manager().get_project_path(project_name)
 
-    items, id_field, _, _, _ = get_storyboard_items(script)
+    items, id_field, char_field, scene_field, prop_field = get_storyboard_items(script)
     aspect_ratio = video_aspect_ratio_of(project)
     # style 同样允许显式 null，须显式判空而非依赖 dict.get 的默认值
     raw_style = project.get("style")
@@ -126,6 +170,27 @@ async def generate_grid(
     if req.scene_ids:
         sid_set = set(req.scene_ids)
         groups = [g for g in groups if any(item[id_field] in sid_set for item in g)]
+
+    # Validate all scenes that will contribute to a grid before deleting old records,
+    # saving new records, or submitting any billable task.
+    groups_to_validate = [
+        group
+        for group in groups
+        if calculate_grid_layout(
+            len(group),
+            aspect_ratio,
+            allow_large_grid=allow_large_grid,
+        )
+        is not None
+    ]
+    _validate_grid_items(
+        project,
+        project_path,
+        [item for group in groups_to_validate for item in group],
+        char_field=char_field,
+        scene_field=scene_field,
+        prop_field=prop_field,
+    )
 
     grid_ids: list[str] = []
     task_ids: list[str] = []
@@ -319,6 +384,21 @@ async def regenerate_grid(project_name: str, grid_id: str, user: CurrentUser):
     project_path = get_project_manager().get_project_path(project_name)
     gm = GridManager(project_path)
     grid = _load_grid_or_404(project_path, grid_id)
+
+    # Regeneration is also an admission boundary: validate the frozen grid's source
+    # scenes before changing its status or enqueueing a replacement task.
+    script = get_project_manager().load_script(project_name, grid.script_file)
+    items, id_field, char_field, scene_field, prop_field = get_storyboard_items(script)
+    scene_ids = {str(scene_id) for scene_id in grid.scene_ids}
+    source_items = [item for item in items if str(item.get(id_field, "")) in scene_ids]
+    _validate_grid_items(
+        project,
+        project_path,
+        source_items,
+        char_field=char_field,
+        scene_field=scene_field,
+        prop_field=prop_field,
+    )
 
     # 重生成是把同一次产出重跑一遍：rows/cols、prompt 与比例全部沿用记录上冻结的值，
     # 三者必须同源——prompt 里写死了画布比例，换用项目当前比例会让画布描述与下发参数矛盾。

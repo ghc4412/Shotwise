@@ -134,7 +134,13 @@ export function ReferenceVideoCard({
       const key = normalizeAssetName(name);
       if (!Object.hasOwn(out, key)) out[key] = kind;
     };
-    for (const name of Object.keys(project?.characters ?? {})) claim(name, "character");
+    for (const [name, data] of Object.entries(project?.characters ?? {})) {
+      claim(name, "character");
+      const variants = (data as { variants?: Record<string, { slug?: string }> }).variants;
+      for (const [slug, variant] of Object.entries(variants ?? {})) {
+        claim(`${name}/${variant.slug ?? slug}`, "character");
+      }
+    }
     for (const name of Object.keys(project?.scenes ?? {})) claim(name, "scene");
     for (const name of Object.keys(project?.props ?? {})) claim(name, "prop");
     return out;
@@ -178,10 +184,29 @@ export function ReferenceVideoCard({
     const out = {} as Record<AssetKind, MentionCandidate[]>;
     for (const kind of ["character", "scene", "prop"] as const) {
       const bucket = buckets[kind];
-      out[kind] = Object.entries(bucket ?? {}).map(([name, data]) => ({
-        name,
-        imagePath: (data as Partial<Record<(typeof SHEET_FIELD)[AssetKind], string>>)[SHEET_FIELD[kind]] ?? null,
-      }));
+      out[kind] = Object.entries(bucket ?? {}).flatMap(([name, data]) => {
+        const record = data as Record<string, unknown>;
+        const base: MentionCandidate = {
+          name,
+          imagePath: (record as Partial<Record<(typeof SHEET_FIELD)[AssetKind], string>>)[SHEET_FIELD[kind]] ?? null,
+        };
+        if (kind !== "character") return [base];
+        const variants = record.variants;
+        if (!variants || typeof variants !== "object") return [base];
+        const variantItems = Object.entries(variants as Record<string, Record<string, unknown>>).map(([slug, raw]) => {
+          const variantSlug = typeof raw.slug === "string" ? raw.slug : slug;
+          const displayName = typeof raw.display_name === "string" && raw.display_name ? raw.display_name : variantSlug;
+          return {
+            name,
+            mentionName: `${name}/${variantSlug}`,
+            displayName: `${name} / ${displayName}`,
+            variantId: typeof raw.id === "string" ? raw.id : undefined,
+            variantSlug,
+            imagePath: typeof raw.image_path === "string" && raw.image_path ? raw.image_path : base.imagePath,
+          } satisfies MentionCandidate;
+        });
+        return [base, ...variantItems];
+      });
     }
     return out;
   }, [project?.characters, project?.scenes, project?.props]);
@@ -262,7 +287,7 @@ export function ReferenceVideoCard({
   }, []);
 
   const handlePickerSelect = useCallback(
-    (ref: { type: AssetKind; name: string }) => {
+    (ref: { type: AssetKind; name: string; variant_id?: string; variant_slug?: string }) => {
       const ta = taRef.current;
       const start = atStart;
       if (!ta || start === null) {
@@ -272,7 +297,8 @@ export function ReferenceVideoCard({
       const before = currentText.slice(0, start);
       const cursor = ta.selectionStart ?? currentText.length;
       const after = currentText.slice(cursor);
-      const insert = `@[${ref.name}] `;
+      const mentionName = ref.variant_slug ? `${ref.name}/${ref.variant_slug}` : ref.name;
+      const insert = `@[${mentionName}] `;
       const next = before + insert + after;
       onChange(next);
       setPickerOpen(false);
@@ -309,7 +335,7 @@ export function ReferenceVideoCard({
         </span>
       </div>
 
-      <div className="relative min-h-0 flex-1 rounded-md border border-[var(--color-hairline)] bg-[var(--color-bg-grad-a)]">
+      <div className="reference-video-script-editor relative min-h-0 flex-1 rounded-md border border-[var(--color-hairline)]">
         <pre
           ref={preRef}
           aria-hidden

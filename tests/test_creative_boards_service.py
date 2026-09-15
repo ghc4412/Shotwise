@@ -184,10 +184,9 @@ async def test_item_update_rejects_stale_board_revision(async_session):
 
 @pytest.mark.asyncio
 async def test_board_update_revision_conflict_is_returned_as_http_409(async_session):
-    from types import SimpleNamespace
-
     from fastapi import HTTPException
 
+    from server.auth import CurrentUserInfo
     from server.routers.creative_boards import BoardUpdateRequest
     from server.routers.creative_boards import update_board as update_board_route
 
@@ -204,7 +203,7 @@ async def test_board_update_revision_conflict_is_returned_as_http_409(async_sess
         await update_board_route(
             str(board["id"]),
             BoardUpdateRequest(name="Stale name", expected_revision=board["revision"]),
-            SimpleNamespace(id="user-1"),
+            CurrentUserInfo(id="user-1", sub="user-1"),
             async_session,
         )
 

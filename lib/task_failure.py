@@ -32,6 +32,7 @@ CAPABILITY_FAILURE_CODES: frozenset[str] = frozenset(
         "image_endpoint_mismatch_no_t2i",
         "image_reference_images_unreadable",
         "ref_payload_floor_exceeded",
+        "video_capabilities_unresolved",
         "video_capability_missing_t2v",
         "video_duration_invalid",
         "video_duration_not_supported",
@@ -95,6 +96,69 @@ FAILURE_CODE_KEYS: dict[str, str] = {
 _STRUCTURED_RE = re.compile(r"^\[(\w+)\](?:[ ](\{.*\}))?$", re.DOTALL)
 
 _CASCADE_CODE = "cascade_blocked_dependency"
+
+_SENSITIVE_KEY_RE = re.compile(
+    r"^(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|signature|secret|password|passwd|authorization)$",
+    re.IGNORECASE,
+)
+_SENSITIVE_TEXT_RE = re.compile(
+    r"(?i)(\b(?:authorization\s*:\s*bearer|x[-_]?api[-_]?key|api[_-]?key|access[_-]?token|refresh[_-]?token|token|signature|secret|password|passwd)\b\s*[:=]\s*)([\"']?)([^\"'\s,;&}]+)",
+)
+_BEARER_TEXT_RE = re.compile(r"(?i)(\bbearer\s+)([^\s,;\"'{}]+)")
+_SENSITIVE_QUERY_RE = re.compile(
+    r"(?i)([?&](?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|signature|secret|password|passwd|key)(?:=|%3d))"
+    r"([^&#\s\"'<>;,)}\]]+)"
+)
+_WINDOWS_ABSOLUTE_PATH_RE = re.compile(
+    r"(?<![A-Za-z0-9_/:])(?:[A-Za-z]:[\\/])(?:[^\\/\s\"'<>|,;)}\]]+[\\/])*[^\\/\s\"'<>|,;)}\]]*"
+)
+_POSIX_ABSOLUTE_PATH_RE = re.compile(r"(?<![A-Za-z0-9_/])/(?:Users|home|var|tmp)(?:/[^\s\"'<>|,;)}\]]*)?")
+
+
+def _sanitize_failure_value(value: Any, *, key: str | None = None) -> Any:
+    """Sanitize structured provider data while preserving JSON value types."""
+    if key is not None and _SENSITIVE_KEY_RE.fullmatch(key):
+        return "[REDACTED]"
+    if isinstance(value, str):
+        return _sanitize_failure_text(value)
+    if isinstance(value, dict):
+        return {str(k): _sanitize_failure_value(v, key=str(k)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_failure_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_failure_value(item) for item in value]
+    return value
+
+
+def _sanitize_failure_text(reason: str) -> str:
+    """Remove credentials and local absolute paths from unstructured provider text."""
+    sanitized = _SENSITIVE_QUERY_RE.sub(r"\1[REDACTED]", reason)
+    sanitized = _SENSITIVE_TEXT_RE.sub(r"\1\2[REDACTED]", sanitized)
+    sanitized = _BEARER_TEXT_RE.sub(r"\1[REDACTED]", sanitized)
+    sanitized = _WINDOWS_ABSOLUTE_PATH_RE.sub("[REDACTED_PATH]", sanitized)
+    return _POSIX_ABSOLUTE_PATH_RE.sub("[REDACTED_PATH]", sanitized)
+
+
+def sanitize_failure_reason(reason: str) -> str:
+    """Sanitize a task failure before it can be persisted or returned by the API.
+
+    Known structured failure envelopes remain parseable and retain their machine code;
+    legacy or raw provider text is sanitized in place. This is deliberately separate
+    from :func:`bound_reason`, which owns length limiting.
+    """
+    if not isinstance(reason, str):
+        reason = str(reason)
+    parsed = _parse_structured(reason)
+    if parsed is None:
+        return _sanitize_failure_text(reason)
+    code, params = parsed
+    try:
+        return encode_failure(code, **{str(k): _sanitize_failure_value(v, key=str(k)) for k, v in params.items()})
+    except (TypeError, ValueError, RecursionError):
+        # Failure handling must never strand a task in running because a malformed
+        # provider payload cannot be serialized. Fall back to safe text.
+        return _sanitize_failure_text(reason)
+
 
 # collapse_cascade_reason 的解包上限，纯粹的空转防线。
 _MAX_CASCADE_UNWRAP = 100

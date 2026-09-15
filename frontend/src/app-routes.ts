@@ -7,9 +7,16 @@ export const ROUTE_APP = "/app";
 export const ROUTE_APP_PROJECTS = "/app/projects";
 export const ROUTE_APP_SETTINGS = "/app/settings";
 export const ROUTE_APP_ASSETS = "/app/assets";
+export const ROUTE_APP_PUBLISHING = "/app/publishing";
 
 /** 无子路由的单页顶层路由——精确匹配，前缀不算数。 */
-export const APP_TOP_LEVEL_ROUTES = [ROUTE_APP, ROUTE_APP_PROJECTS, ROUTE_APP_SETTINGS, ROUTE_APP_ASSETS] as const;
+export const APP_TOP_LEVEL_ROUTES = [
+  ROUTE_APP,
+  ROUTE_APP_PROJECTS,
+  ROUTE_APP_SETTINGS,
+  ROUTE_APP_ASSETS,
+  ROUTE_APP_PUBLISHING,
+] as const;
 
 /**
  * `/app/projects/:projectName` 下的路由段常量——`router.tsx`（项目设置页）与
@@ -29,6 +36,7 @@ export const WORKSPACE_ROUTE_FLOW = "flow";
 export const WORKSPACE_ROUTE_SKILLS = "skills";
 export const WORKSPACE_ROUTE_MEDIA = "media";
 export const WORKSPACE_ROUTE_CREATIVE_BOARD = "creative-board";
+export const WORKSPACE_ROUTE_ASSEMBLY = "assembly";
 
 /** 无子路径、直接匹配的工作区叶子路由段。`source` 除了列表页本身还接受 `/:filename`，
  *  在下面的正则里额外拼一条 `source/[^/]+` 分支覆盖后者。 */
@@ -45,6 +53,7 @@ const WORKSPACE_STATIC_LEAF_ROUTES = [
   WORKSPACE_ROUTE_SKILLS,
   WORKSPACE_ROUTE_MEDIA,
   WORKSPACE_ROUTE_CREATIVE_BOARD,
+  WORKSPACE_ROUTE_ASSEMBLY,
 ] as const;
 
 /**

@@ -8,7 +8,7 @@
 - **第一段**：``<X>@图片N`` 简式绑定（图片编号 = 随请求发出的参考图顺序）+ 声音声明集中
   声明区（``<X>的台词音色参考 @音频N，声音特征：…``）。听得到声音的 A/B 类均注入声音特征，
   两条无声路径（模型不产音的 C 类、本集关闭音频）都不注入
-- **第二段**：镜头分镜段 + 台词行（``<X>说 {台词}`` / ``画外音说 {台词}``）
+- **第二段**：镜头分镜段 + 口型台词行（``<X>说 {台词}``）；画外音留给字幕 / TTS
 - **第三段**：风格锚定 + 画质/稳定/字幕/水印约束包（本路径的反向约束全部由它承担，不另加
   尾词）；两个及以上角色参考图时补双胞胎兜底
 
@@ -135,19 +135,35 @@ def render_unit_prompt(
     # ``references`` 是入参（上游持久化的派生结果），其名字以哪种编码形式落盘不可控；正文一侧
     # 出自解析器、已归一。两侧同形，主体记号与图号才对得上——不归一时该角色的绑定行会缺位、
     # 音频也挂不到图上，且全程不报错。
-    references = [ReferenceResource(type=ref.type, name=normalize_asset_name(ref.name)) for ref in references]
+    references = [
+        ReferenceResource(
+            type=ref.type,
+            name=normalize_asset_name(ref.name),
+            variant_id=ref.variant_id,
+            variant_slug=ref.variant_slug,
+        )
+        for ref in references
+    ]
 
     registered, missing = resolve_references(mentions, project)
     warnings = [_warning_unregistered(name) for name in missing] + warnings
     # 主体记号按**资产表登记**判定，与参考图编号解耦：被能力上限裁掉的名字仍是画面主体，
     # 只是这次没随请求发图（纯画外角色同理——有主体、无图）。未登记的 mention 才留原文。
-    subjects = {ref.name for ref in registered}
+    subjects = {
+        f"{ref.name}/{ref.variant_slug}" if ref.type == "character" and ref.variant_slug else ref.name
+        for ref in registered
+    }
 
     # 音频只能对齐到「同名且类型也是 character」的图：resolve_references 按
     # character → scene → prop 的优先级分派，故场景/道具可能与某个角色同名——名字键的字典
     # 若不先按类型过滤再建，两个同名的不同类型条目会互相覆盖（dict 同键取最后写入的那条），
     # 导致编号指向错误的图。先过滤类型再建 name → 序号映射，从根上避免该覆盖。
-    character_image_no = {ref.name: i for i, ref in enumerate(references, start=1) if ref.type == "character"}
+    character_image_no: dict[str, int] = {}
+    for i, ref in enumerate(references, start=1):
+        if ref.type == "character":
+            # A character has one voice even when several visual variants are present;
+            # bind it to the first emitted image and keep variant images distinct in labels.
+            character_image_no.setdefault(ref.name, i)
 
     characters = _character_bucket(project)
     bindings = derive_voice_bindings(
@@ -161,7 +177,16 @@ def render_unit_prompt(
     audio_no, audio_speaker_reference_index = _number_audio_speakers(bindings.audio_speakers, character_image_no)
 
     segments = [
-        _render_segment_one([ref.name for ref in references], bindings.speakers, audio_no, characters, settings),
+        _render_segment_one(
+            [
+                f"{ref.name}/{ref.variant_slug}" if ref.type == "character" and ref.variant_slug else ref.name
+                for ref in references
+            ],
+            bindings.speakers,
+            audio_no,
+            characters,
+            settings,
+        ),
         _render_segment_two(shots, subjects, characters),
         _render_segment_three(sum(1 for ref in references if ref.type == "character"), style),
     ]
@@ -263,7 +288,9 @@ def _render_segment_two(shots: list[Any], subjects: Collection[str], characters:
     mention 才留编辑器原文（配 ``ref_warn_unregistered_mention``）。
 
     台词行的说话人按**资产表**判定而非参考图列表：纯画外角色无参考图，台词行照常重组。
-    未登记的说话人按原文发送（warning 已由 :func:`derive_voice_bindings` 发出），
+    未登记的说话人按原文发送（warning 已由 :func:`derive_voice_bindings` 发出）。
+    裸画外音行属于字幕 / TTS 的后续输入，不是视频生成 prompt 的内容，因此整行丢弃；
+    其它描述行仍按原顺序保留，不能因旁白行被丢弃而破坏相邻画面描述。
     未闭合花括号行同样原样发送——不做剥除，作者能在成片里看见自己写坏的那一行。
     """
     blocks: list[str] = []
@@ -274,9 +301,9 @@ def _render_segment_two(shots: list[Any], subjects: Collection[str], characters:
             if dialogue is not None and dialogue[0] in characters:
                 body.append(f"<{dialogue[0]}>说 {{{dialogue[1]}}}")
                 continue
-            voiceover = match_voiceover_line(line)
-            if voiceover is not None:
-                body.append(f"画外音说 {{{voiceover}}}")
+            # 裸旁白留给字幕 / TTS 管线；视频供应商音轨只承载口型台词。
+            # 仅丢弃规范的整行旁白，混写行不是规范旁白，必须原样保留以免破坏行内拼接。
+            if match_voiceover_line(line) is not None:
                 continue
             body.append(render_mentions_as_subjects(line, subjects))
         text = "\n".join(ln for ln in body if ln.strip())
@@ -302,9 +329,8 @@ def _derive_ad_utterances(shots: list[dict]) -> list[ShotUtterance]:
     （``{"speaker": ..., "line": ...}``），不必像书写文稿一样经 ``parse_prompt`` /
     ``match_dialogue_line`` 正则识别自由文本。``voiceover_text`` 是独立字段、不产出台词行
     （与画面 prompt 的口径一致，见 ``lib.reference_video.ad_units._shot_prompt_text``）。有
-    speaker 派生 ``dialogue`` utterance,无 speaker 的裸台词派生 ``voiceover`` utterance——与
-    该镜头在画面 prompt 里渲染的 ``画外音说 {台词}`` 句式对应,使 ``derive_voice_bindings`` 的
-    无声知会（``voice_consistency == "none"``）同样覆盖纯画外的 ad 台词。调用方传入的 ``shots``
+    speaker 派生 ``dialogue`` utterance，无 speaker 的裸台词派生 ``voiceover`` utterance；
+    后者仅供预览、字幕与 TTS，不进入视频生成 prompt。调用方传入的 ``shots``
     已由 ``resolve_ad_unit_shots`` 水合、保证逐项为 dict；脏 ``video_prompt`` / dialogue 条目
     （非 dict、非字符串 speaker 或 line）按空处理，与 ``_shot_prompt_text`` 的字符串专一
     强制口径一致，避免同一条脏数据在两处产生不一致的渲染结果。

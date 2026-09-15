@@ -20,6 +20,7 @@ SDK_TYPES = (SDK_TYPE_CLAUDE, SDK_TYPE_OPENAI)
 def _row_to_dict(row: AgentSession) -> dict[str, Any]:
     return {
         "id": row.id,
+        "user_id": row.user_id,
         "sdk_session_id": row.sdk_session_id,
         "project_name": row.project_name,
         "title": row.title or "",
@@ -65,8 +66,10 @@ class SessionRepository(BaseRepository):
         await self.session.refresh(row)
         return _row_to_dict(row)
 
-    async def get(self, session_id: str) -> dict[str, Any] | None:
+    async def get(self, session_id: str, user_id: str | None = None) -> dict[str, Any] | None:
         stmt = select(AgentSession).where(AgentSession.sdk_session_id == session_id)
+        if user_id is not None:
+            stmt = stmt.where(AgentSession.user_id == user_id)
         stmt = self._scope_query(stmt, AgentSession)
         result = await self.session.execute(stmt)
         row = result.scalar_one_or_none()
@@ -79,6 +82,7 @@ class SessionRepository(BaseRepository):
         status: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        user_id: str | None = None,
     ) -> list[dict[str, Any]]:
         # 被分叉取代的会话不进列表；数据整行保留，按 sdk_session_id 仍可 get 到。
         stmt = select(AgentSession).where(AgentSession.superseded_by.is_(None))
@@ -86,6 +90,8 @@ class SessionRepository(BaseRepository):
             stmt = stmt.where(AgentSession.project_name == project_name)
         if status:
             stmt = stmt.where(AgentSession.status == status)
+        if user_id is not None:
+            stmt = stmt.where(AgentSession.user_id == user_id)
         stmt = stmt.order_by(AgentSession.updated_at.desc())
         stmt = stmt.limit(max(1, limit)).offset(max(0, offset))
         stmt = self._scope_query(stmt, AgentSession)
@@ -93,68 +99,78 @@ class SessionRepository(BaseRepository):
         result = await self.session.execute(stmt)
         return [_row_to_dict(row) for row in result.scalars().all()]
 
-    async def update_status(self, session_id: str, status: str) -> bool:
+    async def update_status(self, session_id: str, status: str, user_id: str | None = None) -> bool:
         now = utc_now()
-        result = await self.session.execute(
-            update(AgentSession).where(AgentSession.sdk_session_id == session_id).values(status=status, updated_at=now)
-        )
+        stmt = update(AgentSession).where(AgentSession.sdk_session_id == session_id)
+        if user_id is not None:
+            stmt = stmt.where(AgentSession.user_id == user_id)
+        result = await self.session.execute(stmt.values(status=status, updated_at=now))
         await self.session.commit()
         return rowcount(result) > 0
 
-    async def update_sdk_type(self, session_id: str, sdk_type: str, *, claude_resume_id: str | None = None) -> bool:
+    async def update_sdk_type(
+        self, session_id: str, sdk_type: str, *, claude_resume_id: str | None = None, user_id: str | None = None
+    ) -> bool:
         """切换会话当前活跃的 SDK 类型；可同时落 Claude resume id 供续接。"""
         now = utc_now()
         values: dict[str, Any] = {"sdk_type": sdk_type, "updated_at": now}
         if claude_resume_id is not None:
             values["claude_resume_id"] = claude_resume_id
-        result = await self.session.execute(
-            update(AgentSession).where(AgentSession.sdk_session_id == session_id).values(**values)
-        )
+        stmt = update(AgentSession).where(AgentSession.sdk_session_id == session_id)
+        if user_id is not None:
+            stmt = stmt.where(AgentSession.user_id == user_id)
+        result = await self.session.execute(stmt.values(**values))
         await self.session.commit()
         return rowcount(result) > 0
 
-    async def mark_superseded(self, session_id: str, superseded_by: str) -> bool:
+    async def mark_superseded(self, session_id: str, superseded_by: str, user_id: str | None = None) -> bool:
         """标记会话已被取代；已有指针时不改写，返回 False 让调用方按分叉冲突处理。"""
         now = utc_now()
-        result = await self.session.execute(
-            update(AgentSession)
-            .where(AgentSession.sdk_session_id == session_id, AgentSession.superseded_by.is_(None))
-            .values(superseded_by=superseded_by, updated_at=now)
+        stmt = update(AgentSession).where(
+            AgentSession.sdk_session_id == session_id, AgentSession.superseded_by.is_(None)
         )
+        if user_id is not None:
+            stmt = stmt.where(AgentSession.user_id == user_id)
+        result = await self.session.execute(stmt.values(superseded_by=superseded_by, updated_at=now))
         await self.session.commit()
         return rowcount(result) > 0
 
-    async def clear_superseded(self, session_id: str, superseded_by: str) -> bool:
+    async def clear_superseded(self, session_id: str, superseded_by: str, user_id: str | None = None) -> bool:
         """撤回指向 ``superseded_by`` 的取代指针；指针已指向别的会话时不动。"""
         now = utc_now()
-        result = await self.session.execute(
-            update(AgentSession)
-            .where(AgentSession.sdk_session_id == session_id, AgentSession.superseded_by == superseded_by)
-            .values(superseded_by=None, updated_at=now)
+        stmt = update(AgentSession).where(
+            AgentSession.sdk_session_id == session_id, AgentSession.superseded_by == superseded_by
         )
+        if user_id is not None:
+            stmt = stmt.where(AgentSession.user_id == user_id)
+        result = await self.session.execute(stmt.values(superseded_by=None, updated_at=now))
         await self.session.commit()
         return rowcount(result) > 0
 
-    async def delete(self, session_id: str) -> bool:
+    async def delete(self, session_id: str, user_id: str | None = None) -> bool:
         # 指向被删会话的取代指针改指它自己的后继：删的是链中间时前身继续指向仍然
         # 活着的末端，删的是链尾时后继为空、前身随之回到会话列表。不接手则前身会
         # 带着一个指向不存在会话的指针，永久留在列表之外。
-        successor = await self.session.scalar(
-            select(AgentSession.superseded_by).where(AgentSession.sdk_session_id == session_id)
-        )
-        await self.session.execute(
-            update(AgentSession)
-            .where(AgentSession.superseded_by == session_id)
-            .values(superseded_by=successor, updated_at=utc_now())
-        )
-        result = await self.session.execute(sa_delete(AgentSession).where(AgentSession.sdk_session_id == session_id))
+        successor_stmt = select(AgentSession.superseded_by).where(AgentSession.sdk_session_id == session_id)
+        if user_id is not None:
+            successor_stmt = successor_stmt.where(AgentSession.user_id == user_id)
+        successor = await self.session.scalar(successor_stmt)
+        predecessor_stmt = update(AgentSession).where(AgentSession.superseded_by == session_id)
+        if user_id is not None:
+            predecessor_stmt = predecessor_stmt.where(AgentSession.user_id == user_id)
+        await self.session.execute(predecessor_stmt.values(superseded_by=successor, updated_at=utc_now()))
+        delete_stmt = sa_delete(AgentSession).where(AgentSession.sdk_session_id == session_id)
+        if user_id is not None:
+            delete_stmt = delete_stmt.where(AgentSession.user_id == user_id)
+        result = await self.session.execute(delete_stmt)
         await self.session.commit()
         return rowcount(result) > 0
 
-    async def interrupt_running(self) -> int:
+    async def interrupt_running(self, user_id: str | None = None) -> int:
         now = utc_now()
-        result = await self.session.execute(
-            update(AgentSession).where(AgentSession.status == "running").values(status="interrupted", updated_at=now)
-        )
+        stmt = update(AgentSession).where(AgentSession.status == "running")
+        if user_id is not None:
+            stmt = stmt.where(AgentSession.user_id == user_id)
+        result = await self.session.execute(stmt.values(status="interrupted", updated_at=now))
         await self.session.commit()
         return rowcount(result)

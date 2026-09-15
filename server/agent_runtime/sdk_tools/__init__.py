@@ -17,9 +17,11 @@ from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server
 
+from lib.db.base import DEFAULT_USER_ID
 from server.agent_runtime.sdk_tools._context import ToolContext
 from server.agent_runtime.sdk_tools.character_relations import analyze_character_relations_tool
 from server.agent_runtime.sdk_tools.creative_context import context_reference_tool
+from server.agent_runtime.sdk_tools.director_review import inspect_director_review_tool
 from server.agent_runtime.sdk_tools.enqueue_assets import (
     generate_assets_tool,
     list_pending_assets_tool,
@@ -34,11 +36,19 @@ from server.agent_runtime.sdk_tools.enqueue_videos import (
     generate_video_scene_tool,
     generate_video_selected_tool,
 )
+from server.agent_runtime.sdk_tools.episode_editing import (
+    create_timeline_plan_tool,
+    get_episode_media_manifest_tool,
+    get_timeline_plan_tool,
+    update_timeline_plan_tool,
+    validate_timeline_plan_tool,
+)
 from server.agent_runtime.sdk_tools.episode_planning import (
     plan_episodes_tool,
     reset_episode_planning_tool,
 )
 from server.agent_runtime.sdk_tools.file_read import list_project_text_files_tool, read_project_text_tool
+from server.agent_runtime.sdk_tools.memory import propose_memory_candidate_tool
 from server.agent_runtime.sdk_tools.patch_episode_meta import patch_episode_meta_tool
 from server.agent_runtime.sdk_tools.patch_project import patch_project_tool
 from server.agent_runtime.sdk_tools.patch_script import (
@@ -59,7 +69,12 @@ from server.agent_runtime.sdk_tools.text_generation import (
     validate_and_promote_reference_draft_tool,
 )
 
-__all__ = ["build_shotwise_mcp_server", "ToolContext", "SHOTWISE_MCP_TOOL_IDS"]
+__all__ = [
+    "build_shotwise_mcp_server",
+    "ToolContext",
+    "SHOTWISE_MCP_TOOL_IDS",
+    "SHOTWISE_INTERNAL_MCP_TOOL_IDS",
+]
 
 # Single source of truth for the Shotwise in-process MCP tool catalogue.
 # Each id is the **short tool name** (without the ``mcp__shotwise__`` prefix the
@@ -99,17 +114,44 @@ SHOTWISE_MCP_TOOL_IDS: tuple[str, ...] = (
     "analyze_character_relations",
     "list_project_text_files",
     "read_project_text",
+    "propose_memory_candidate",
+    "inspect_director_review",
 )
 
 
-def build_shotwise_tool_list(*, project_name: str, projects_root: Path) -> list[Any]:
+# Phase 2A contracts are intentionally internal: they are available to the
+# Agent Skill but are not advertised as user-facing frontend tool chips until
+# the durable plan service and UI are implemented.
+SHOTWISE_INTERNAL_MCP_TOOL_IDS: tuple[str, ...] = (
+    "get_episode_media_manifest",
+    "create_timeline_plan",
+    "get_timeline_plan",
+    "update_timeline_plan",
+    "validate_timeline_plan",
+)
+
+
+def build_shotwise_tool_list(
+    *,
+    project_name: str,
+    projects_root: Path,
+    user_id: str = DEFAULT_USER_ID,
+    session_id: str | None = None,
+    message_id: str | None = None,
+) -> list[Any]:
     """构建全部 Shotwise 工具定义（SdkMcpTool 列表）。
 
     Claude 通道经 ``create_sdk_mcp_server`` in-process 注册；OpenAI Agents SDK
     通道经 ``build_shotwise_agents_tools`` 转成 FunctionTool 进程内注册。两条
     通道共用同一批工具工厂，行为一致。
     """
-    ctx = ToolContext(project_name=project_name, projects_root=projects_root)
+    ctx = ToolContext(
+        project_name=project_name,
+        projects_root=projects_root,
+        user_id=user_id,
+        session_id=session_id,
+        message_id=message_id,
+    )
     return [
         list_pending_assets_tool(ctx),
         generate_assets_tool(ctx),
@@ -142,12 +184,32 @@ def build_shotwise_tool_list(*, project_name: str, projects_root: Path) -> list[
         list_project_text_files_tool(ctx),
         read_project_text_tool(ctx),
         context_reference_tool(ctx),
+        propose_memory_candidate_tool(ctx),
+        inspect_director_review_tool(ctx),
+        get_episode_media_manifest_tool(ctx),
+        create_timeline_plan_tool(ctx),
+        get_timeline_plan_tool(ctx),
+        update_timeline_plan_tool(ctx),
+        validate_timeline_plan_tool(ctx),
     ]
 
 
-def build_shotwise_mcp_server(*, project_name: str, projects_root: Path) -> Any:
+def build_shotwise_mcp_server(
+    *,
+    project_name: str,
+    projects_root: Path,
+    user_id: str = DEFAULT_USER_ID,
+    session_id: str | None = None,
+    message_id: str | None = None,
+) -> Any:
     """Build the per-session in-process MCP server with all Shotwise tools."""
-    tools = build_shotwise_tool_list(project_name=project_name, projects_root=projects_root)
+    tools = build_shotwise_tool_list(
+        project_name=project_name,
+        projects_root=projects_root,
+        user_id=user_id,
+        session_id=session_id,
+        message_id=message_id,
+    )
     return create_sdk_mcp_server(
         name="shotwise",
         version="1.0.0",
@@ -155,7 +217,14 @@ def build_shotwise_mcp_server(*, project_name: str, projects_root: Path) -> Any:
     )
 
 
-def build_shotwise_agents_tools(*, project_name: str, projects_root: Path) -> list[Any]:
+def build_shotwise_agents_tools(
+    *,
+    project_name: str,
+    projects_root: Path,
+    user_id: str = DEFAULT_USER_ID,
+    session_id: str | None = None,
+    message_id: str | None = None,
+) -> list[Any]:
     """把 Shotwise 工具转成 OpenAI Agents SDK 的 FunctionTool 列表（进程内注册）。
 
     复用 ``build_shotwise_tool_list`` 的 SdkMcpTool（name / description /
@@ -163,19 +232,43 @@ def build_shotwise_agents_tools(*, project_name: str, projects_root: Path) -> li
     适配到 FunctionTool 的 ``on_invoke_tool(context, params_json) -> str``。
     """
     tools: list[Any] = []
-    for sdk_tool in build_shotwise_tool_list(project_name=project_name, projects_root=projects_root):
+    for sdk_tool in build_shotwise_tool_list(
+        project_name=project_name,
+        projects_root=projects_root,
+        user_id=user_id,
+        session_id=session_id,
+        message_id=message_id,
+    ):
         tools.append(_sdk_tool_to_function_tool(sdk_tool))
     return tools
+
+
+def _coerce_tool_args(params_json: Any) -> dict[str, Any]:
+    """Normalize FunctionTool arguments before calling an MCP tool handler.
+
+    Agents SDK versions can provide either the documented JSON string or an
+    already-decoded mapping. Invalid/non-object values are treated as empty
+    arguments so a tool can return its normal validation message instead of
+    leaking a bridge ``TypeError`` as an internal error.
+    """
+    if params_json is None or params_json == "":
+        return {}
+    if isinstance(params_json, dict):
+        return params_json
+    if not isinstance(params_json, str):
+        return {}
+    try:
+        parsed = json.loads(params_json)
+    except (TypeError, ValueError, RecursionError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _sdk_tool_to_function_tool(sdk_tool: Any) -> Any:
     from agents import FunctionTool
 
-    async def on_invoke_tool(_context: Any, params_json: str) -> str:
-        try:
-            args = json.loads(params_json) if params_json else {}
-        except json.JSONDecodeError:
-            args = {}
+    async def on_invoke_tool(_context: Any, params_json: Any) -> str:
+        args = _coerce_tool_args(params_json)
         try:
             result = await sdk_tool.handler(args)
         except Exception as exc:  # 工具异常转为模型可见文本，不打断整轮

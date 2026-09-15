@@ -1,9 +1,12 @@
 import asyncio
+import base64
 import tempfile
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from lib.db.base import Base
@@ -40,14 +43,28 @@ class _FakeMetaStore:
     def __init__(self, metas=None):
         self.metas = {m.id: m for m in (metas or [])}
 
-    async def get(self, session_id):
-        return self.metas.get(session_id)
+    async def get(self, session_id, user_id=None):
+        meta = self.metas.get(session_id)
+        if meta is None or (user_id is not None and meta.user_id != user_id):
+            return None
+        return meta
 
-    async def list(self, project_name=None, status=None, limit=50, offset=0):
-        return list(self.metas.values())
+    async def list(self, project_name=None, status=None, limit=50, offset=0, user_id=None):
+        metas = list(self.metas.values())
+        if project_name is not None:
+            metas = [meta for meta in metas if meta.project_name == project_name]
+        if status is not None:
+            metas = [meta for meta in metas if meta.status == status]
+        if user_id is not None:
+            metas = [meta for meta in metas if meta.user_id == user_id]
+        return metas[offset : offset + limit]
 
-    async def delete(self, session_id):
-        return self.metas.pop(session_id, None) is not None
+    async def delete(self, session_id, user_id=None):
+        meta = self.metas.get(session_id)
+        if meta is None or (user_id is not None and meta.user_id != user_id):
+            return False
+        self.metas.pop(session_id, None)
+        return True
 
 
 class _FakeEventLogService:
@@ -92,7 +109,7 @@ class _FakeSessionManager:
     async def answer_user_question(self, session_id, question_id, answers):
         self.answered.append((session_id, question_id, answers))
 
-    async def interrupt_session(self, session_id):
+    async def interrupt_session(self, session_id, user_id=None):
         self.interrupted.append(session_id)
         return "interrupted"
 
@@ -248,7 +265,9 @@ class TestAssistantServiceMore:
         service.meta_store = _FakeMetaStore([meta])
         service.event_log = _FakeEventLogService()
 
-        image = SimpleNamespace(data="ZmFrZQ==", media_type="image/png")
+        image_buffer = BytesIO()
+        Image.new("RGB", (2, 2), color="red").save(image_buffer, format="PNG")
+        image = SimpleNamespace(data=base64.b64encode(image_buffer.getvalue()).decode("ascii"), media_type="image/png")
         await service.send_or_create("demo", "hello", session_id="s1", images=[image], locale="vi")
 
         assert sm.sent_kwargs[0]["locale"] == "vi"

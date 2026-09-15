@@ -8,6 +8,7 @@ from collections.abc import Collection, Iterator
 from typing import Any
 
 from lib.asset_types import BUCKET_KEY, normalize_asset_bucket, normalize_asset_name
+from lib.character_variants import find_character_variant, split_character_variant_mention
 from lib.script_models import ReferenceResource, Shot
 
 #: 镜头行 header：``镜头N：``（中英冒号均可）。时长已收编到 unit 级，header 不带秒数——
@@ -309,10 +310,14 @@ def rewrite_mentions(text: str, old_name: str, new_name: str) -> tuple[str, int]
     last = 0
     count = 0
     for start, end, name in _iter_mentions(text):
-        if normalize_asset_name(name) != target or text[start:end] == replacement:
+        character_name, variant_slug = split_character_variant_mention(name)
+        if normalize_asset_name(character_name) != target:
+            continue
+        mention_replacement = f"@[{new_name}/{variant_slug}]" if variant_slug else replacement
+        if text[start:end] == mention_replacement:
             continue
         pieces.append(text[last:start])
-        pieces.append(replacement)
+        pieces.append(mention_replacement)
         last = end
         count += 1
     if not count:
@@ -351,7 +356,7 @@ def rederive_unit_references(units: list[Any], project: dict) -> None:
         shots = unit.get("shots") or []
         text = "\n".join(str(s.get("text") or "") for s in shots if isinstance(s, dict))
         refs, _missing = derive_references_from_text(text, project)
-        unit["references"] = [r.model_dump() for r in refs]
+        unit["references"] = [r.model_dump(exclude_none=True) for r in refs]
 
 
 def render_mentions_as_subjects(text: str, names: Collection[str]) -> str:
@@ -371,7 +376,10 @@ def render_mentions_as_subjects(text: str, names: Collection[str]) -> str:
     last = 0
     for start, end, name in _iter_mentions(text):
         parts.append(text[last:start])
-        parts.append(f"<{name}>" if name in normalized_names else text[start:end])
+        normalized_name = normalize_asset_name(name)
+        # A slash is variant syntax only when the complete mention was registered
+        # by the caller. This keeps arbitrary punctuation from being reinterpreted.
+        parts.append(f"<{name}>" if normalized_name in normalized_names else text[start:end])
         last = end
 
     parts.append(text[last:])
@@ -446,13 +454,27 @@ def resolve_references(
     refs: list[ReferenceResource] = []
     missing: list[str] = []
     for raw_name in names:
-        name = normalize_asset_name(raw_name)
+        display_name = normalize_asset_name(raw_name)
+        character_name, variant_slug = split_character_variant_mention(display_name)
+        if variant_slug is not None:
+            character_name = normalize_asset_name(character_name)
+            character = buckets["character"].get(character_name)
+            variant = find_character_variant(character, character_name, variant_slug)
+            if variant is None:
+                missing.append(display_name)
+            else:
+                refs.append(
+                    ReferenceResource(
+                        type="character", name=character_name, variant_id=variant["id"], variant_slug=variant["slug"]
+                    )
+                )
+            continue
         resolved = False
         for rtype, bucket in buckets.items():
-            if name in bucket:
-                refs.append(ReferenceResource(type=rtype, name=name))  # type: ignore[arg-type]
+            if display_name in bucket:
+                refs.append(ReferenceResource(type=rtype, name=display_name))  # type: ignore[arg-type]
                 resolved = True
                 break
         if not resolved:
-            missing.append(name)
+            missing.append(display_name)
     return refs, missing

@@ -114,6 +114,12 @@ def list_project_media_assets(
     return {"items": items, "count": len(items)}
 
 
+def get_project_media_summary(*, project_root: Path) -> dict[str, Any]:
+    """Return the persisted index summary without inspecting physical media."""
+
+    return asdict(project_media_catalog(project_root).summary())
+
+
 async def sync_project_media_catalog(*, session: Any, project_id: str, project_root: Path) -> dict[str, int | bool]:
     """Synchronize the JSON-first catalog into database mirror tables."""
 

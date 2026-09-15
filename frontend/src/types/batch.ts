@@ -42,8 +42,14 @@ export interface CreateDurableBatchRequest {
 
 export interface DurableBatchTaskSummary {
   item_id: string;
+  resource_id: string;
   task_id: string;
   status: TaskStatus;
+  occupied: boolean;
+  progress: number | null;
+  progress_source: string | null;
+  phase_code: string | null;
+  reason: string | null;
 }
 
 export interface DurableBatchResponse {

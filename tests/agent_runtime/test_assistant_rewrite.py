@@ -55,13 +55,15 @@ class FakeSessionManager:
         self.send_failure: BaseException | None = None
         self.settle_after_interrupt = True
 
-    async def get_pending_questions_snapshot(self, session_id: str) -> list[dict[str, Any]]:
+    async def get_pending_questions_snapshot(
+        self, session_id: str, *, user_id: str = "default"
+    ) -> list[dict[str, Any]]:
         return self.pending_questions.get(session_id, [])
 
-    async def get_status(self, session_id: str) -> str | None:
+    async def get_status(self, session_id: str, *, user_id: str = "default") -> str | None:
         return self.statuses.get(session_id)
 
-    async def interrupt_session(self, session_id: str) -> str:
+    async def interrupt_session(self, session_id: str, *, user_id: str = "default") -> str:
         self.interrupted.append(session_id)
         if self.statuses.get(session_id) != "running":
             return self.statuses.get(session_id, "idle")
@@ -70,7 +72,7 @@ class FakeSessionManager:
             return "interrupted"
         return "running"
 
-    async def close_session(self, session_id: str, *, reason: str = "") -> None:
+    async def close_session(self, session_id: str, *, reason: str = "", user_id: str = "default") -> None:
         self.closed.append(session_id)
 
     async def send_message(
@@ -85,6 +87,7 @@ class FakeSessionManager:
         user_entry: dict[str, Any] | None = None,
         client_key: str | None = None,
         resumable: bool = True,
+        user_id: str = "default",
     ) -> dict[str, Any] | None:
         if self.send_failure is not None:
             raise self.send_failure

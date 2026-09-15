@@ -28,9 +28,10 @@ class TestAssertDurationSupported:
         assert exc.value.params["duration"] == 5
 
     @pytest.mark.unit
-    def test_empty_supported_list_passes(self):
-        # 能力不可解析时不更坏：空列表放行，保持既有行为不被本次改动弄坏。
-        assert_duration_supported(99, [])  # no raise
+    def test_empty_supported_list_fails_loud(self):
+        with pytest.raises(VideoCapabilityError) as exc:
+            assert_duration_supported(99, [])
+        assert exc.value.code == "video_capabilities_unresolved"
 
     @pytest.mark.unit
     def test_integer_like_string_and_float_accepted(self):
@@ -1634,9 +1635,8 @@ class TestGenerationTasks:
         assert fake_generator.video_calls[0]["duration_seconds"] == 8
 
     @pytest.mark.unit
-    async def test_empty_supported_durations_guard_permissive(self, monkeypatch, tmp_path):
-        """能力不可解析时 lane 交付空 supported_durations：守卫放行（不更坏），
-        resolution 仍取自 lane 已解析出的值，不因能力缺失被改写。"""
+    async def test_empty_supported_durations_fails_loud(self, monkeypatch, tmp_path):
+        """能力不可解析时视频任务必须停止，不能把未知能力交给 backend。"""
         project_path = _prepare_files(tmp_path)
         fake_pm = _FakePM(project_path)
         fake_generator = _FakeGenerator()
@@ -1650,18 +1650,18 @@ class TestGenerationTasks:
         monkeypatch.setattr(generation_tasks, "extract_video_thumbnail", _async_return(None))
         monkeypatch.setattr(generation_tasks, "emit_project_change_batch", lambda *a, **kw: None)
 
-        result = await generation_tasks.execute_video_task(
-            "demo",
-            "E1S01",
-            {
-                "script_file": "episode_1.json",
-                "prompt": {"action": "跑", "camera_motion": "Static", "dialogue": []},
-                "duration_seconds": 9,
-            },
-        )
-        assert result["resource_type"] == "videos"
-        assert fake_generator.video_calls[0]["duration_seconds"] == 9
-        assert fake_generator.video_calls[0]["resolution"] == "720p"
+        with pytest.raises(VideoCapabilityError) as exc:
+            await generation_tasks.execute_video_task(
+                "demo",
+                "E1S01",
+                {
+                    "script_file": "episode_1.json",
+                    "prompt": {"action": "跑", "camera_motion": "Static", "dialogue": []},
+                    "duration_seconds": 9,
+                },
+            )
+        assert exc.value.code == "video_capabilities_unresolved"
+        assert fake_generator.video_calls == []
 
     @pytest.mark.unit
     async def test_video_resolve_failure_fails_task_without_fallback(self, monkeypatch, tmp_path):

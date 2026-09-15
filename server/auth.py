@@ -141,13 +141,18 @@ def verify_token(token: str) -> dict | None:
 DOWNLOAD_TOKEN_EXPIRY_SECONDS = 300  # 5 分钟
 
 
-def create_download_token(username: str, project_name: str) -> str:
-    """签发短时效下载 token，用于浏览器原生下载认证"""
+def create_download_token(username: str, project_name: str, user_id: str | None = None) -> str:
+    """签发短时效下载 token，用于浏览器原生下载认证。
+
+    ``user_id`` 是可选的，以兼容已经签发的旧下载 token；新 token 携带稳定的
+    数据库用户标识，供归档导出读取该用户的项目记忆。
+    """
     now = time.time()
     payload = {
         "sub": username,
         "project": project_name,
         "purpose": "download",
+        **({"user_id": user_id} if user_id else {}),
         "iat": now,
         "exp": now + DOWNLOAD_TOKEN_EXPIRY_SECONDS,
     }

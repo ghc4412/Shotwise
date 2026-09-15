@@ -28,9 +28,12 @@ import { normalizeAssetName } from "@/utils/reference-mentions";
 const PICKER_ID = "reference-panel-mention-picker";
 
 // refId 用于 baseIds/existingKeys（资产存在性判断），不是拖拽身份——拖拽身份见下方 sortableIds。
-const refId = (r: ReferenceResource): string => `${r.type}:${normalizeAssetName(r.name)}`;
+const refId = (r: ReferenceResource): string =>
+  `${r.type}:${normalizeAssetName(r.name)}:${r.variant_id ?? r.variant_slug ?? ""}`;
 
-type BucketEntry = Partial<Record<"character_sheet" | "scene_sheet" | "prop_sheet", string>>;
+type BucketEntry = Partial<Record<"character_sheet" | "scene_sheet" | "prop_sheet", string>> & {
+  variants?: Record<string, Record<string, unknown>>;
+};
 // bucket key 与 name 可能是 NFC/NFD 中的任一方（bucket 来自落盘的 project.json 原始 key，
 // name 可能来自已归一的 references 或选择器候选），两侧归一后再比对，见
 // `utils/reference-mentions.ts` 顶部注释的坐标系约定。存量桶里视觉同名的多形式 key
@@ -39,17 +42,30 @@ const sheetOf = (
   bucket: Record<string, unknown> | undefined,
   kind: AssetKind,
   name: string,
+  variantId?: string,
+  variantSlug?: string,
 ): string | null => {
   if (!bucket) return null;
   const target = normalizeAssetName(name);
   let sheet: string | null = null;
   for (const key of Object.keys(bucket)) {
-    if (normalizeAssetName(key) === target) {
-      sheet = (bucket[key] as BucketEntry | undefined)?.[SHEET_FIELD[kind]] ?? null;
+    if (normalizeAssetName(key) !== target) continue;
+    const entry = bucket[key] as BucketEntry | undefined;
+    if (kind === "character" && (variantId || variantSlug) && entry?.variants) {
+      for (const [slug, raw] of Object.entries(entry.variants)) {
+        const rawSlug = typeof raw.slug === "string" ? raw.slug : slug;
+        if ((variantId && raw.id === variantId) || (variantSlug && normalizeAssetName(rawSlug) === normalizeAssetName(variantSlug))) {
+          if (typeof raw.image_path === "string" && raw.image_path) return raw.image_path;
+        }
+      }
     }
+    sheet = entry?.[SHEET_FIELD[kind]] ?? null;
   }
   return sheet;
 };
+
+const mentionLabel = (ref: ReferenceResource): string =>
+  ref.variant_slug ? `${ref.name} / ${ref.variant_slug}` : ref.name;
 
 export interface ReferencePanelProps {
   references: ReferenceResource[];
@@ -81,6 +97,7 @@ const SortableChip = memo(function SortableChip({
       ref={setNodeRef}
       kind={refItem.type}
       name={refItem.name}
+      displayName={mentionLabel(refItem)}
       imageUrl={imageUrl}
       index={index}
       removable
@@ -134,9 +151,31 @@ export function ReferencePanel({
     };
     const out = {} as Record<AssetKind, MentionCandidate[]>;
     for (const kind of ["character", "scene", "prop"] as const) {
-      out[kind] = Object.keys(buckets[kind] ?? {})
-        .filter((name) => !existingKeys.has(`${kind}:${normalizeAssetName(name)}`))
-        .map((name) => ({ name, imagePath: sheetOf(buckets[kind], kind, name) }));
+      out[kind] = Object.entries(buckets[kind] ?? {}).flatMap(([name, raw]) => {
+        const entry = raw as BucketEntry;
+        const baseKey = `${kind}:${normalizeAssetName(name)}:`;
+        const items: MentionCandidate[] = [];
+        if (!existingKeys.has(baseKey)) items.push({ name, imagePath: sheetOf(buckets[kind], kind, name) });
+        if (kind !== "character" || !entry.variants) return items;
+        for (const [slug, variant] of Object.entries(entry.variants)) {
+          const variantSlug = typeof variant.slug === "string" ? variant.slug : slug;
+          const variantId = typeof variant.id === "string" ? variant.id : undefined;
+          const key = `${kind}:${normalizeAssetName(name)}:${variantId ?? variantSlug}`;
+          if (existingKeys.has(key)) continue;
+          const displayName = typeof variant.display_name === "string" && variant.display_name
+            ? variant.display_name
+            : variantSlug;
+          items.push({
+            name,
+            mentionName: `${name}/${variantSlug}`,
+            displayName: `${name} / ${displayName}`,
+            variantId,
+            variantSlug,
+            imagePath: sheetOf(buckets[kind], kind, name, typeof variant.id === "string" ? variant.id : undefined, variantSlug),
+          });
+        }
+        return items;
+      });
     }
     return out;
   }, [existingKeys, characters, scenes, props]);
@@ -149,7 +188,7 @@ export function ReferencePanel({
       prop: props,
     };
     return references.map((r) => {
-      const imagePath = sheetOf(buckets[r.type], r.type, r.name);
+      const imagePath = sheetOf(buckets[r.type], r.type, r.name, r.variant_id, r.variant_slug);
       const fingerprint = imagePath ? (assetFingerprints[imagePath] ?? null) : null;
       const imageUrl = imagePath ? API.getFileUrl(projectName, imagePath, fingerprint) : null;
       return { ref: r, imageUrl };

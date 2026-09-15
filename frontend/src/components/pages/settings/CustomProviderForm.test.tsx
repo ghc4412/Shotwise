@@ -95,4 +95,37 @@ describe("CustomProviderForm discovery state", () => {
     expect(screen.queryByText("deepseek-live")).not.toBeInTheDocument();
     expect(screen.getByDisplayValue("deepseek-configured")).toBeInTheDocument();
   });
+
+  it("ignores an in-flight discovery response after provider settings change", async () => {
+    let resolveDiscovery: ((value: { models: Array<{ model_id: string; display_name: string; endpoint: string; is_default: boolean; is_enabled: boolean }> }) => void) | undefined;
+    const pending = new Promise<{ models: Array<{ model_id: string; display_name: string; endpoint: string; is_default: boolean; is_enabled: boolean }> }>((resolve) => {
+      resolveDiscovery = resolve;
+    });
+    const discoverSpy = vi.spyOn(API, "discoverModelsForProvider").mockReturnValue(pending);
+
+    render(<CustomProviderForm existing={provider} onSaved={vi.fn()} onCancel={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "获取模型列表" }));
+    await waitFor(() => expect(discoverSpy).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByDisplayValue(provider.base_url), {
+      target: { value: "https://api.other.example" },
+    });
+    expect(discoverSpy.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+
+    resolveDiscovery?.({
+      models: [
+        {
+          model_id: "stale-provider-model",
+          display_name: "Stale provider model",
+          endpoint: "openai-chat",
+          is_default: false,
+          is_enabled: true,
+        },
+      ],
+    });
+
+    await waitFor(() => expect(screen.queryByText("stale-provider-model")).not.toBeInTheDocument());
+  });
+
 });

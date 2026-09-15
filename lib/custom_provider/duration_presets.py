@@ -1,7 +1,7 @@
 """自定义供应商 model_id → supported_durations 启发式预设表。
 
 数据来源：lmarena 视频模型排行榜 Top 20（2026-05 快照）+ 常见聚合命名。
-匹配按 PRESETS 顺序，命中即返回；未匹配 → DEFAULT_FALLBACK。
+匹配按 PRESETS 顺序，命中即返回；未匹配返回 ``None``。
 
 歧义说明：同名 model_id（如 sora-2-pro）在 OpenAI 第一方与第三方聚合站点的实际允许
 秒数可能不同。预设只是启发，给用户起点；用户必须在创建/编辑模型时 review 输入框值。
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 
+# 仅保留供历史 migration/兼容读取使用；运行时未知型号不得使用该值伪造能力。
 DEFAULT_FALLBACK: list[int] = [4, 8]
 
 # 按特异性从高到低排列；命中一条即返回。range 全展开为离散集。
@@ -54,12 +55,15 @@ PRESETS: list[tuple[re.Pattern[str], list[int]]] = [
 ]
 
 
-def infer_supported_durations(model_id: str) -> list[int]:
+def infer_supported_durations(model_id: str) -> list[int] | None:
     """根据 model_id 启发式推导 supported_durations。
 
-    返回值始终是非空升序去重的正整数列表，且为独立 list（caller 可安全修改）。
+    已知命名模式返回独立 list（caller 可安全修改）；未知模式返回 ``None``。
+
+    预设只能为已知命名模式提供编辑建议。未知型号必须由供应商或用户明确声明真实
+    支持的时长，不能使用通用默认值冒充能力。
     """
     for pattern, durations in PRESETS:
         if pattern.search(model_id):
             return list(durations)
-    return list(DEFAULT_FALLBACK)
+    return None

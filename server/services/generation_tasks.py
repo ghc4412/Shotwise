@@ -58,6 +58,7 @@ from lib.storyboard_sequence import (
     resolve_previous_storyboard_path,
     resolve_storyboard_image_ref,
 )
+from lib.task_failure import bound_reason, sanitize_failure_reason
 from lib.thumbnail import extract_video_thumbnail
 from lib.video_backends.base import VideoCapabilityError
 from server.services.generation_context import (
@@ -164,14 +165,16 @@ def _normalize_video_prompt(prompt: str | dict) -> str:
 
 
 def _get_model_default_duration(provider_name: str, model_name: str | None) -> int:
-    """从 PROVIDER_REGISTRY 查找模型的 supported_durations[0]，找不到则 fallback 4。"""
+    """从 registry 查找模型的首个声明时长；找不到时拒绝猜测。"""
     provider_meta = PROVIDER_REGISTRY.get(provider_name)
     if provider_meta and model_name:
         model_info = provider_meta.models.get(model_name)
         if model_info and model_info.supported_durations:
             return model_info.supported_durations[0]
-    # 自定义供应商或 registry 中无此模型时 fallback
-    return 4
+    raise VideoCapabilityError(
+        "video_capabilities_unresolved",
+        name=f"{provider_name}/{model_name or 'unknown'}",
+    )
 
 
 def assert_duration_supported(duration: int | float | str, supported_durations: list[int]) -> None:
@@ -179,7 +182,7 @@ def assert_duration_supported(duration: int | float | str, supported_durations: 
 
     这是 `duration ↔ supported_durations` 唯一的权威校验家——provider 在执行时才解析
     （见 ADR-0001），故能力校验只能坐在 provider 解析之后。``supported_durations`` 为空时
-    放行（能力不可解析，不更坏：不拒绝一个校验层判断不了的 duration）。
+    直接报告能力未解析，禁止把未知能力交给 backend 猜测。
 
     duration 可能来自外部配置（payload / project.json），故安全解析字符串 / 浮点：
     可解析为整数秒（如 ``"6"`` / ``6.0``）的归一化后比较；非整数秒（如 ``4.5``）一律
@@ -189,7 +192,7 @@ def assert_duration_supported(duration: int | float | str, supported_durations: 
     Worker 按 code + params 落 task.error_message，文案由读侧 Translator 渲染。
     """
     if not supported_durations:
-        return
+        raise VideoCapabilityError("video_capabilities_unresolved", name="selected video model")
     try:
         numeric = float(duration)
     except (TypeError, ValueError):
@@ -988,8 +991,8 @@ async def execute_video_task(
     # （registry provider_id + backend.model）查询，与实际要调用的 model 对齐——历史任务 payload
     # 携带 provider 覆盖、或自定义供应商目标 model 被禁用回退时，二者一致避免 duration 守卫误判
     # （用「项目默认 model 的能力」误判「实际调用的 model」）。能力不可解析时 supported_durations
-    # 留空，守卫遇空列表放行（不更坏，见 ADR-0002）。解析/构造失败已在 resolve_generation_context
-    # 内原样上抛整次任务失败，不再有硬编码 provider/model 静默兜底。
+    # 不允许留空；解析/构造失败已在 resolve_generation_context 内转换为结构化能力错误，
+    # 不再有硬编码 provider/model 静默兜底。
     registry_provider_id = ctx.video.provider_model.provider_id
     model_name = ctx.video.backend_model
     supported_durations: list[int] = list(ctx.video.supported_durations)
@@ -1006,9 +1009,12 @@ async def execute_video_task(
         # 就等于默认配置必然失败。显式指定的时长不经此收窄，其合法性由 assert_duration_supported
         # 与 backend 的执行期校验把关。
         candidates = constrain_durations(registry_provider_id, model_name, supported_durations, resolution=resolution)
-        duration_seconds = (
-            candidates[0] if candidates else _get_model_default_duration(registry_provider_id, model_name)
-        )
+        if not candidates:
+            raise VideoCapabilityError(
+                "video_capabilities_unresolved",
+                name=f"{registry_provider_id}/{model_name}",
+            )
+        duration_seconds = candidates[0]
     # 能力守卫：provider 解析之后的唯一权威家（见 ADR-0001）。安全解析交给守卫，
     # 此处不预先 int() 截断，避免把非整数秒静默修正成「碰巧合法」的值。
     assert_duration_supported(duration_seconds, supported_durations)
@@ -1603,7 +1609,7 @@ async def execute_grid_task(
         grid.status = "failed"
         import traceback
 
-        grid.error_message = traceback.format_exc()
+        grid.error_message = bound_reason(sanitize_failure_reason(traceback.format_exc()), 2000)
         grid_manager.save(grid)
         raise
 

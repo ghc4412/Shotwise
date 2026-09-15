@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from lib.db.base import DEFAULT_USER_ID
+
 SessionStatus = Literal["idle", "running", "completed", "error", "interrupted", "closed"]
 
 
@@ -46,6 +48,7 @@ class SessionMeta(BaseModel):
     """Session metadata stored in database."""
 
     id: str  # 对外暴露，填充 sdk_session_id 值
+    user_id: str = DEFAULT_USER_ID
     project_name: str
     title: str = ""
     status: SessionStatus = "idle"

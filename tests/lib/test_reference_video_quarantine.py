@@ -23,6 +23,8 @@ from lib.reference_video.draft_validation import (
 from lib.reference_video.quarantine import (
     QUARANTINE_KIND_STEP1,
     QUARANTINE_KIND_STEP2,
+    QUARANTINE_SCHEMA_VERSION,
+    UnsupportedQuarantineSchemaError,
     clear_quarantine,
     quarantine_exists,
     quarantine_path,
@@ -65,6 +67,78 @@ class TestEnvelope:
             }
         ]
         assert draft.meta == {"source": "source/episode_3.txt"}
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        assert raw["schema_version"] == QUARANTINE_SCHEMA_VERSION
+        assert draft.extra == {}
+
+    def test_legacy_envelope_without_schema_version_reads_as_v1(self, tmp_path: Path):
+        path = quarantine_path(tmp_path, 1, QUARANTINE_KIND_STEP1)
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "kind": QUARANTINE_KIND_STEP1,
+                    "episode": 1,
+                    "meta": {},
+                    "violations": [],
+                    "content": {"units": [{"text": "旧草稿"}]},
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        draft = read_quarantine(tmp_path, 1, QUARANTINE_KIND_STEP1)
+
+        assert draft is not None
+        assert draft.content == {"units": [{"text": "旧草稿"}]}
+
+    def test_future_envelope_version_is_rejected_explicitly(self, tmp_path: Path):
+        path = quarantine_path(tmp_path, 1, QUARANTINE_KIND_STEP1)
+        path.parent.mkdir(parents=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "schema_version": QUARANTINE_SCHEMA_VERSION + 1,
+                    "kind": QUARANTINE_KIND_STEP1,
+                    "episode": 1,
+                    "content": {"units": []},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with pytest.raises(UnsupportedQuarantineSchemaError, match="schema_version=3"):
+            read_quarantine(tmp_path, 1, QUARANTINE_KIND_STEP1)
+
+    def test_unknown_envelope_fields_survive_rewrite(self, tmp_path: Path):
+        write_quarantine(
+            tmp_path,
+            1,
+            QUARANTINE_KIND_STEP1,
+            content={"units": [{"text": "第一版"}]},
+            violations=[],
+            extra={"new_derived_data": {"score": 0.8}},
+        )
+
+        draft = read_quarantine(tmp_path, 1, QUARANTINE_KIND_STEP1)
+        assert draft is not None
+        assert draft.extra == {"new_derived_data": {"score": 0.8}}
+
+        write_quarantine(
+            tmp_path,
+            1,
+            QUARANTINE_KIND_STEP1,
+            content={"units": [{"text": "第二版"}]},
+            violations=[],
+            meta=draft.meta,
+            extra=draft.extra,
+        )
+
+        raw = json.loads(quarantine_path(tmp_path, 1, QUARANTINE_KIND_STEP1).read_text(encoding="utf-8"))
+        assert raw["schema_version"] == QUARANTINE_SCHEMA_VERSION
+        assert raw["new_derived_data"] == {"score": 0.8}
+        assert raw["content"] == {"units": [{"text": "第二版"}]}
 
     def test_write_creates_missing_drafts_dir(self, tmp_path: Path):
         """该集从未产出过 step1 时目录还不存在——首次拆分就违约是常态，不能因此写不下去。"""

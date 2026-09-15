@@ -4,8 +4,8 @@ import { useLocation, useSearch } from "wouter";
 import {
   AlertTriangle,
   BarChart3,
+  Brain,
   Bot,
-  ClipboardCheck,
   ChevronLeft,
   Film,
   Info,
@@ -13,7 +13,6 @@ import {
   Languages,
   Palette,
   Plug,
-  UploadCloud,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useConfigStatusStore } from "@/stores/config-status-store";
@@ -24,10 +23,9 @@ import { ApiKeysTab } from "./ApiKeysTab";
 import { AboutSection } from "./settings/AboutSection";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { MediaModelSection } from "./settings/MediaModelSection";
+import { MemorySection } from "./settings/MemorySection";
 import { ProviderSection } from "./ProviderSection";
 import { UsageStatsSection } from "./settings/UsageStatsSection";
-import { WorkflowTemplateReviewSection } from "./settings/WorkflowTemplateReviewSection";
-import { WorkflowTemplateCreatorSection } from "./settings/WorkflowTemplateCreatorSection";
 import {
   SUPPORTED_LANGUAGES,
   LANGUAGE_DISPLAY_LABELS,
@@ -42,7 +40,7 @@ import { consumeSettingsReturnTo } from "@/utils/settings-return-to";
 // Types
 // ---------------------------------------------------------------------------
 
-type SettingsSection = "agent" | "providers" | "media" | "usage" | "api-keys" | "appearance" | "about" | "workflow-reviews" | "workflow-creator";
+type SettingsSection = "agent" | "providers" | "media" | "usage" | "api-keys" | "memory" | "appearance" | "about";
 
 /** 引导第 5/6 步指向的侧栏入口——只有这两项挂锚点，其余小节不在当前引导覆盖范围内。 */
 const SECTION_ONBOARDING_ANCHORS: Partial<Record<SettingsSection, string>> = {
@@ -80,6 +78,7 @@ const SECTION_GROUPS: SectionGroup[] = [
     items: [
       { id: "usage", labelKey: "dashboard:usage", Icon: BarChart3 },
       { id: "api-keys", labelKey: "dashboard:api_keys", Icon: KeyRound },
+      { id: "memory", labelKey: "dashboard:memory_title", Icon: Brain },
     ],
   },
   {
@@ -87,8 +86,6 @@ const SECTION_GROUPS: SectionGroup[] = [
     items: [
       { id: "appearance", labelKey: "dashboard:appearance", Icon: Palette },
       { id: "about", labelKey: "dashboard:about", Icon: Info },
-      { id: "workflow-reviews", labelKey: "dashboard:workflow_admin_reviews", Icon: ClipboardCheck },
-      { id: "workflow-creator", labelKey: "dashboard:workflow_creator_templates", Icon: UploadCloud },
     ],
   },
 ];
@@ -108,10 +105,9 @@ export function SystemConfigPage() {
     if (section === "media") return "media";
     if (section === "usage") return "usage";
     if (section === "api-keys") return "api-keys";
+    if (section === "memory") return "memory";
     if (section === "appearance") return "appearance";
     if (section === "about") return "about";
-    if (section === "workflow-reviews") return "workflow-reviews";
-    if (section === "workflow-creator") return "workflow-creator";
     return "providers";
   }, [search]);
 
@@ -333,6 +329,7 @@ export function SystemConfigPage() {
               {activeSection === "agent" && <AgentConfigTab visible />}
               {activeSection === "media" && <MediaModelSection />}
               {activeSection === "usage" && <UsageStatsSection />}
+              {activeSection === "memory" && <MemorySection />}
               {activeSection === "api-keys" && (
                 <div className="p-6">
                   <ApiKeysTab />
@@ -340,8 +337,6 @@ export function SystemConfigPage() {
               )}
               {activeSection === "appearance" && <AppearanceSection />}
               {activeSection === "about" && <AboutSection />}
-              {activeSection === "workflow-reviews" && <WorkflowTemplateReviewSection />}
-              {activeSection === "workflow-creator" && <WorkflowTemplateCreatorSection />}
             </div>
           )}
         </main>

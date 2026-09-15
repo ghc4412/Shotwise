@@ -73,7 +73,9 @@ def upgrade() -> None:
     )
     op.create_index("ix_workflow_marketplace_reviews_template_id", "workflow_marketplace_reviews", ["template_id"])
     op.create_index(
-        "ix_workflow_marketplace_reviews_template_created", "workflow_marketplace_reviews", ["template_id", "created_at"]
+        "ix_workflow_marketplace_reviews_template_created",
+        "workflow_marketplace_reviews",
+        ["template_id", "created_at"],
     )
     op.create_table(
         "workflow_usage_stats",

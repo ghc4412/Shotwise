@@ -27,8 +27,17 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from lib.generation_preflight import (
+    collect_ad_shot_references,
+    collect_reference_entries,
+    format_preflight_error,
+    merge_preflight_results,
+    validate_asset_references,
+    validate_item_asset_references,
+)
 from lib.generation_queue_client import TaskSpec, batch_enqueue_and_wait
 from lib.project_manager import get_project_manager
+from lib.reference_video.ad_units import resolve_ad_unit_shots
 from lib.script_generator import ScriptGenerator
 from lib.storyboard_sequence import get_storyboard_items
 from lib.workflow import quality_gate_report
@@ -138,6 +147,11 @@ def _item_prompt(item: dict[str, Any]) -> str:
     return ""
 
 
+def _raise_asset_preflight(error: str | None) -> None:
+    if error:
+        raise NodeFailedError(error)
+
+
 # ---------------------------------------------------------------------------
 # generation nodes (real execution)
 # ---------------------------------------------------------------------------
@@ -170,6 +184,26 @@ async def _shot_image_generate(ctx: NodeContext) -> NodeExecutionResult:
     ]
     if not targets:
         raise NodeFailedError("没有需要渲染的分镜条目")
+    project = _project_json(ctx)
+    _, _, char_field, scene_field, prop_field = get_storyboard_items(script)
+    _raise_asset_preflight(
+        format_preflight_error(
+            merge_preflight_results(
+                *(
+                    validate_item_asset_references(
+                        project,
+                        ctx.project_path,
+                        item,
+                        char_field=char_field,
+                        scene_field=scene_field,
+                        prop_field=prop_field,
+                        include_products=project.get("content_mode") == "ad",
+                    )
+                    for item in targets
+                )
+            )
+        )
+    )
     script_filename = Path(script_path).name
     specs: list[TaskSpec] = []
     for item in targets:
@@ -212,6 +246,44 @@ async def _shot_video_generate(ctx: NodeContext) -> NodeExecutionResult:
     images = _upstream_refs(ctx, "image")
     if not images:
         raise NodeFailedError("没有可用的分镜图输入，请连接分镜图渲染节点")
+
+    # Workflow inputs may also be external images. When an upstream image maps to
+    # a storyboard item, repeat the same asset check immediately before enqueue;
+    # external image inputs have no project asset references to validate here.
+    try:
+        script_path = _script_path(ctx)
+    except NodeFailedError:
+        script_path = None
+    if script_path is not None:
+        script = _load_json(script_path)
+        items, id_field, char_field, scene_field, prop_field = get_storyboard_items(script)
+        by_id = {
+            str(item.get(id_field) or item.get("scene_id")): item
+            for item in items
+            if item.get(id_field) or item.get("scene_id")
+        }
+        project = _project_json(ctx)
+        mapped_items = [by_id[ref.label] for ref in images if ref.label and ref.label in by_id]
+        if mapped_items:
+            _raise_asset_preflight(
+                format_preflight_error(
+                    merge_preflight_results(
+                        *(
+                            validate_item_asset_references(
+                                project,
+                                ctx.project_path,
+                                item,
+                                char_field=char_field,
+                                scene_field=scene_field,
+                                prop_field=prop_field,
+                                include_products=project.get("content_mode") == "ad",
+                            )
+                            for item in mapped_items
+                        )
+                    )
+                )
+            )
+
     video_prompt = str(ctx.config.get("video_prompt") or "生成自然的镜头运动，保持角色与场景一致")
     specs = [
         TaskSpec.from_request(
@@ -273,6 +345,17 @@ async def _reference_video_generate(ctx: NodeContext) -> NodeExecutionResult:
     ]
     if not targets:
         raise NodeFailedError("没有需要生成的参考视频单元")
+    project = _project_json(ctx)
+    is_ad = project.get("content_mode") == "ad" or script.get("content_mode") == "ad"
+    preflight_results = []
+    for item in targets:
+        references = (
+            collect_ad_shot_references(resolve_ad_unit_shots(script, item))
+            if is_ad
+            else collect_reference_entries(item.get("references"))
+        )
+        preflight_results.append(validate_asset_references(project, ctx.project_path, references))
+    _raise_asset_preflight(format_preflight_error(merge_preflight_results(*preflight_results)))
     script_filename = Path(script_path).name
     specs = [
         TaskSpec.from_request(

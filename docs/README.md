@@ -31,7 +31,9 @@
 2. [安全威胁模型](security/threat-model.md)
 3. [贡献指南](../CONTRIBUTING.md)
 4. [项目 ADR](adr/)
-5. [更新记录](../CHANGELOG.md)
+5. [跨平台与数据边界审计 Runbook](runbooks/cross-platform-and-data-boundary-audit.md)
+6. [术语表](glossary.md)
+7. [更新记录](../CHANGELOG.md)
 
 ## 文档职责
 

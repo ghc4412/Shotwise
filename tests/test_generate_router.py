@@ -50,7 +50,7 @@ class _FakePM:
             },
             "products": {
                 "保温杯": {
-                    "product_sheet": "",
+                    "product_sheet": "products/保温杯.png",
                     "brand": "",
                     "reference_images": ["products/refs/保温杯_1.jpg"],
                     "selling_points": [],
@@ -107,11 +107,13 @@ def _prepare_files(tmp_path: Path) -> Path:
     (project_path / "characters").mkdir(parents=True, exist_ok=True)
     (project_path / "scenes").mkdir(parents=True, exist_ok=True)
     (project_path / "props").mkdir(parents=True, exist_ok=True)
+    (project_path / "products").mkdir(parents=True, exist_ok=True)
 
     (project_path / "storyboards" / "scene_E1S01.png").write_bytes(b"png")
     (project_path / "characters" / "Alice.png").write_bytes(b"png")
     (project_path / "scenes" / "祠堂.png").write_bytes(b"png")
     (project_path / "props" / "玉佩.png").write_bytes(b"png")
+    (project_path / "products" / "保温杯.png").write_bytes(b"png")
     return project_path
 
 
@@ -469,12 +471,45 @@ class TestGenerateRouter:
             assert character.status_code == 200
             body = character.json()
             assert body["success"] is True
-            assert body["task_id"] == "task-1"
+            assert body["task_id"] is None
+            assert body["reused"] is True
+            assert fake_queue.calls == []
 
-            call = fake_queue.calls[0]
-            assert call["task_type"] == "character"
-            assert call["media_type"] == "image"
-            assert call["resource_id"] == "Alice"
+    @pytest.mark.unit
+    def test_character_regenerate_bypasses_existing_asset(self, tmp_path, monkeypatch):
+        project_path = _prepare_files(tmp_path)
+        fake_pm = _FakePM(project_path)
+        fake_queue = _FakeQueue()
+        client = _client(monkeypatch, fake_pm, fake_queue)
+
+        with client:
+            response = client.post(
+                "/api/v1/projects/demo/generate/character/Alice",
+                json={"prompt": "换装版本", "regenerate": True},
+            )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["reused"] is False
+        assert response.json()["task_id"] == "task-1"
+        assert fake_queue.calls[0]["resource_id"] == "Alice"
+
+    @pytest.mark.unit
+    def test_asset_generation_enqueues_when_registered_sheet_is_missing(self, tmp_path, monkeypatch):
+        project_path = _prepare_files(tmp_path)
+        (project_path / "characters" / "Alice.png").unlink()
+        fake_queue = _FakeQueue()
+        client = _client(monkeypatch, _FakePM(project_path), fake_queue)
+
+        with client:
+            response = client.post(
+                "/api/v1/projects/demo/generate/character/Alice",
+                json={"prompt": "补生成"},
+            )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["reused"] is False
+        assert response.json()["task_id"] == "task-1"
+        assert len(fake_queue.calls) == 1
 
     @pytest.mark.unit
     def test_character_enqueue_resolves_nfd_registered_key(self, tmp_path, monkeypatch):
@@ -514,12 +549,9 @@ class TestGenerateRouter:
             assert scene.status_code == 200
             body = scene.json()
             assert body["success"] is True
-            assert body["task_id"] == "task-1"
-
-            call = fake_queue.calls[0]
-            assert call["task_type"] == "scene"
-            assert call["media_type"] == "image"
-            assert call["resource_id"] == "祠堂"
+            assert body["task_id"] is None
+            assert body["reused"] is True
+            assert fake_queue.calls == []
 
     @pytest.mark.unit
     def test_prop_enqueue_success(self, tmp_path, monkeypatch):
@@ -536,12 +568,9 @@ class TestGenerateRouter:
             assert prop.status_code == 200
             body = prop.json()
             assert body["success"] is True
-            assert body["task_id"] == "task-1"
-
-            call = fake_queue.calls[0]
-            assert call["task_type"] == "prop"
-            assert call["media_type"] == "image"
-            assert call["resource_id"] == "玉佩"
+            assert body["task_id"] is None
+            assert body["reused"] is True
+            assert fake_queue.calls == []
 
     @pytest.mark.unit
     def test_product_enqueue_success(self, tmp_path, monkeypatch):
@@ -558,11 +587,9 @@ class TestGenerateRouter:
             assert product.status_code == 200
             body = product.json()
             assert body["success"] is True
-
-            call = fake_queue.calls[0]
-            assert call["task_type"] == "product"
-            assert call["media_type"] == "image"
-            assert call["resource_id"] == "保温杯"
+            assert body["task_id"] is None
+            assert body["reused"] is True
+            assert fake_queue.calls == []
 
     @pytest.mark.unit
     def test_product_enqueue_unknown_product_404(self, tmp_path, monkeypatch):
@@ -1055,7 +1082,8 @@ class TestDedupedPassthrough:
         with client:
             resp = client.post(
                 "/api/v1/projects/demo/generate/character/Alice",
-                json={"prompt": "hero"},
+                json={"prompt": "hero", "regenerate": True},
             )
             assert resp.status_code == 200, resp.text
             assert resp.json()["deduped"] is True
+            assert resp.json()["reused"] is False

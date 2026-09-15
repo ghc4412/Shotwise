@@ -338,11 +338,10 @@ def _shot_prompt_text(shot: dict) -> str:
             # 原始字节形式，两处的 `<X>` 会字节不同，供应商侧无法把参考音色与这句台词对上。
             speaker = normalize_asset_name(speaker) if speaker else speaker
             line = _text(entry.get("line"))
-            if line:
-                # 台词句式与 narration/drama 参考路径的第二段统一（<X>说 {台词}），无 speaker
-                # 的裸台词行归入画外音句式，见
-                # lib.reference_video.prompt_render.render_ad_backend_prompt。
-                parts.append(f"<{speaker}>说 {{{line}}}" if speaker else f"画外音说 {{{line}}}")
+            if line and speaker:
+                # 口型台词进入视频 prompt；无 speaker 的旁白留给字幕 / TTS 后处理，
+                # 不发送给视频供应商音轨。
+                parts.append(f"<{speaker}>说 {{{line}}}")
     return "；".join(parts)
 
 

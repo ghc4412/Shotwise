@@ -26,6 +26,7 @@ from lib.episode_duration_plan import (
     is_item_video_generated,
     read_episode_duration_plan,
 )
+from lib.generation_preflight import AssetPreflightResult, validate_item_asset_references
 from lib.generation_queue import get_generation_queue
 from lib.generation_queue_client import TaskSpec
 from lib.i18n import Translator
@@ -51,6 +52,18 @@ from server.services.image_edit_tasks import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _raise_asset_preflight(result: AssetPreflightResult) -> None:
+    if not result.has_errors:
+        return
+    raise BadRequestError(
+        "generation_asset_preflight_failed",
+        unregistered=", ".join(result.unregistered) or "—",
+        missing_images=", ".join(result.missing_images) or "—",
+        missing_variants=", ".join(result.missing_variants) or "—",
+    )
+
 
 # ==================== 请求模型 ====================
 
@@ -82,18 +95,22 @@ class ConfirmVoiceSampleRequest(BaseModel):
 
 class GenerateCharacterRequest(BaseModel):
     prompt: str
+    regenerate: bool = False
 
 
 class GenerateSceneRequest(BaseModel):
     prompt: str
+    regenerate: bool = False
 
 
 class GeneratePropRequest(BaseModel):
     prompt: str
+    regenerate: bool = False
 
 
 class GenerateProductRequest(BaseModel):
     prompt: str
+    regenerate: bool = False
 
 
 class EditImageRequest(BaseModel):
@@ -231,12 +248,25 @@ async def generate_storyboard(
     """
 
     def _sync():
-        get_project_manager().load_project(project_name)
-        script = get_project_manager().load_script(project_name, req.script_file)
-        items, id_field, _, _, _ = get_storyboard_items(script)
+        pm_local = get_project_manager()
+        project = pm_local.load_project(project_name)
+        project_path = pm_local.get_project_path(project_name)
+        script = pm_local.load_script(project_name, req.script_file)
+        items, id_field, char_field, scene_field, prop_field = get_storyboard_items(script)
         resolved = find_storyboard_item(items, id_field, segment_id)
         if resolved is None:
             raise NotFoundError("segment_not_found", id=segment_id)
+        _raise_asset_preflight(
+            validate_item_asset_references(
+                project,
+                project_path,
+                resolved[0],
+                char_field=char_field,
+                scene_field=scene_field,
+                prop_field=prop_field,
+                include_products=project.get("content_mode") == "ad",
+            )
+        )
 
     await asyncio.to_thread(_sync)
 
@@ -389,6 +419,18 @@ async def generate_video(
         resolved = find_storyboard_item(items, id_field, segment_id)
         if resolved is None:
             raise NotFoundError("segment_not_found", id=segment_id)
+        _, _, _char_field, _scene_field, _prop_field = get_storyboard_items(script)
+        _raise_asset_preflight(
+            validate_item_asset_references(
+                project,
+                project_path,
+                resolved[0],
+                char_field=_char_field,
+                scene_field=_scene_field,
+                prop_field=_prop_field,
+                include_products=project.get("content_mode") == "ad",
+            )
+        )
         storyboard_rel = get_generated_assets(resolved[0]).get("storyboard_image")
 
         # 字段值来自磁盘剧本 JSON，不可信任：非字符串脏数据会让下面的路径拼接抛未处理
@@ -843,21 +885,38 @@ async def _enqueue_asset_generation(
     prompt: str,
     user_id: str,
     _t: Translator,
+    regenerate: bool = False,
 ) -> dict:
     """项目级资产（character / scene / prop / product）设计图生成共用入队逻辑。"""
     spec = ASSET_SPECS[asset_type]
     keys = _ASSET_GENERATE_I18N[asset_type]
 
-    def _sync() -> str:
-        project = get_project_manager().load_project(project_name)
+    def _sync() -> tuple[str, bool]:
+        pm = get_project_manager()
+        project = pm.load_project(project_name)
         # 存量 key 可能是 NFD，按坐标系解析存在性并取真实落盘 key；
         # 非 dict / 显式 null 的畸形桶由 resolve_asset_key 按空桶处理
         resolved = resolve_asset_key(project.get(spec.bucket_key), resource_name)
         if resolved is None:
             raise NotFoundError(keys["not_found"], name=resource_name)
-        return resolved
 
-    resource_key = await asyncio.to_thread(_sync)
+        # 只把项目内、真实存在的普通文件视为可复用资产。失败任务的临时文件、
+        # 被删除但仍残留在 project.json 的路径以及越界路径均不会命中。
+        project_path = pm.get_project_path(project_name)
+        entry = project.get(spec.bucket_key, {}).get(resolved)
+        sheet = entry.get(spec.sheet_field) if isinstance(entry, dict) else None
+        has_existing_sheet = isinstance(sheet, str) and safe_exists(project_path, sheet)
+        return resolved, has_existing_sheet
+
+    resource_key, has_existing_sheet = await asyncio.to_thread(_sync)
+    if has_existing_sheet and not regenerate:
+        return {
+            "success": True,
+            "task_id": None,
+            "deduped": False,
+            "reused": True,
+            "message": _t("asset_generation_reused", name=resource_name),
+        }
 
     task_spec = TaskSpec.from_request(
         task_type=asset_type,
@@ -881,6 +940,7 @@ async def _enqueue_asset_generation(
         "success": True,
         "task_id": result["task_id"],
         "deduped": result.get("deduped", False),
+        "reused": False,
         "message": _t(keys["submitted"], name=resource_name),
     }
 
@@ -901,6 +961,7 @@ async def generate_character(
         prompt=req.prompt,
         user_id=user.id,
         _t=_t,
+        regenerate=req.regenerate,
     )
 
 
@@ -920,6 +981,7 @@ async def generate_scene(
         prompt=req.prompt,
         user_id=user.id,
         _t=_t,
+        regenerate=req.regenerate,
     )
 
 
@@ -939,6 +1001,7 @@ async def generate_prop(
         prompt=req.prompt,
         user_id=user.id,
         _t=_t,
+        regenerate=req.regenerate,
     )
 
 
@@ -958,6 +1021,7 @@ async def generate_product(
         prompt=req.prompt,
         user_id=user.id,
         _t=_t,
+        regenerate=req.regenerate,
     )
 
 

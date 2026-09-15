@@ -1,5 +1,5 @@
 """resolve_generation_context 公开接口测试：lane 声明与跳过 / fail-loud property /
-按实际身份查 resolution 与能力 / 能力查询降级空值 / 原子失败 / backend 缓存与失效。
+按实际身份查 resolution 与能力 / 能力查询失败结构化报错 / 原子失败 / backend 缓存与失效。
 
 按 ADR 0049 的测试口径：真实内存 DB + tmp_path 真 ProjectManager + fake backend
 （仅替换 assemble_backend 构造缝），不 mock ConfigResolver / ProjectManager，不断言私有属性。
@@ -25,7 +25,7 @@ from lib.db.base import Base
 from lib.db.models.custom_provider import CustomProvider, CustomProviderModel
 from lib.media_generator import MediaGenerator
 from lib.project_manager import ProjectManager
-from lib.video_backends.base import VideoCapabilities
+from lib.video_backends.base import VideoCapabilities, VideoCapabilityError
 from lib.video_backends.registry import video_capabilities_for_model
 from server.services import generation_context
 from server.services.generation_context import (
@@ -234,21 +234,19 @@ class TestVideoLane:
         assert ctx.video.resolution_or_fallback == "480p"
 
     @pytest.mark.unit
-    async def test_capability_query_failure_degrades_to_empty(self, session_factory, project_env, monkeypatch):
-        """fake backend 报告 registry 之外的 model：能力查询失败降级空值，整次调用照常成功。"""
+    async def test_capability_query_failure_raises_structured_error(self, session_factory, project_env, monkeypatch):
+        """fake backend 报告 registry 之外的 model：能力查询失败直接报错，不静默降级。"""
 
         async def _assemble(*, provider_id, media_type, model_id, resolver, rate_limiter=None):
             return _FakeBackend(name=provider_id, model="mystery-model")
 
         monkeypatch.setattr(generation_context, "assemble_backend", _assemble)
         video_model = _registry_video_model("ark")
-        ctx = await resolve_generation_context(
-            "demo", None, project={"video_backend": f"ark/{video_model}"}, video=VideoLaneRequest()
-        )
-        assert ctx.video.supported_durations == ()
-        assert ctx.video.max_duration is None
-        assert ctx.video.max_reference_images is None
-        assert ctx.video.backend_model == "mystery-model"
+        with pytest.raises(VideoCapabilityError) as excinfo:
+            await resolve_generation_context(
+                "demo", None, project={"video_backend": f"ark/{video_model}"}, video=VideoLaneRequest()
+            )
+        assert excinfo.value.code == "video_capabilities_unresolved"
 
     @pytest.mark.integration
     async def test_requested_generate_audio_follows_project_override(self, session_factory, project_env, fake_assemble):
@@ -263,23 +261,29 @@ class TestVideoLane:
         assert ctx.video.requested_generate_audio is False
 
     @pytest.mark.integration
-    async def test_requested_generate_audio_survives_capability_failure(
+    async def test_requested_generate_audio_read_before_capability_failure(
         self, session_factory, project_env, monkeypatch
     ):
-        """能力查询失败不得连带丢失用户的无声意图：它不来自能力接口，独立解析。"""
+        """无声意图不来自能力接口：能力查询失败前它已独立解析，不会被掩盖。"""
+        looked_up: list[dict] = []
+        original = ConfigResolver.video_generate_audio_for_project
+
+        async def _spy(self, project):
+            looked_up.append(project)
+            return await original(self, project)
+
+        monkeypatch.setattr(ConfigResolver, "video_generate_audio_for_project", _spy)
 
         async def _assemble(*, provider_id, media_type, model_id, resolver, rate_limiter=None):
             return _FakeBackend(name=provider_id, model="mystery-model")
 
         monkeypatch.setattr(generation_context, "assemble_backend", _assemble)
         video_model = _registry_video_model("ark")
-        ctx = await resolve_generation_context(
-            "demo",
-            None,
-            project={"video_backend": f"ark/{video_model}", "video_generate_audio": False},
-            video=VideoLaneRequest(),
-        )
-        assert ctx.video.requested_generate_audio is False
+        project = {"video_backend": f"ark/{video_model}", "video_generate_audio": False}
+        with pytest.raises(VideoCapabilityError) as excinfo:
+            await resolve_generation_context("demo", None, project=project, video=VideoLaneRequest())
+        assert excinfo.value.code == "video_capabilities_unresolved"
+        assert looked_up == [project]
 
     @pytest.mark.unit
     async def test_payload_overrides_project(self, session_factory, project_env, fake_assemble):

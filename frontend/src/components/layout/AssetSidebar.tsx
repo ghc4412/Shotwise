@@ -106,6 +106,7 @@ export function AssetSidebar({ className }: AssetSidebarProps) {
       : [
           { key: "skills", path: "/skills", label: t("dashboard:workspace_nav_skills"), icon: Workflow },
           { key: "media", path: "/media", label: t("dashboard:workspace_nav_media"), icon: Package },
+          { key: "assembly", path: "/assembly", label: t("dashboard:workspace_nav_assembly"), icon: Clapperboard },
           { key: "board", path: "/creative-board", label: t("dashboard:workspace_nav_board"), icon: LayoutDashboard },
         ]),
     // 演示项目没有可切片的源文件，且后端不存在该项目，隐藏入口而非渲染必然报错的空页

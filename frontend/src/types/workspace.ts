@@ -28,7 +28,9 @@ export interface ProjectChange {
     | "grid"
     // task 不是项目实体，而是任务终态的刷新信号（important=false / focus=null）：
     // 只用来重拉任务列表与受影响画布，不进通知与聚焦跳转。
-    | "task";
+    | "task"
+    // publish_job 是发布页专用刷新信号，不进入工作区实体失效、通知或聚焦跳转。
+    | "publish_job";
   action:
     | "created"
     | "updated"
@@ -42,7 +44,8 @@ export interface ProjectChange {
     | "voice_sample_ready"
     | "task_succeeded"
     | "task_failed"
-    | "task_cancelled";
+    | "task_cancelled"
+    | "publish_job_updated";
   entity_id: string;
   label: string;
   script_file?: string;

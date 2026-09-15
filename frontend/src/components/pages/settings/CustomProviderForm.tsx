@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Loader2, Plus, Trash2, Eye, EyeOff, CheckCircle2, XCircle, Search, Link2, Copy } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { API } from "@/api";
@@ -346,6 +346,8 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
   const [discoveredModelNames, setDiscoveredModelNames] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const discoveryRequestRef = useRef<AbortController | null>(null);
+  const discoveryGenerationRef = useRef(0);
   const showError = useCallback((msg: string) => useAppStore.getState().pushToast(msg, "error"), []);
   const [modelFilter, setModelFilter] = useState("");
 
@@ -375,6 +377,19 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
   // 创建模式或 base_url 变更时必须明文 api_key。发现模型与测试连接共用此判断。
   const useStoredCredential = !!existing && !apiKey && !baseUrlChanged;
 
+  // Invalidate an in-flight discovery when the provider inputs change. A response
+  // from the previous provider must never repopulate the current form.
+  useEffect(() => {
+    discoveryRequestRef.current?.abort();
+    discoveryGenerationRef.current += 1;
+  }, [baseUrl, apiKey, discoveryFormat, useStoredCredential]);
+
+  useEffect(() => () => {
+    discoveryRequestRef.current?.abort();
+    discoveryRequestRef.current = null;
+    discoveryGenerationRef.current += 1;
+  }, []);
+
   // --- Discover models ---
   const handleDiscover = useCallback(async () => {
     if (!baseUrl) {
@@ -385,11 +400,19 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
       showError(t(baseUrlChanged ? "base_url_changed_reenter_key" : "fill_api_key_first"));
       return;
     }
+    const controller = new AbortController();
+    const generation = ++discoveryGenerationRef.current;
+    discoveryRequestRef.current?.abort();
+    discoveryRequestRef.current = controller;
     setDiscovering(true);
     try {
       const res = useStoredCredential
-        ? await API.discoverModelsForProvider(existing.id)
-        : await API.discoverModels({ discovery_format: discoveryFormat, base_url: baseUrl, api_key: apiKey });
+        ? await API.discoverModelsForProvider(existing.id, { signal: controller.signal })
+        : await API.discoverModels(
+            { discovery_format: discoveryFormat, base_url: baseUrl, api_key: apiKey },
+            { signal: controller.signal },
+          );
+      if (controller.signal.aborted || generation !== discoveryGenerationRef.current) return;
       const discovered = res.models.map(discoveredToRow);
       // 用 getState 读最新 catalog 映射，而非 handleDiscover 闭包捕获的渲染期值：catalog 在
       // mount 时异步拉取，若用户在其就绪前点「获取模型」，闭包里仍是空 map，合并会跳过默认
@@ -401,12 +424,18 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
       setDiscoveredModelNames(discovered.map((d) => d.model_id));
       setModelFilter("");
     } catch (e) {
+      if (controller.signal.aborted || generation !== discoveryGenerationRef.current) return;
       // The read-only list represents only the latest upstream response. Invalidate it on
       // failure, while preserving configured/manual model rows in the editable form.
       setDiscoveredModelNames([]);
       showError(errMsg(e, t("fetch_models_failed")));
     } finally {
-      setDiscovering(false);
+      // Only the request still owned by the ref may release the loading state.
+      // A newer discovery must not be unlocked by an older request settling.
+      if (discoveryRequestRef.current === controller) {
+        discoveryRequestRef.current = null;
+        setDiscovering(false);
+      }
     }
   }, [discoveryFormat, baseUrl, apiKey, useStoredCredential, baseUrlChanged, existing, showError, t]);
 

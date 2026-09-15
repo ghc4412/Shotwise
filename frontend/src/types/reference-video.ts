@@ -31,6 +31,10 @@ export interface ReferenceResource {
   type: AssetKind;
   /** Must already exist in project.json {characters|scenes|props} bucket */
   name: string;
+  /** Stable identity for a character variant; absent for ordinary assets. */
+  variant_id?: string;
+  /** Slug used in the persisted @[character/slug] mention. */
+  variant_slug?: string;
 }
 
 /**

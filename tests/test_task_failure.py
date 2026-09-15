@@ -1,9 +1,11 @@
 """Unit tests for structured task-failure encoding/rendering."""
 
+import json
+
 import pytest
 
 from lib.i18n import _ as translate_message
-from lib.task_failure import FAILURE_CODE_KEYS, bound_reason, encode_failure, render_failure
+from lib.task_failure import FAILURE_CODE_KEYS, bound_reason, encode_failure, render_failure, sanitize_failure_reason
 
 
 def _translator(locale: str):
@@ -128,6 +130,39 @@ class TestBoundReason:
         assert rendered is not None
         assert "[" not in rendered
         assert "resume_expired_detail" not in rendered
+
+
+@pytest.mark.unit
+class TestSanitizeFailureReason:
+    def test_sanitizes_structured_credentials_and_paths_without_breaking_json(self):
+        reason = encode_failure(
+            "resume_expired_detail",
+            detail='Authorization: Bearer ABC123; api_key="XYZ789"',
+            path=r"C:\Users\me\secret\response.json",
+        )
+
+        sanitized = sanitize_failure_reason(reason)
+        prefix, raw_params = sanitized.split(" ", 1)
+        params = json.loads(raw_params)
+
+        assert prefix == "[resume_expired_detail]"
+        assert params["detail"] == 'Authorization: Bearer [REDACTED]; api_key="[REDACTED]"'
+        assert params["path"] == "[REDACTED_PATH]"
+        assert "ABC123" not in sanitized
+        assert "XYZ789" not in sanitized
+        assert "C:\\Users" not in sanitized
+
+    def test_sanitizes_nested_structured_values(self):
+        reason = encode_failure(
+            "resume_expired_detail",
+            detail={"api_key": "XYZ789", "message": "Bearer ABC123"},
+        )
+
+        sanitized = sanitize_failure_reason(reason)
+        params = json.loads(sanitized.split(" ", 1)[1])
+
+        assert params["detail"]["api_key"] == "[REDACTED]"
+        assert params["detail"]["message"] == "Bearer [REDACTED]"
 
 
 class TestPassthrough:

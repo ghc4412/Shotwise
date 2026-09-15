@@ -227,41 +227,48 @@ def scan_project_media_assets(project_id: str, project_root: Path, *, dry_run: b
             "reconciliation": [],
         }
     catalog = project_media_catalog(project_root)
-    _, manifest_errors = legacy_media_reference_report(project_root)
-    for detail in manifest_errors:
-        catalog.record_diagnostic(
-            project_id=project_id,
-            path=detail.split(":", 1)[0],
-            code="unreadable_manifest",
-            detail=detail,
-        )
-    supported, unsupported = _scan_paths(project_root)
-    indexed: list[MediaAsset] = []
-    for relative_path in sorted(supported):
-        asset = catalog.register(
-            project_id=project_id,
-            path=project_root / relative_path,
-            origin=_origin_for_path(relative_path),
-        )
-        if asset is not None:
-            indexed.append(asset)
-    for relative_path in sorted(unsupported):
-        catalog.register(
-            project_id=project_id,
-            path=project_root / relative_path,
-            origin="imported",
-        )
-    state = catalog._load()
-    return {
-        "enabled": True,
-        "project_id": project_id,
-        "project_root": str(project_root),
-        "scanned_paths": len(supported) + len(unsupported),
-        "indexed_count": len(indexed),
-        "asset_count": len(catalog.list_assets()),
-        "diagnostics": [asdict(item) for item in state.diagnostics],
-        "reconciliation": [asdict(item) for item in catalog.reconciliation_items()],
-    }
+    catalog.mark_syncing()
+    try:
+        _, manifest_errors = legacy_media_reference_report(project_root)
+        for detail in manifest_errors:
+            catalog.record_diagnostic(
+                project_id=project_id,
+                path=detail.split(":", 1)[0],
+                code="unreadable_manifest",
+                detail=detail,
+            )
+        supported, unsupported = _scan_paths(project_root)
+        indexed: list[MediaAsset] = []
+        for relative_path in sorted(supported):
+            asset = catalog.register(
+                project_id=project_id,
+                path=project_root / relative_path,
+                origin=_origin_for_path(relative_path),
+            )
+            if asset is not None:
+                indexed.append(asset)
+        for relative_path in sorted(unsupported):
+            catalog.register(
+                project_id=project_id,
+                path=project_root / relative_path,
+                origin="imported",
+            )
+        summary = catalog.mark_ready()
+        state = catalog._load()
+        return {
+            "enabled": True,
+            "project_id": project_id,
+            "project_root": str(project_root),
+            "scanned_paths": len(supported) + len(unsupported),
+            "indexed_count": len(indexed),
+            "asset_count": len(catalog.list_assets()),
+            "summary": asdict(summary),
+            "diagnostics": [asdict(item) for item in state.diagnostics],
+            "reconciliation": [asdict(item) for item in catalog.reconciliation_items()],
+        }
+    except Exception as exc:
+        catalog.mark_failed(str(exc))
+        raise
 
 
 def retry_project_media_reconciliation(

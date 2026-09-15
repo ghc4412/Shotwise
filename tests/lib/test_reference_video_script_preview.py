@@ -312,12 +312,12 @@ def test_warn_silent_model_notice():
     assert preview.warnings[0]["params"] == {"model": "minimax-01"}
 
 
-def test_warn_silent_model_notice_covers_voiceover_only_script():
-    """画外音同样要渲染，纯画外文稿在无声模型上也该知会。"""
+def test_silent_model_notice_ignores_voiceover_only_script():
+    """画外音留给字幕 / TTS，不下发给视频模型，纯画外文稿不触发视频无声提示。"""
     preview = build_script_preview(
         "镜头1：开场。\n{那年冬天格外冷}", PROJECT, VoiceRenderSettings(voice_consistency="none", model_id="minimax-01")
     )
-    assert keys(preview) == [WARN_SILENT_MODEL]
+    assert keys(preview) == []
 
 
 def test_silent_model_notice_not_emitted_without_any_utterance():

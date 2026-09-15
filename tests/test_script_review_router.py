@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -333,6 +334,43 @@ class TestReferenceVideoRouter:
             assert confirmed.status_code == 409
 
     @pytest.mark.integration
+    def test_future_quarantine_schema_is_reported_without_server_error(self, tmp_path, monkeypatch):
+        """未来版本的隔离草稿应显示可操作诊断，而不是让审阅接口返回 500。"""
+        from lib import script_review as lib_script_review
+        from lib.reference_video.quarantine import QUARANTINE_KIND_STEP1, QUARANTINE_SCHEMA_VERSION
+
+        client, pm = _client(monkeypatch, tmp_path, generation_mode="reference_video")
+        project_path = pm.get_project_path("demo")
+        _write_rv_step1(pm, _rv_step1())
+        quarantine_path = lib_script_review.step1_quarantine_path(project_path, pm.load_project("demo"), 1)
+        quarantine_path.parent.mkdir(parents=True, exist_ok=True)
+        quarantine_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": QUARANTINE_SCHEMA_VERSION + 1,
+                    "kind": QUARANTINE_KIND_STEP1,
+                    "episode": 1,
+                    "content": {"units": []},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with client:
+            base = "/api/v1/projects/demo/episodes/1/script-review"
+            response = client.get(base, headers={"Accept-Language": "en"})
+            assert response.status_code == 200
+            quarantine = response.json()["quarantine"]
+            assert quarantine["content"] is None
+            violation = quarantine["violations"][0]
+            assert violation["code"] == "quarantine_schema_unsupported"
+            assert violation["schema_version"] == QUARANTINE_SCHEMA_VERSION + 1
+            assert "unsupported schema version" in violation["message"]
+
+            confirmed = client.post(f"{base}/confirm")
+            assert confirmed.status_code == 409
+
+    @pytest.mark.integration
     def test_quarantine_cleared_between_existence_check_and_read_is_not_reported_as_corrupted(
         self, tmp_path, monkeypatch
     ):
@@ -496,11 +534,13 @@ class TestReferenceVideoRouter:
         都在（这里用「保存时隔离草稿已存在」模拟，等价于「保存在途时才产出」的时序）。"""
         from lib.reference_video.draft_validation import DraftViolation
         from lib.reference_video.quarantine import QUARANTINE_KIND_STEP1, write_quarantine
+        from server.agent_runtime.sdk_tools import text_generation as mod
 
         client, pm = _client(monkeypatch, tmp_path, generation_mode="reference_video")
         project_path = pm.get_project_path("demo")
         (project_path / "source").mkdir(parents=True, exist_ok=True)
         (project_path / "source" / "episode_1.txt").write_text("阿离站在屋檐下。", encoding="utf-8")
+        monkeypatch.setattr(mod, "_fetch_reference_caps_with_fallback", fake_reference_caps_fetcher(max_duration=8))
         _write_rv_step1(pm, _rv_step1())
         write_quarantine(
             project_path,

@@ -11,6 +11,7 @@ from lib.generation_queue_client import (
     TaskSpec,
     batch_enqueue_and_wait,
 )
+from lib.path_safety import safe_exists
 from lib.project_manager import ProjectManager
 from server.agent_runtime.sdk_tools._context import ToolContext, tool_error
 
@@ -33,12 +34,34 @@ def _get_pending(pm: ProjectManager, project_name: str, asset_type: str) -> list
     return _PENDING_DISPATCH[asset_type](pm, project_name)
 
 
+def _has_available_sheet(
+    pm: ProjectManager,
+    project_name: str,
+    asset_type: str,
+    entry: object,
+) -> bool:
+    """Return whether an explicitly requested asset already has a usable sheet."""
+    if not isinstance(entry, dict):
+        return False
+    sheet = entry.get(ASSET_SPECS[asset_type].sheet_field)
+    if not isinstance(sheet, str) or not sheet:
+        return False
+    try:
+        project_path = pm.get_project_path(project_name)
+    except (AttributeError, OSError, ValueError):
+        # Small test doubles and legacy callers may not expose a project path.
+        return False
+    return safe_exists(project_path, sheet)
+
+
 def _build_specs(
     pm: ProjectManager,
     project_name: str,
     asset_type: str,
     names: list[str] | None,
     warnings: list[str],
+    *,
+    regenerate: bool = False,
 ) -> list[TaskSpec]:
     spec: AssetSpec = ASSET_SPECS[asset_type]
     project = pm.load_project(project_name)
@@ -63,6 +86,9 @@ def _build_specs(
             desc = assets_dict[key].get("description")
             if not (isinstance(desc, str) and desc.strip()):
                 warnings.append(f"⚠️  {spec.label_zh} '{name}' 缺少描述，跳过")
+                continue
+            if not regenerate and _has_available_sheet(pm, project_name, asset_type, assets_dict[key]):
+                warnings.append(f"⚠️  {spec.label_zh} '{name}' 已有设计图，跳过；如需重生成请传 regenerate=true")
                 continue
             resolved.append(key)
     else:
@@ -152,6 +178,10 @@ def generate_assets_tool(ctx: ToolContext):
                     "type": "boolean",
                     "description": "是否扫描所有 pending（与 names 互斥；默认 false 但当未提供 names 时等同 true）",
                 },
+                "regenerate": {
+                    "type": "boolean",
+                    "description": "是否强制重新生成已有设计图；默认 false",
+                },
             },
         },
     )
@@ -162,6 +192,7 @@ def generate_assets_tool(ctx: ToolContext):
             raw_names = args.get("names")
             names: list[str] | None = list(dict.fromkeys(raw_names)) if raw_names else None
             all_flag = bool(args.get("all"))
+            regenerate = bool(args.get("regenerate"))
             if names and not asset_type:
                 return {
                     "content": [{"type": "text", "text": "names 必须配合 type 使用"}],
@@ -181,7 +212,7 @@ def generate_assets_tool(ctx: ToolContext):
 
             for t in types:
                 spec = ASSET_SPECS[t]
-                specs = _build_specs(ctx.pm, ctx.project_name, t, names, warnings)
+                specs = _build_specs(ctx.pm, ctx.project_name, t, names, warnings, regenerate=regenerate)
                 if not specs:
                     continue
 

@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 from lib.feature_flags import feature_enabled
 
 MediaKind = Literal["image", "video", "audio"]
+MediaIndexStatus = Literal["ready", "syncing", "stale", "failed"]
 MediaOrigin = Literal["upload", "generated", "edited", "extracted", "imported"]
 BindingKind = Literal["project", "character", "scene", "prop", "product", "episode", "shot", "style", "final"]
 
@@ -138,6 +139,17 @@ class MediaReconciliationItem:
     derivation_operation: Literal["generated", "edited", "extracted", "composited"] | None = None
 
 
+@dataclass(frozen=True)
+class MediaIndexSummary:
+    """Persisted, file-system-free summary used by project-list reads."""
+
+    asset_count: int = 0
+    last_indexed_at: str | None = None
+    status: MediaIndexStatus = "stale"
+    summary_version: int = 1
+    error: str | None = None
+
+
 class MediaAssetReferencedError(ValueError):
     """Raised when an indexed asset still has semantic references."""
 
@@ -155,6 +167,7 @@ class _State:
     derivations: dict[str, MediaDerivation] = field(default_factory=dict)
     diagnostics: list[MediaMigrationDiagnostic] = field(default_factory=list)
     reconciliation: list[MediaReconciliationItem] = field(default_factory=list)
+    summary: MediaIndexSummary = field(default_factory=MediaIndexSummary)
 
 
 class MediaCatalog:
@@ -163,19 +176,48 @@ class MediaCatalog:
     def __init__(self, index_file: Path):
         self._index_file = index_file
 
+    @property
+    def _summary_file(self) -> Path:
+        """Return the rebuildable, lightweight summary cache path."""
+
+        return self._index_file.with_name(f"{self._index_file.stem}.summary{self._index_file.suffix}")
+
+    @staticmethod
+    def _normalize_summary(raw_summary: object, *, fallback_asset_count: int) -> MediaIndexSummary:
+        if not isinstance(raw_summary, dict):
+            return MediaIndexSummary(asset_count=fallback_asset_count, status="stale")
+        raw_status = raw_summary.get("status")
+        status: MediaIndexStatus = raw_status if raw_status in {"ready", "syncing", "stale", "failed"} else "stale"
+        raw_count = raw_summary.get("asset_count")
+        raw_version = raw_summary.get("summary_version")
+        return MediaIndexSummary(
+            asset_count=raw_count
+            if isinstance(raw_count, int) and not isinstance(raw_count, bool)
+            else fallback_asset_count,
+            last_indexed_at=(
+                raw_summary.get("last_indexed_at") if isinstance(raw_summary.get("last_indexed_at"), str) else None
+            ),
+            status=status,
+            summary_version=raw_version if isinstance(raw_version, int) and not isinstance(raw_version, bool) else 1,
+            error=raw_summary.get("error") if isinstance(raw_summary.get("error"), str) else None,
+        )
+
     def _load(self) -> _State:
         if not self._index_file.exists():
             return _State()
         raw = json.loads(self._index_file.read_text(encoding="utf-8"))
+        raw_assets = raw.get("assets", {})
+        normalized_summary = self._normalize_summary(raw.get("summary"), fallback_asset_count=len(raw_assets))
         return _State(
             assets={
                 key: MediaAsset(**{**value, "archived": value.get("archived", False)})
-                for key, value in raw.get("assets", {}).items()
+                for key, value in raw_assets.items()
             },
             bindings={key: MediaBinding(**value) for key, value in raw.get("bindings", {}).items()},
             derivations={key: MediaDerivation(**value) for key, value in raw.get("derivations", {}).items()},
             diagnostics=[MediaMigrationDiagnostic(**value) for value in raw.get("diagnostics", [])],
             reconciliation=[MediaReconciliationItem(**value) for value in raw.get("reconciliation", [])],
+            summary=normalized_summary,
         )
 
     def _save(self, state: _State) -> None:
@@ -186,10 +228,102 @@ class MediaCatalog:
             "derivations": {key: asdict(value) for key, value in state.derivations.items()},
             "diagnostics": [asdict(value) for value in state.diagnostics],
             "reconciliation": [asdict(value) for value in state.reconciliation],
+            "summary": asdict(state.summary),
         }
         temporary = self._index_file.with_suffix(".tmp")
         temporary.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True), encoding="utf-8")
         temporary.replace(self._index_file)
+        try:
+            self._write_summary_cache(state.summary)
+        except OSError:
+            # The canonical index is already durable; a cache write failure only
+            # makes the next summary read fall back to the canonical file.
+            pass
+
+    def _write_summary_cache(self, summary: MediaIndexSummary) -> None:
+        """Atomically write a cache tied to the canonical index mtime."""
+
+        index_mtime_ns = self._index_file.stat().st_mtime_ns
+        payload = {"index_mtime_ns": index_mtime_ns, "summary": asdict(summary)}
+        temporary = self._summary_file.with_suffix(".tmp")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+        temporary.replace(self._summary_file)
+
+    def _read_summary_cache(self) -> MediaIndexSummary | None:
+        """Read the cache only when it belongs to the current canonical index."""
+
+        try:
+            index_mtime_ns = self._index_file.stat().st_mtime_ns
+            raw = json.loads(self._summary_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            return None
+        if not isinstance(raw, dict) or raw.get("index_mtime_ns") != index_mtime_ns:
+            return None
+        raw_summary = raw.get("summary")
+        if (
+            not isinstance(raw_summary, dict)
+            or not isinstance(raw_summary.get("asset_count"), int)
+            or isinstance(raw_summary.get("asset_count"), bool)
+            or raw_summary.get("status") not in {"ready", "syncing", "stale", "failed"}
+            or not isinstance(raw_summary.get("summary_version"), int)
+            or isinstance(raw_summary.get("summary_version"), bool)
+        ):
+            return None
+        return self._normalize_summary(raw_summary, fallback_asset_count=0)
+
+    @staticmethod
+    def _refresh_summary(
+        state: _State,
+        *,
+        status: MediaIndexStatus | None = None,
+        error: str | None = None,
+        indexed_at: str | None = None,
+    ) -> None:
+        current = state.summary
+        state.summary = replace(
+            current,
+            asset_count=len(state.assets),
+            status=status or current.status,
+            error=error,
+            last_indexed_at=indexed_at if indexed_at is not None else current.last_indexed_at,
+        )
+
+    def summary(self) -> MediaIndexSummary:
+        """Return the summary without parsing the full asset index when possible."""
+
+        # Legacy projects usually have no media index. Avoid probing the
+        # separate summary cache when its canonical source is absent.
+        if not self._index_file.is_file():
+            return MediaIndexSummary()
+
+        cached = self._read_summary_cache()
+        if cached is not None:
+            return cached
+        state = self._load()
+        if self._index_file.exists():
+            try:
+                self._write_summary_cache(state.summary)
+            except OSError:
+                pass
+        return state.summary
+
+    def mark_syncing(self) -> MediaIndexSummary:
+        state = self._load()
+        self._refresh_summary(state, status="syncing", error=None)
+        self._save(state)
+        return state.summary
+
+    def mark_ready(self) -> MediaIndexSummary:
+        state = self._load()
+        self._refresh_summary(state, status="ready", error=None, indexed_at=_now())
+        self._save(state)
+        return state.summary
+
+    def mark_failed(self, error: str) -> MediaIndexSummary:
+        state = self._load()
+        self._refresh_summary(state, status="failed", error=error[:500])
+        self._save(state)
+        return state.summary
 
     def register(
         self,
@@ -284,6 +418,7 @@ class MediaCatalog:
             prompt_snapshot=prompt_snapshot,
         )
         state.assets[asset.id] = asset
+        self._refresh_summary(state, status="stale", error=None)
         self._save(state)
         return asset
 
@@ -666,6 +801,7 @@ class MediaCatalog:
         if references:
             raise MediaAssetReferencedError(media_asset_id, references)
         del state.assets[media_asset_id]
+        self._refresh_summary(state, status="stale")
         self._save(state)
         return asset
 

@@ -174,9 +174,10 @@ def derive_voice_bindings(
 
     audio_speakers: list[str] = []
     if settings.is_silent:
-        # 只要有台词就知会：画外音同样要渲染，纯画外的文稿在无声路径上也听不到声音。
+        # 只有口型台词需要视频模型产出音轨；画外音留给字幕 / TTS，不下发给视频模型，
+        # 因此纯画外音文稿不应触发视频模型无声提示。
         # 本集关闭音频的提示优先于模型不产音——前者是用户当下可改的开关。
-        if utterances:
+        if any(entry.utterance.kind == "dialogue" for entry in utterances):
             if not settings.requested_generate_audio:
                 warnings.append(_warning(WARN_SILENT_EPISODE))
             else:

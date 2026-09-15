@@ -162,6 +162,13 @@ export function buildDemoProject(t: DemoT): ProjectSummary {
     style_image: null,
     thumbnail: null,
     status: DEMO_STATUS,
+    media_summary: {
+      asset_count: 0,
+      last_indexed_at: null,
+      status: "stale",
+      summary_version: 1,
+      error: null,
+    },
   };
 }
 

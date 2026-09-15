@@ -254,8 +254,8 @@ class _StoreFailingAfterMainWrite:
 class _MetaStoreLosingTheCallerAfterCommit(SessionMetaStore):
     """指针已提交、调用方在拿到结果前被取消。"""
 
-    async def mark_superseded(self, session_id: str, superseded_by: str) -> bool:
-        await super().mark_superseded(session_id, superseded_by)
+    async def mark_superseded(self, session_id: str, superseded_by: str, user_id: str | None = None) -> bool:
+        await super().mark_superseded(session_id, superseded_by, user_id=user_id)
         raise asyncio.CancelledError
 
 

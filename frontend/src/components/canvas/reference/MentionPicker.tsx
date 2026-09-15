@@ -10,7 +10,14 @@ import type { AssetKind } from "@/types/reference-video";
 export const MENTION_PICKER_DEFAULT_ID = "reference-editor-picker";
 
 export interface MentionCandidate {
+  /** Parent asset name; for variants this remains the character name. */
   name: string;
+  /** Full mention body inserted between @[ and ], e.g. "林默/injured". */
+  mentionName?: string;
+  /** Human-readable label shown in the picker. */
+  displayName?: string;
+  variantId?: string;
+  variantSlug?: string;
   imagePath: string | null;
 }
 
@@ -20,7 +27,7 @@ export interface MentionPickerProps {
   open: boolean;
   query: string;
   candidates: Record<AssetKind, MentionCandidate[]>;
-  onSelect: (ref: { type: AssetKind; name: string }) => void;
+  onSelect: (ref: { type: AssetKind; name: string; variant_id?: string; variant_slug?: string }) => void;
   onClose: () => void;
   /** Project used to construct asset thumbnail URLs via API.getFileUrl. */
   projectName?: string;
@@ -48,6 +55,10 @@ function optionId(kind: AssetKind, name: string): string {
 interface FlatItem {
   type: AssetKind;
   name: string;
+  mentionName: string;
+  displayName: string;
+  variantId?: string;
+  variantSlug?: string;
   imagePath: string | null;
   globalIndex: number;
 }
@@ -89,7 +100,12 @@ export function MentionPicker({
     const result: Record<AssetKind, MentionCandidate[]> = { character: [], scene: [], prop: [] };
     for (const kind of GROUP_ORDER) {
       const arr = candidates[kind] ?? [];
-      result[kind] = q.length === 0 ? arr : arr.filter((c) => normalizeAssetName(c.name).toLowerCase().includes(q));
+      result[kind] = q.length === 0
+        ? arr
+        : arr.filter((c) => {
+            const haystack = [c.name, c.mentionName, c.displayName].filter(Boolean).join(" ");
+            return normalizeAssetName(haystack).toLowerCase().includes(q);
+          });
     }
     return result;
   }, [candidates, query]);
@@ -118,7 +134,16 @@ export function MentionPicker({
     let idx = 0;
     for (const kind of GROUP_ORDER) {
       for (const item of filtered[kind]) {
-        out.push({ type: kind, name: item.name, imagePath: item.imagePath, globalIndex: idx });
+        out.push({
+          type: kind,
+          name: item.name,
+          mentionName: item.mentionName ?? item.name,
+          displayName: item.displayName ?? item.mentionName ?? item.name,
+          variantId: item.variantId,
+          variantSlug: item.variantSlug,
+          imagePath: item.imagePath,
+          globalIndex: idx,
+        });
         idx += 1;
       }
     }
@@ -129,7 +154,7 @@ export function MentionPicker({
   const indexByKey = useMemo(() => {
     const m = new Map<string, number>();
     for (const f of flat) {
-      m.set(`${f.type}:${f.name}`, f.globalIndex);
+      m.set(`${f.type}:${f.mentionName}`, f.globalIndex);
     }
     return m;
   }, [flat]);
@@ -167,7 +192,12 @@ export function MentionPicker({
         // 焦点切换行为，避免 a11y 回退（picker 打开时仍能按 Shift+Tab 离开输入框）。
         e.preventDefault();
         const item = current[active];
-        if (item) onSelect({ type: item.type, name: item.name });
+        if (item) onSelect({
+          type: item.type,
+          name: item.name,
+          variant_id: item.variantId,
+          variant_slug: item.variantSlug,
+        });
       }
     };
     window.addEventListener("keydown", onKey);
@@ -180,7 +210,7 @@ export function MentionPicker({
   useEffect(() => {
     if (!onActiveChange) return;
     const current = flat[clampedActive];
-    onActiveChange(current ? optionId(current.type, current.name) : null);
+    onActiveChange(current ? optionId(current.type, current.mentionName) : null);
   }, [flat, clampedActive, onActiveChange]);
 
   const empty = flat.length === 0;
@@ -258,7 +288,7 @@ export function MentionPicker({
                     </div>
                   )}
                   {items.map((item) => {
-                    const globalIndex = indexByKey.get(`${kind}:${item.name}`) ?? -1;
+                    const globalIndex = indexByKey.get(`${kind}:${item.mentionName ?? item.name}`) ?? -1;
                     const active = globalIndex === clampedActive;
                     // imagePath 是 project-relative 文件路径（如 "characters/foo.png"），用 API.getFileUrl
                     // 转为可 fetch 的 URL；无 projectName 时回退圆点（测试环境常见）。
@@ -284,7 +314,12 @@ export function MentionPicker({
                           if (clampedActive !== globalIndex) setActiveIndex(globalIndex);
                         }}
                         onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => onSelect({ type: kind, name: item.name })}
+                        onClick={() => onSelect({
+                           type: kind,
+                           name: item.name,
+                           variant_id: item.variantId,
+                           variant_slug: item.variantSlug,
+                         })}
                         className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors focus-visible:ring-1 focus-visible:ring-indigo-400 focus-visible:outline-none ${
                           active ? "bg-indigo-500/15 text-indigo-200" : "text-gray-300 hover:bg-gray-900"
                         }`}
@@ -305,7 +340,7 @@ export function MentionPicker({
                             <span className={`h-2 w-2 rounded-full ${palette.bgClass} ${palette.borderClass} border`} />
                           </span>
                         )}
-                        <span className="truncate" title={item.name}>{item.name}</span>
+                        <span className="truncate" title={item.displayName ?? item.name}>{item.displayName ?? item.name}</span>
                       </button>
                     );
                   })}

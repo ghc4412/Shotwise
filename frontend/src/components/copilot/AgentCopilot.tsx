@@ -24,9 +24,9 @@ import { canEditUserTurn, composeAllTurns } from "./chat/utils";
 import { MessageRail, messageAnchorId } from "./MessageRail";
 import { uid } from "@/utils/id";
 import { formatShortDateTime } from "@/utils/date-format";
+import { ChatImageValidationError, prepareChatImages } from "@/utils/chat-image";
 
 const MAX_IMAGES = 5;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -292,24 +292,28 @@ export function AgentCopilot() {
   const addImages = useCallback((files: File[]) => {
     setAttachError(null);
     const gen = imageGenRef.current;
-    for (const file of files) {
-      if (!file.type.startsWith("image/")) continue;
-      if (file.size > MAX_IMAGE_BYTES) {
-        setAttachError(t("image_too_large_hint", { name: file.name }));
-        continue;
-      }
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        if (imageGenRef.current !== gen) return; // stale — message already sent
-        const dataUrl = e.target?.result as string;
+    void prepareChatImages(files, attachedImages.map((image) => image.dataUrl))
+      .then((prepared) => {
+        if (imageGenRef.current !== gen || prepared.length === 0) return;
         setAttachedImages((prev) => {
-          if (prev.length >= MAX_IMAGES) return prev;
-          return [...prev, { id: uid(), dataUrl, mimeType: file.type }];
+          const available = Math.max(0, MAX_IMAGES - prev.length);
+          return [
+            ...prev,
+            ...prepared.slice(0, available).map((image) => ({
+              id: uid(),
+              dataUrl: image.dataUrl,
+              mimeType: image.mimeType,
+            })),
+          ];
         });
-      };
-      reader.readAsDataURL(file);
-    }
-  }, [t]);
+      })
+      .catch((error: unknown) => {
+        if (imageGenRef.current !== gen) return;
+        const key = error instanceof ChatImageValidationError ? error.key : "assistant_image_invalid";
+        setAttachError(t(key));
+      });
+  }, [attachedImages, t]);
+
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = Array.from(e.clipboardData.items);

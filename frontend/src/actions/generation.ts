@@ -27,6 +27,7 @@ import {
 export interface EnqueueResult {
   taskIds: string[];
   deduped: boolean;
+  reused?: boolean;
 }
 
 /**
@@ -87,8 +88,8 @@ async function submit<T>(
   }
 }
 
-function oneTaskId(res: { task_id: string }): string[] {
-  return [res.task_id];
+function oneTaskId(res: { task_id: string | null }): string[] {
+  return res.task_id ? [res.task_id] : [];
 }
 
 function manyTaskIds(res: { task_ids: string[] }): string[] {
@@ -160,14 +161,15 @@ export async function enqueueCharacter(
   projectName: string,
   name: string,
   prompt: string,
+  regenerate = false,
 ): Promise<EnqueueResult> {
   const res = await submit(
     [markResource(projectName, "character", name, "character")],
-    () => API.generateCharacter(projectName, name, prompt),
+    () => API.generateCharacter(projectName, name, prompt, regenerate),
     oneTaskId,
   );
   notifyEnqueued(res.deduped, i18n.t("dashboard:character_task_submitted_toast", { name }));
-  return { taskIds: [res.task_id], deduped: res.deduped };
+  return { taskIds: res.task_id ? [res.task_id] : [], deduped: res.deduped, reused: res.reused };
 }
 
 export async function enqueueCharacterVoiceSample(
@@ -191,42 +193,45 @@ export async function enqueueScene(
   projectName: string,
   name: string,
   prompt: string,
+  regenerate = false,
 ): Promise<EnqueueResult> {
   const res = await submit(
     [markResource(projectName, "scene", name, "scene")],
-    () => API.generateProjectScene(projectName, name, prompt),
+    () => API.generateProjectScene(projectName, name, prompt, regenerate),
     oneTaskId,
   );
   notifyEnqueued(res.deduped, i18n.t("dashboard:scene_task_submitted_toast", { name }));
-  return { taskIds: [res.task_id], deduped: res.deduped };
+  return { taskIds: res.task_id ? [res.task_id] : [], deduped: res.deduped, reused: res.reused };
 }
 
 export async function enqueueProp(
   projectName: string,
   name: string,
   prompt: string,
+  regenerate = false,
 ): Promise<EnqueueResult> {
   const res = await submit(
     [markResource(projectName, "prop", name, "prop")],
-    () => API.generateProjectProp(projectName, name, prompt),
+    () => API.generateProjectProp(projectName, name, prompt, regenerate),
     oneTaskId,
   );
   notifyEnqueued(res.deduped, i18n.t("dashboard:prop_task_submitted_toast", { name }));
-  return { taskIds: [res.task_id], deduped: res.deduped };
+  return { taskIds: res.task_id ? [res.task_id] : [], deduped: res.deduped, reused: res.reused };
 }
 
 export async function enqueueProduct(
   projectName: string,
   name: string,
   prompt: string,
+  regenerate = false,
 ): Promise<EnqueueResult> {
   const res = await submit(
     [markResource(projectName, "product", name, "product")],
-    () => API.generateProjectProduct(projectName, name, prompt),
+    () => API.generateProjectProduct(projectName, name, prompt, regenerate),
     oneTaskId,
   );
   notifyEnqueued(res.deduped, i18n.t("dashboard:product_task_submitted_toast", { name }));
-  return { taskIds: [res.task_id], deduped: res.deduped };
+  return { taskIds: res.task_id ? [res.task_id] : [], deduped: res.deduped, reused: res.reused };
 }
 
 export async function enqueueImageEdit(

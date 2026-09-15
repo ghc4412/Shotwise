@@ -15,6 +15,7 @@ import {
   WORKSPACE_ROUTE_SKILLS,
   WORKSPACE_ROUTE_MEDIA,
   WORKSPACE_ROUTE_CREATIVE_BOARD,
+  WORKSPACE_ROUTE_ASSEMBLY,
 } from "@/app-routes";
 import { useTranslation } from "react-i18next";
 import { useProjectsStore } from "@/stores/projects-store";
@@ -33,6 +34,7 @@ import { SourceFilesPage } from "./SourceFilesPage";
 import { CreationSkillsPage } from "./CreationSkillsPage";
 import { MediaLibraryPage } from "./MediaLibraryPage";
 import { CreativeBoardWorkspace } from "./CreativeBoardWorkspace";
+import { AssemblyPlanPage } from "./AssemblyPlanPage";
 import { CharactersPage } from "./lorebook/CharactersPage";
 import { ScenesPage } from "./lorebook/ScenesPage";
 import { PropsPage } from "./lorebook/PropsPage";
@@ -690,6 +692,9 @@ export function StudioCanvasRouter() {
       </Route>
       <Route path={`/${WORKSPACE_ROUTE_CREATIVE_BOARD}`}>
         {demoMode ? <Redirect to="/" /> : <CreativeBoardWorkspace projectName={currentProjectName} />}
+      </Route>
+      <Route path={`/${WORKSPACE_ROUTE_ASSEMBLY}`}>
+        {demoMode ? <Redirect to="/" /> : <AssemblyPlanPage projectName={currentProjectName} />}
       </Route>
 
       <Route path={`/${WORKSPACE_ROUTE_CHARACTERS}`}>

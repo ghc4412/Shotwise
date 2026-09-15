@@ -1180,14 +1180,16 @@ class ScriptGenerator:
                 {
                     "unit_id": step1_unit["unit_id"],
                     "shots": [s.model_dump() for s in shots],
-                    "references": [r.model_dump() for r in refs],
+                    "references": [r.model_dump(exclude_none=True) for r in refs],
                     "duration_seconds": step1_unit["duration_seconds"],
                 }
             )
 
         if violations:
             raise DraftViolations(violations)
-        return ReferenceVideoScript.model_validate({"title": flat.title, "video_units": video_units}).model_dump()
+        return ReferenceVideoScript.model_validate({"title": flat.title, "video_units": video_units}).model_dump(
+            exclude_none=True
+        )
 
     def _step2_flat_content(self, response_text: str, episode: int) -> dict:
         """把 step2 响应还原成隔离草稿要装的扁平形状 ``{title, units: [{text}]}``。
@@ -1266,6 +1268,7 @@ class ScriptGenerator:
                     QUARANTINE_KIND_STEP2,
                     content=draft.content,
                     violations=violation_items(exc),
+                    extra=draft.extra,
                 ),
                 code="quarantined",
             ) from exc
@@ -1284,6 +1287,7 @@ class ScriptGenerator:
                             code="schema_invalid",
                         )
                     ],
+                    extra=draft.extra,
                 ),
                 code="quarantined",
             ) from exc

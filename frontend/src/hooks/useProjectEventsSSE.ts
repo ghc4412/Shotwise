@@ -2,6 +2,7 @@ import { startTransition, useCallback, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { API } from "@/api";
+import type { SseConnection } from "@/utils/sse";
 import { useAppStore } from "@/stores/app-store";
 import { useProjectsStore } from "@/stores/projects-store";
 import { useCostStore } from "@/stores/cost-store";
@@ -149,7 +150,7 @@ export function useProjectEventsSSE(projectName?: string | null): void {
     (s) => s.setAssistantToolActivitySuppressed
   );
 
-  const sourceRef = useRef<EventSource | null>(null);
+  const sourceRef = useRef<SseConnection | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFingerprintRef = useRef<string | null>(null);
   const queuedFocusRef = useRef<WorkspaceNotificationTarget | null>(null);
@@ -253,7 +254,9 @@ export function useProjectEventsSSE(projectName?: string | null): void {
           // 会把前一批实体变更排队等待 refreshProject 的 `queuedFocusRef` 清成 null，用户
           // 因此丢失本该发生的自动导航与高亮。
           const taskChanges = payload.changes.filter(isTaskChange);
-          const entityChanges = payload.changes.filter((c) => !isTaskChange(c));
+          const entityChanges = payload.changes.filter(
+            (change) => !isTaskChange(change) && change.entity_type !== "publish_job",
+          );
 
           // 提取并更新 asset fingerprints（零延迟，立即写入 store）
           const mergedFingerprints: Record<string, number> = {};
@@ -338,10 +341,11 @@ export function useProjectEventsSSE(projectName?: string | null): void {
             useAppStore.getState().invalidateReferenceVideoUnits();
           }
 
-          // 每个批次都重拉，纯任务终态批次也不例外：后端每次广播都会把项目快照 rebase
-          // 到最新，与之并发的文件变更来不及被扫描 diff 出来就失去基线；refreshProject
-          // 是这类漏广播的兜底，不能因为「本批次只有任务事件」就跳过。
-          void refreshProject();
+          // 每个包含项目实体或任务终态的批次都重拉；发布任务只是发布页自己的刷新信号，
+          // 不改变项目快照，也不应触发工作区全量刷新。
+          if (entityChanges.length > 0 || taskChanges.length > 0) {
+            void refreshProject();
+          }
 
           // Refresh cost data when generation completes
           const hasGenerationEvent = entityChanges.some((c) =>
@@ -386,13 +390,16 @@ export function useProjectEventsSSE(projectName?: string | null): void {
           }
         },
         onError() {
-          if (disposed) return;
-          if (terminatedRef.current) return;
+          if (disposed || terminatedRef.current) return;
           if (sourceRef.current) {
             sourceRef.current.close();
             sourceRef.current = null;
           }
+          // 后台页面不继续消耗重连计时器；切回前台时由 visibilitychange 立即恢复。
+          if (document.visibilityState !== "visible") return;
+          if (reconnectTimerRef.current) return;
           reconnectTimerRef.current = setTimeout(() => {
+            reconnectTimerRef.current = null;
             if (!disposed) connect();
           }, 3000);
         },
@@ -401,10 +408,21 @@ export function useProjectEventsSSE(projectName?: string | null): void {
       sourceRef.current = source;
     };
 
+    const handleVisibilityChange = () => {
+      if (disposed || terminatedRef.current || document.visibilityState !== "visible") return;
+      // 前台恢复不等待剩余退避；如果流已断开，确保只建立一个新连接。
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (!sourceRef.current) connect();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     connect();
 
     return () => {
       disposed = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;

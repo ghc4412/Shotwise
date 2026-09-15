@@ -14,6 +14,14 @@ from typing import Any
 from claude_agent_sdk import tool
 
 from lib.config.resolver import VideoCapability, video_bucket_for_generation_mode
+from lib.generation_preflight import (
+    collect_ad_shot_references,
+    collect_reference_entries,
+    format_preflight_error,
+    merge_preflight_results,
+    validate_asset_references,
+    validate_item_asset_references,
+)
 from lib.generation_queue_client import (
     BatchTaskResult,
     TaskSpec,
@@ -285,6 +293,67 @@ def _clear_checkpoint_at(path: Path) -> None:
         path.unlink()
 
 
+def _preflight_storyboard_items(
+    project: dict[str, Any],
+    project_dir: Path,
+    items: list[dict[str, Any]],
+    *,
+    char_field: str | None,
+    scene_field: str,
+    prop_field: str,
+    skip_ids: set[str] | None = None,
+    id_field: str | None = None,
+) -> None:
+    """Reject a storyboard batch before any video task is submitted."""
+    if not project:
+        return
+    skip = skip_ids or set()
+    result = merge_preflight_results(
+        *(
+            validate_item_asset_references(
+                project,
+                project_dir,
+                item,
+                char_field=char_field,
+                scene_field=scene_field,
+                prop_field=prop_field,
+            )
+            for item in items
+            if str(item.get(id_field or "scene_id") or "") not in skip
+        )
+    )
+    error = format_preflight_error(result)
+    if error:
+        raise ValueError(error)
+
+
+def _preflight_reference_units(
+    project: dict[str, Any],
+    project_dir: Path,
+    units: list[dict[str, Any]],
+    *,
+    script: dict[str, Any] | None = None,
+    skip_ids: set[str] | None = None,
+) -> None:
+    """Reject all referenced assets for the units that will actually be queued."""
+    if not project:
+        return
+    skip = skip_ids or set()
+    results = []
+    for unit in units:
+        unit_id = str(unit.get("unit_id") or "")
+        if unit_id in skip:
+            continue
+        if script is not None:
+            references = collect_ad_shot_references(resolve_ad_unit_shots(script, unit))
+        else:
+            references = collect_reference_entries(unit.get("references"))
+        results.append(validate_asset_references(project, project_dir, references))
+    error = format_preflight_error(merge_preflight_results(*results))
+    if error:
+        raise ValueError(error)
+
+
 def _build_video_specs(
     *,
     items: list[dict[str, Any]],
@@ -535,6 +604,7 @@ async def _generate_reference_units(
     confirm_duration: bool,
     reuse_existing: Callable[[dict[str, Any]], bool] | None = None,
     ad_shots_for: Callable[[dict[str, Any]], list[dict[str, Any]]] | None = None,
+    preflight_script: dict[str, Any] | None = None,
 ) -> list[Path] | DurationConfirmationPending:
     """unit 批量生成的共享骨架：时长确认 + checkpoint 续传 + 已产出扫描 + 入队等待。
 
@@ -583,6 +653,11 @@ async def _generate_reference_units(
                 completed.append(unit_id)
         elif unit_id in completed:
             completed.remove(unit_id)
+
+    if preflight_script is not None:
+        _preflight_reference_units(project, project_dir, units, script=preflight_script, skip_ids=set(already_done))
+    else:
+        _preflight_reference_units(project, project_dir, units, skip_ids=set(already_done))
 
     await _assert_audio_switch_for_units(
         project=project,
@@ -883,6 +958,7 @@ async def _run_ad_reference_units(
         # 而这恰是 stale unit 最需要它生效的场景。
         reuse_existing=lambda _u: False,
         ad_shots_for=lambda u: resolve_ad_unit_shots(script, u),
+        preflight_script=script,
     )
     if isinstance(result, DurationConfirmationPending):
         return _duration_confirmation_response(result, log)
@@ -939,7 +1015,7 @@ def generate_video_episode_tool(ctx: ToolContext):
                 )
 
             episode = ProjectManager.resolve_episode_from_script(script, script_filename)
-            items, id_field, _chars, _scenes, _props = get_storyboard_items(script)
+            items, id_field, char_field, scene_field, prop_field = get_storyboard_items(script)
             content_mode = resolve_content_mode(script, ctx.pm.load_project(ctx.project_name))
             if not items:
                 raise ValueError(f"第 {episode} 集剧本为空：{script_filename}")
@@ -956,6 +1032,17 @@ def generate_video_episode_tool(ctx: ToolContext):
             videos_dir = project_dir / "videos"
             videos_dir.mkdir(parents=True, exist_ok=True)
             ordered_paths, already_done, completed = _scan_completed_items(items, id_field, completed, videos_dir)
+            project = ctx.pm.load_project(ctx.project_name)
+            _preflight_storyboard_items(
+                project,
+                project_dir,
+                items,
+                char_field=char_field,
+                scene_field=scene_field,
+                prop_field=prop_field,
+                skip_ids=set(already_done),
+                id_field=id_field,
+            )
             voice_characters = await _resolve_voice_context(ctx, content_mode)
             specs, order_map = _build_video_specs(
                 items=items,
@@ -1051,7 +1138,7 @@ def generate_video_scene_tool(ctx: ToolContext):
                     log=log,
                 )
 
-            items, id_field, _chars, _scenes, _props = get_storyboard_items(script)
+            items, id_field, char_field, scene_field, prop_field = get_storyboard_items(script)
             item = next((s for s in items if s.get(id_field) == scene_id or s.get("scene_id") == scene_id), None)
             if not item:
                 raise ValueError(f"场景/片段 '{scene_id}' 不存在")
@@ -1059,6 +1146,16 @@ def generate_video_scene_tool(ctx: ToolContext):
             # 必须用脚本里的规范 ``id_field`` 值，否则下游 generate_video_all 和
             # checkpoint 扫描会找不到产物。
             item_id = str(item[id_field])
+            project = ctx.pm.load_project(ctx.project_name)
+            _preflight_storyboard_items(
+                project,
+                project_dir,
+                [item],
+                char_field=char_field,
+                scene_field=scene_field,
+                prop_field=prop_field,
+                id_field=id_field,
+            )
 
             storyboard_image = get_generated_assets(item).get("storyboard_image")
             # 字段值来自磁盘剧本 JSON，不可信任：resolve_storyboard_image_ref 统一做类型检查 +
@@ -1152,12 +1249,22 @@ def generate_video_all_tool(ctx: ToolContext):
                     log=log,
                 )
 
-            items, id_field, _chars, _scenes, _props = get_storyboard_items(script)
+            items, id_field, char_field, scene_field, prop_field = get_storyboard_items(script)
             content_mode = resolve_content_mode(script, ctx.pm.load_project(ctx.project_name))
             pending = [it for it in items if not get_generated_assets(it).get("video_clip")]
             if not pending:
                 return {"content": [{"type": "text", "text": "✨ 所有场景/片段的视频都已生成"}]}
 
+            project = ctx.pm.load_project(ctx.project_name)
+            _preflight_storyboard_items(
+                project,
+                project_dir,
+                pending,
+                char_field=char_field,
+                scene_field=scene_field,
+                prop_field=prop_field,
+                id_field=id_field,
+            )
             voice_characters = await _resolve_voice_context(ctx, content_mode)
             specs, _order_map = _build_video_specs(
                 items=pending,
@@ -1258,7 +1365,7 @@ def generate_video_selected_tool(ctx: ToolContext):
                     log=log,
                 )
 
-            items, id_field, _chars, _scenes, _props = get_storyboard_items(script)
+            items, id_field, char_field, scene_field, prop_field = get_storyboard_items(script)
             content_mode = resolve_content_mode(script, ctx.pm.load_project(ctx.project_name))
 
             items_by_id: dict[str, dict[str, Any]] = {}
@@ -1303,6 +1410,17 @@ def generate_video_selected_tool(ctx: ToolContext):
             videos_dir = project_dir / "videos"
             videos_dir.mkdir(parents=True, exist_ok=True)
             ordered_paths, already_done, completed = _scan_completed_items(selected, id_field, completed, videos_dir)
+            project = ctx.pm.load_project(ctx.project_name)
+            _preflight_storyboard_items(
+                project,
+                project_dir,
+                selected,
+                char_field=char_field,
+                scene_field=scene_field,
+                prop_field=prop_field,
+                skip_ids=set(already_done),
+                id_field=id_field,
+            )
             voice_characters = await _resolve_voice_context(ctx, content_mode)
             specs, order_map = _build_video_specs(
                 items=selected,

@@ -5,7 +5,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "p4_creation_skill_workflow_binding"
-down_revision = "p3skill001"
+down_revision = "p4versionwidth"
 branch_labels = None
 depends_on = None
 

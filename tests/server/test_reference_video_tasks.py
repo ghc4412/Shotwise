@@ -926,7 +926,7 @@ async def test_execute_reference_video_task_sends_reference_audio_in_prompt_orde
     script_path = proj_dir / "scripts" / "episode_1.json"
     script = json.loads(script_path.read_text(encoding="utf-8"))
     script["video_units"][0]["shots"] = [
-        {"text": "@[张三] 推门而入。\n@[李四]：{你终于来了。}\n@[张三]：{今晚的酒，我请。}"}
+        {"text": "@[张三] 推门而入。\n@[李四]：{你终于来了。}\n{酒馆里只剩下杯盏碰撞声。}\n@[张三]：{今晚的酒，我请。}"}
     ]
     script["video_units"][0]["references"] = [{"type": "character", "name": "张三"}]
     script_path.write_text(json.dumps(script, ensure_ascii=False), encoding="utf-8")
@@ -974,6 +974,8 @@ async def test_execute_reference_video_task_sends_reference_audio_in_prompt_orde
     assert "<李四>的台词音色参考 @音频1，声音特征：清亮少女音。" in prompt
     assert "<张三>的台词音色参考 @音频2，声音特征：低沉沙哑的男声。" in prompt
     assert [p.name for p in captured["reference_audio_files"]] == ["李四.mp3", "张三.wav"]
+    # 裸旁白只供字幕/TTS，不能作为完整音频或额外音色参考发送给视频模型。
+    assert "酒馆里只剩下杯盏碰撞声。" not in prompt
     # speaker 位不产生参考图：李四没有 @图片N 绑定
     assert "<张三>@图片1。" in prompt
     assert "<李四>@图片" not in prompt

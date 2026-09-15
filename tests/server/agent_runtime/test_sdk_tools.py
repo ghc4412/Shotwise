@@ -24,7 +24,7 @@ from lib.reference_video.quarantine import (
     write_quarantine,
 )
 from lib.reference_video.voice_settings import VoiceRenderSettings
-from server.agent_runtime.sdk_tools import build_shotwise_mcp_server
+from server.agent_runtime.sdk_tools import SHOTWISE_MCP_TOOL_IDS, build_shotwise_mcp_server
 from server.agent_runtime.sdk_tools._context import ToolContext
 from server.agent_runtime.sdk_tools.enqueue_assets import (
     generate_assets_tool,
@@ -62,7 +62,10 @@ class _FakePM:
         self._project_name = project_name
         self._project_dir = project_dir
         self.project_payload: dict[str, Any] = {
-            "characters": {"张三": {"description": "主角"}, "李四": {"description": ""}},
+            "characters": {
+                "张三": {"description": "主角", "character_sheet": "storyboards/character_张三.png"},
+                "李四": {"description": ""},
+            },
             "scenes": {"村口": {"description": "黄昏的村口"}},
             "props": {},
             "products": {"保温杯": {"description": "不锈钢保温杯", "reference_images": [], "selling_points": []}},
@@ -118,7 +121,7 @@ def fake_ctx(tmp_path: Path) -> ToolContext:
     # Build a storyboard image so video tools can find it.
     (project_dir / "storyboards").mkdir()
     (project_dir / "storyboards" / "scene_E1S01.png").write_bytes(b"")
-
+    (project_dir / "storyboards" / "character_张三.png").write_bytes(b"")
     return ToolContext(
         project_name="demo",
         projects_root=tmp_path,
@@ -234,6 +237,7 @@ def test_build_shotwise_mcp_server_contains_all_tools(tmp_path: Path) -> None:
     # SDK exposes the registered tools on srv["instance"]; we just sanity-check
     # the type returned matches the spec contract.
     assert "instance" in srv
+    assert "inspect_director_review" in SHOTWISE_MCP_TOOL_IDS
 
 
 @pytest.mark.unit
@@ -2478,19 +2482,18 @@ def test_parse_normalized_content_uses_dynamic_duration_schema() -> None:
 
 
 @pytest.mark.unit
-async def test_fetch_caps_with_fallback_uses_write_layer_default(monkeypatch) -> None:
-    """resolver 失败时软回退须与自定义供应商写入层的保守默认（duration_presets.DEFAULT_FALLBACK）
-    同一真相源——独立维护第二套回退集会让 LLM 拿到供应商未必支持的时长。"""
-    from lib.custom_provider.duration_presets import DEFAULT_FALLBACK
+async def test_fetch_caps_with_fallback_fails_on_unresolved_capabilities(monkeypatch) -> None:
+    """resolver 失败时工具必须停止，不能把通用默认值伪装成模型能力。"""
+    from lib.video_backends.base import VideoCapabilityError
     from server.agent_runtime.sdk_tools import text_generation as mod
 
     async def raising_caps(_p, *, episode=None, generation_mode=None):
         raise ValueError("no provider configured")
 
     monkeypatch.setattr(mod, "fetch_video_caps", raising_caps)
-    default, durations = await mod._fetch_caps_with_fallback({}, 1)
-    assert default is None
-    assert durations == DEFAULT_FALLBACK
+    with pytest.raises(VideoCapabilityError) as exc:
+        await mod._fetch_caps_with_fallback({}, 1)
+    assert exc.value.code == "video_capabilities_unresolved"
 
 
 @pytest.mark.unit
@@ -3202,6 +3205,8 @@ def ad_reference_ctx(fake_ctx: ToolContext, monkeypatch: pytest.MonkeyPatch) -> 
     from server.agent_runtime.sdk_tools import enqueue_videos as mod
 
     pm = fake_ctx.pm
+    pm.project_payload["products"]["保温杯"]["product_sheet"] = "storyboards/product_保温杯.png"  # type: ignore[attr-defined]
+    (fake_ctx.project_path / "storyboards" / "product_保温杯.png").write_bytes(b"")
     pm.project_payload.update(  # type: ignore[attr-defined]
         {
             "content_mode": "ad",
@@ -3939,72 +3944,33 @@ async def test_fetch_reference_caps_with_fallback_splits_tiers_by_reference_stat
 
 
 @pytest.mark.unit
-async def test_fetch_reference_caps_with_fallback_uses_write_layer_default(monkeypatch) -> None:
-    """rv 路径的软回退与 _fetch_caps_with_fallback 同口径，取 duration_presets.DEFAULT_FALLBACK。"""
-    from lib.custom_provider.duration_presets import DEFAULT_FALLBACK
-    from server.agent_runtime.sdk_tools import _context
+async def test_fetch_reference_caps_with_fallback_fails_on_unresolved_capabilities(monkeypatch) -> None:
+    """参考视频拆分不能用通用默认值伪装成模型能力。"""
+    from lib.video_backends.base import VideoCapabilityError
     from server.agent_runtime.sdk_tools import text_generation as mod
 
     async def _raising_caps(_project, _episode=None):
         raise ValueError("no provider configured")
 
     monkeypatch.setattr(mod, "resolve_video_caps", _raising_caps)
-
-    async def _no_i2v(_project, *, capability=None):
-        raise ValueError("i2v bucket unresolvable in this test")
-
-    monkeypatch.setattr(_context, "resolve_video_caps", _no_i2v)
-    caps = await mod._fetch_reference_caps_with_fallback({}, 1)
-    assert caps.default_duration is None
-    assert caps.durations == DEFAULT_FALLBACK
-    assert caps.max_duration == max(DEFAULT_FALLBACK)
-    assert caps.max_refs is None
+    with pytest.raises(VideoCapabilityError) as exc:
+        await mod._fetch_reference_caps_with_fallback({}, 1)
+    assert exc.value.code == "video_capabilities_unresolved"
 
 
 @pytest.mark.unit
-async def test_fetch_reference_caps_with_fallback_preserves_silent_intent_on_failure(monkeypatch) -> None:
-    """能力查询失败时，`raw["requested_generate_audio"]` 仍随项目覆盖走，不回退成 True。
-
-    它不依赖能力接口独立解析（同 generation_context.py），否则声音提示层会漏发
-    WARN_SILENT_EPISODE，误导用户以为本集仍会尝试组装参考音频。独立解析本身照原样
-    mock 掉（不经 async_session_factory 打真实 DB）：这条测不验证 DB 读取，只验证
-    能力查询失败下 caps 字典的组装口径，打真 DB 只会让结果依赖本机是否已初始化好应用库。
-    """
-    from lib.config.resolver import ConfigResolver
+async def test_fetch_reference_caps_with_fallback_stops_before_audio_fallback(monkeypatch) -> None:
+    """能力未知时参考视频拆分停止，不构造不完整的声音能力对象。"""
+    from lib.video_backends.base import VideoCapabilityError
     from server.agent_runtime.sdk_tools import text_generation as mod
 
     async def _raising_caps(_project, _episode=None):
         raise ValueError("no provider configured")
 
-    async def _fake_project_audio(self, project):
-        return bool(project.get("video_generate_audio", True))
-
     monkeypatch.setattr(mod, "resolve_video_caps", _raising_caps)
-    monkeypatch.setattr(ConfigResolver, "video_generate_audio_for_project", _fake_project_audio)
-    caps = await mod._fetch_reference_caps_with_fallback({"video_generate_audio": False}, 1)
-    assert caps.voice.requested_generate_audio is False
-
-
-@pytest.mark.unit
-async def test_fetch_reference_caps_with_fallback_degrades_silent_on_double_failure(monkeypatch) -> None:
-    """独立解析也失败（双重故障）时收紧到 False，不得落回 True。
-
-    与其余能力字段「不明时不额外收紧」相反：这里不明时假定无声，代价只是少发一条声音
-    提示；假定有声则会让 `derive_voice_bindings` 在派生阶段继续算参考音频，误导排查方向。
-    """
-    from lib.config.resolver import ConfigResolver
-    from server.agent_runtime.sdk_tools import text_generation as mod
-
-    async def _raising_caps(_project, _episode=None):
-        raise ValueError("no provider configured")
-
-    async def _raising_project_audio(self, _project):
-        raise RuntimeError("db unavailable")
-
-    monkeypatch.setattr(mod, "resolve_video_caps", _raising_caps)
-    monkeypatch.setattr(ConfigResolver, "video_generate_audio_for_project", _raising_project_audio)
-    caps = await mod._fetch_reference_caps_with_fallback({"video_generate_audio": False}, 1)
-    assert caps.voice.requested_generate_audio is False
+    with pytest.raises(VideoCapabilityError) as exc:
+        await mod._fetch_reference_caps_with_fallback({"video_generate_audio": False}, 1)
+    assert exc.value.code == "video_capabilities_unresolved"
 
 
 def _rv_generator_returning(units: list[dict], captured: dict[str, Any] | None = None):
@@ -4975,6 +4941,39 @@ async def test_validate_and_promote_reference_draft_step2_blocked_by_review_gate
     out = await _promote(fake_ctx, monkeypatch)
     assert out.get("is_error") is True
     assert "尚未经 web 审核确认" in out["content"][0]["text"]
+
+
+@pytest.mark.unit
+async def test_validate_and_promote_reference_draft_step2_rejects_future_schema(
+    fake_ctx: ToolContext, monkeypatch
+) -> None:
+    """未来版本的 step2 草稿返回可行动错误，且不进入晋升逻辑。"""
+    from server.agent_runtime.sdk_tools import text_generation as mod
+
+    _rv_project(fake_ctx)
+    path = quarantine_path(fake_ctx.project_path, 1, QUARANTINE_KIND_STEP2)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    envelope = {
+        "schema_version": 3,
+        "kind": QUARANTINE_KIND_STEP2,
+        "content": {"title": "第1集", "units": [{"text": "镜头1：@[张三] 起身"}]},
+        "violations": [],
+    }
+    path.write_text(json.dumps(envelope, ensure_ascii=False), encoding="utf-8")
+
+    async def fail_if_called(*_args):
+        raise AssertionError("未来版本草稿不应进入 ScriptGenerator 晋升")
+
+    monkeypatch.setattr(mod.ScriptGenerator, "create", fail_if_called)
+    out = await _promote(fake_ctx, monkeypatch)
+
+    assert out.get("is_error") is True
+    text = out["content"][0]["text"]
+    assert "step2 隔离草稿" in text
+    assert "schema_version=3" in text
+    assert "请先升级应用后再继续" in text
+    assert path.exists()
+    assert json.loads(path.read_text(encoding="utf-8")) == envelope
 
 
 @pytest.mark.unit

@@ -821,6 +821,39 @@ describe("useProjectEventsSSE", () => {
     expect(useProjectsStore.getState().getAssetFingerprint("storyboards/scene_E1S01.png")).toBe(1710288000);
   });
 
+  it("reconnects immediately when the page returns to the foreground", () => {
+    let capturedOptions: ProjectEventStreamOptions | undefined;
+    const openSpy = vi.spyOn(API, "openProjectEventStream").mockImplementation((options) => {
+      capturedOptions = options;
+      return { close: vi.fn() } as unknown as EventSource;
+    });
+
+    vi.useFakeTimers();
+    try {
+      renderHarness("/");
+      expect(openSpy).toHaveBeenCalledTimes(1);
+
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+      act(() => {
+        capturedOptions?.onError?.(new Event("error"));
+      });
+      expect(openSpy).toHaveBeenCalledTimes(1);
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(openSpy).toHaveBeenCalledTimes(1);
+
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+      act(() => {
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(openSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+      vi.useRealTimers();
+    }
+  });
+
   it("stops the reconnect loop after the project_deleted termination event", async () => {
     let capturedOptions: ProjectEventStreamOptions | undefined;
     const closeMock = vi.fn();
@@ -1063,6 +1096,28 @@ describe("useProjectEventsSSE", () => {
       emit(options(), [taskChange({ task_type: "video" })]);
 
       expect(useAppStore.getState().referenceVideoUnitsRevision).toBe(0);
+    });
+
+
+    it("publish-job events do not invalidate entities, navigate, or refresh the workspace", async () => {
+      const options = openStream();
+      const refreshProject = vi.spyOn(useProjectsStore.getState(), "refreshProject");
+
+      renderHarness("/");
+      emit(options(), [
+        {
+          entity_type: "publish_job",
+          action: "publish_job_updated",
+          entity_id: "job-1",
+          label: "job-1",
+          focus: null,
+          important: false,
+        },
+      ]);
+
+      expect(Object.keys(useAppStore.getState().entityRevisions)).toHaveLength(0);
+      expect(refreshProject).not.toHaveBeenCalled();
+      expect(screen.getByTestId("location")).toHaveTextContent("/");
     });
 
     it("任务终态不写入实体版本表（entity_id 是一次性 task_id，无人消费）", async () => {

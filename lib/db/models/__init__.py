@@ -3,6 +3,7 @@
 from lib.db.models.agent_credential import AgentAnthropicCredential
 from lib.db.models.api_call import ApiCall
 from lib.db.models.api_key import ApiKey
+from lib.db.models.assembly_plan import AssemblyPlan, AssemblyPlanRevision
 from lib.db.models.asset import Asset
 from lib.db.models.config import ProviderConfig, SystemSetting
 from lib.db.models.creation_plan import CreationCompatibilityEvent, CreationPlanRecord
@@ -16,6 +17,10 @@ from lib.db.models.credential import ProviderCredential
 from lib.db.models.custom_provider import CustomProvider, CustomProviderModel
 from lib.db.models.generation_batch import GenerationBatchRecord
 from lib.db.models.media_asset import MediaAsset, MediaBinding, MediaDerivation
+from lib.db.models.memory import MemoryCandidate, MemoryEntry
+from lib.db.models.publish import PublishJob
+from lib.db.models.publishing_account import PublishingAccount
+from lib.db.models.render_job import RenderArtifact, RenderJob, RenderReviewSnapshot
 from lib.db.models.session import AgentSession
 from lib.db.models.session_event import AgentSessionEventLogEntry
 from lib.db.models.session_message_link import AgentSessionUserMessageLink
@@ -55,6 +60,8 @@ __all__ = [
     "CustomProviderModel",
     "Asset",
     "AgentAnthropicCredential",
+    "AssemblyPlan",
+    "AssemblyPlanRevision",
     "CreationPlanRecord",
     "CreationCompatibilityEvent",
     "CreationSkillDefinitionRecord",
@@ -66,6 +73,13 @@ __all__ = [
     "MediaAsset",
     "MediaBinding",
     "MediaDerivation",
+    "RenderJob",
+    "RenderArtifact",
+    "RenderReviewSnapshot",
+    "MemoryEntry",
+    "MemoryCandidate",
+    "PublishJob",
+    "PublishingAccount",
     "WorkflowDefinition",
     "WorkflowRevision",
     "WorkflowTemplate",

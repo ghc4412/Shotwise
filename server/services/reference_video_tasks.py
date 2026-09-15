@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy.exc import SQLAlchemyError
 
 from lib.asset_types import ASSET_SPECS, BUCKET_KEY, SHEET_KEY, normalize_asset_bucket, normalize_asset_name
+from lib.character_variants import find_character_variant
 from lib.config.resolver import (
     ConfigResolver,
     ProviderModel,
@@ -23,7 +24,7 @@ from lib.config.resolver import (
 from lib.db import async_session_factory
 from lib.db.base import DEFAULT_USER_ID
 from lib.generation_queue import get_generation_queue
-from lib.path_safety import safe_exists
+from lib.path_safety import safe_exists, safe_join
 from lib.prompt_builders import append_product_fidelity_tail
 from lib.reference_video import assemble_shots_text, assemble_shots_text_for_render
 from lib.reference_video.ad_units import ad_unit_references, ad_unit_source_signature, resolve_ad_unit_shots
@@ -86,10 +87,11 @@ def _dedupe_typed_references(references: list[dict]) -> list[dict]:
     prompt 渲染前的裁剪必须共用同一份去重结果——否则图片列表与逻辑引用列表长度不一致，
     ``@图片N`` 的编号会与实际图片错位、按图号绑定的参考音频也会挂到错的图上。
     """
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, str, str]] = set()
     deduped: list[dict] = []
     for ref in references:
-        key = (str(ref.get("type")), normalize_asset_name(str(ref.get("name"))))
+        variant_key = str(ref.get("variant_id") or ref.get("variant_slug") or "")
+        key = (str(ref.get("type")), normalize_asset_name(str(ref.get("name"))), variant_key)
         if key in seen:
             continue
         seen.add(key)
@@ -117,12 +119,23 @@ def _resolve_unit_references(
             continue
         bucket = normalize_asset_bucket(project.get(BUCKET_KEY[rtype]))
         item = bucket.get(normalize_asset_name(str(rname)))
-        sheet_rel = item.get(SHEET_KEY[rtype]) if isinstance(item, dict) else None
-        if not sheet_rel:
+        if not isinstance(item, dict):
             missing.append((rtype, rname))
             continue
-        path = project_path / sheet_rel
-        if not path.exists():
+        if rtype == "character" and (ref.get("variant_id") or ref.get("variant_slug")):
+            variant_identifier = str(ref.get("variant_id") or ref.get("variant_slug"))
+            variant = find_character_variant(item, str(rname), variant_identifier)
+            sheet_rel = variant.get("image_path") if variant is not None else None
+        else:
+            sheet_rel = item.get(SHEET_KEY[rtype])
+        if not isinstance(sheet_rel, str) or not sheet_rel:
+            missing.append((rtype, rname))
+            continue
+        try:
+            path = safe_join(project_path, sheet_rel, require_file=True)
+        except (OSError, TypeError, ValueError):
+            path = None
+        if path is None:
             missing.append((rtype, rname))
             continue
         resolved.append(path)
@@ -158,7 +171,15 @@ def _render_unit_prompt(
     shots = unit.get("shots") or []
     if not assemble_shots_text(shots).strip():
         raise ValueError("reference video unit prompt is empty: all shots[*].text are blank")
-    references = [ReferenceResource(type=r["type"], name=r["name"]) for r in (unit.get("references") or [])]
+    references = [
+        ReferenceResource(
+            type=r["type"],
+            name=r["name"],
+            variant_id=r.get("variant_id"),
+            variant_slug=r.get("variant_slug"),
+        )
+        for r in (unit.get("references") or [])
+    ]
     return render_unit_prompt(
         assemble_shots_text_for_render(shots),
         project,

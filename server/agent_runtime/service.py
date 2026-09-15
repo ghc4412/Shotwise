@@ -7,7 +7,7 @@ import copy
 import logging
 import os
 from collections import OrderedDict
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -32,7 +32,9 @@ from fastapi.sse import ServerSentEvent
 
 from lib.agent_profile import agent_profile_dir
 from lib.app_data_dir import app_data_dir
+from lib.db.base import DEFAULT_USER_ID
 from lib.i18n import DEFAULT_LOCALE, get_locale
+from lib.image_utils import NormalizedChatImage, normalize_chat_images
 from lib.profile_manifest import VALID_CONTENT_MODES
 from lib.project_manager import ProjectManager
 from server.agent_runtime.event_log import (
@@ -158,9 +160,12 @@ class AssistantService:
         status: SessionStatus | None = None,
         limit: int = 50,
         offset: int = 0,
+        user_id: str = DEFAULT_USER_ID,
     ) -> list[SessionMeta]:
         """List sessions, injecting SDK summary as title when available."""
-        sessions = await self.meta_store.list(project_name=project_name, status=status, limit=limit, offset=offset)
+        sessions = await self.meta_store.list(
+            project_name=project_name, status=status, limit=limit, offset=offset, user_id=user_id
+        )
         if not sessions or not project_name:
             return sessions
 
@@ -190,17 +195,17 @@ class AssistantService:
         summary_map = {s.session_id: s.summary for s in sdk_sessions}
         return [SessionMeta(**{**s.model_dump(), "title": summary_map.get(s.id, s.title)}) for s in sessions]
 
-    async def get_session(self, session_id: str) -> SessionMeta | None:
-        """Get session by ID."""
-        meta = await self.meta_store.get(session_id)
+    async def get_session(self, session_id: str, user_id: str = DEFAULT_USER_ID) -> SessionMeta | None:
+        """Get session by ID within the current user scope."""
+        meta = await self.meta_store.get(session_id, user_id=user_id)
         if meta and session_id in self.session_manager.sessions:
             # Update status from live session
             managed = self.session_manager.sessions[session_id]
             meta = SessionMeta(**{**meta.model_dump(), "status": managed.status})
         return meta
 
-    async def delete_session(self, session_id: str) -> bool:
-        """Delete session and cleanup."""
+    async def delete_session(self, session_id: str, user_id: str = DEFAULT_USER_ID) -> bool:
+        """Delete session and cleanup within the current user scope."""
         if session_id in self.session_manager.sessions:
             await self.session_manager.close_session(
                 session_id,
@@ -211,7 +216,7 @@ class AssistantService:
             # SDK derives project_key from `directory`; without it the key is
             # computed from server cwd and never matches inserted rows, so the
             # delete becomes a silent no-op. Resolve project cwd from meta.
-            meta = await self.meta_store.get(session_id)
+            meta = await self.meta_store.get(session_id, user_id=user_id)
             project_cwd = str(self.projects_root / meta.project_name) if meta else None
             try:
                 await delete_session_via_store(self._session_store, session_id, directory=project_cwd)  # type: ignore[arg-type]
@@ -232,14 +237,14 @@ class AssistantService:
         except Exception:
             logger.warning("删除会话事件日志失败 session_id=%s", session_id, exc_info=True)
 
-        return await self.meta_store.delete(session_id)
+        return await self.meta_store.delete(session_id, user_id=user_id)
 
     # ==================== Messages ====================
 
     def _prepare_prompt(
         self,
         content: str,
-        images: list["ImageAttachment"] | None = None,
+        images: Sequence["ImageAttachment"] | None = None,
     ) -> tuple[str, Any | None, list[dict[str, Any]] | None]:
         """Prepare prompt components: (text, sdk_prompt_or_none, echo_blocks_or_none)."""
         text = content.strip()
@@ -247,8 +252,9 @@ class AssistantService:
             raise ValueError("消息内容不能为空")
 
         if images:
-            sdk_prompt = self._build_multimodal_prompt(text, images)
-            echo_blocks: list[dict[str, Any]] = [self._image_block(img) for img in images]
+            normalized_images = normalize_chat_images(images)
+            sdk_prompt = self._build_multimodal_prompt(text, normalized_images)
+            echo_blocks: list[dict[str, Any]] = [self._image_block(img) for img in normalized_images]
             if text:
                 echo_blocks.append({"type": "text", "text": text})
             return text, sdk_prompt, echo_blocks
@@ -270,6 +276,7 @@ class AssistantService:
         locale: str = DEFAULT_LOCALE,
         client_key: str | None = None,
         sdk_type: str = "claude",
+        user_id: str = DEFAULT_USER_ID,
     ) -> dict[str, Any]:
         """Unified send: create new session or send to existing one.
 
@@ -284,7 +291,7 @@ class AssistantService:
 
         if session_id:
             # Existing session
-            meta = await self.meta_store.get(session_id)
+            meta = await self.meta_store.get(session_id, user_id=user_id)
             if meta is None:
                 raise FileNotFoundError(f"session not found: {session_id}")
             if meta.project_name != project_name:
@@ -303,14 +310,17 @@ class AssistantService:
                 locale=locale,
                 user_entry=user_entry,
                 client_key=client_key,
+                user_id=user_id,
             )
             return {"status": "accepted", "session_id": session_id, "entry": entry}
         else:
             # New session
             if not client_key:
-                return await self._create_new_session(project_name, content, images, locale, client_key, sdk_type)
+                return await self._create_new_session(
+                    project_name, content, images, locale, client_key, sdk_type, user_id
+                )
 
-            existing = await self._find_accepted_new_session(client_key, project_name)
+            existing = await self._find_accepted_new_session(client_key, project_name, user_id)
             if existing is not None:
                 return existing
 
@@ -319,14 +329,18 @@ class AssistantService:
             lock = self._new_session_locks.lock_for(client_key)
             async with lock:
                 # 双重检查：等锁期间先行者可能已完成同一 client_key 的建会话。
-                existing = await self._find_accepted_new_session(client_key, project_name)
+                existing = await self._find_accepted_new_session(client_key, project_name, user_id)
                 if existing is not None:
                     return existing
-                result = await self._create_new_session(project_name, content, images, locale, client_key, sdk_type)
+                result = await self._create_new_session(
+                    project_name, content, images, locale, client_key, sdk_type, user_id
+                )
                 self._record_new_session_client_key(client_key, result["session_id"])
                 return result
 
-    async def _find_accepted_new_session(self, client_key: str, project_name: str) -> dict[str, Any] | None:
+    async def _find_accepted_new_session(
+        self, client_key: str, project_name: str, user_id: str = DEFAULT_USER_ID
+    ) -> dict[str, Any] | None:
         """按幂等键定位已受理的新会话：进程内映射为快路径，事件日志跨会话
         查询兜底——进程重启 / LRU 淘汰后映射丢失，受理已落库的重试仍须命中
         既有会话而非重复建会话（重复执行同一 prompt、重复计费）。
@@ -349,7 +363,7 @@ class AssistantService:
                 # 一次查询，但仍以精确条件避免这层不必要的抖动）。
                 if self._new_session_client_keys.get(client_key) == mapped_session_id:
                     self._new_session_client_keys.pop(client_key, None)
-            elif await self._new_session_matches_project(mapped_session_id, project_name):
+            elif await self._new_session_matches_project(mapped_session_id, project_name, user_id):
                 # 命中即刷新 LRU 位置：否则被频繁重试命中的 key 仍按插入
                 # 顺序（而非访问顺序）淘汰，退化成 FIFO。上一行 await 期间
                 # 该 key 可能已被其他并发请求的淘汰逻辑移除，直接
@@ -365,7 +379,7 @@ class AssistantService:
         if recovered is None:
             return None
         session_id, entry = recovered
-        if not await self._new_session_matches_project(session_id, project_name):
+        if not await self._new_session_matches_project(session_id, project_name, user_id):
             # 兜底命中的会话属于其他项目 → 视为未命中，走当前项目新建路径。
             return None
         # 上一行 await 期间该 key 可能已被其他并发请求记入新映射；仅当当前
@@ -375,11 +389,13 @@ class AssistantService:
             self._record_new_session_client_key(client_key, session_id)
         return {"status": "accepted", "session_id": session_id, "entry": entry}
 
-    async def _new_session_matches_project(self, session_id: str, project_name: str) -> bool:
+    async def _new_session_matches_project(
+        self, session_id: str, project_name: str, user_id: str = DEFAULT_USER_ID
+    ) -> bool:
         """幂等命中的新会话是否属于当前调用项目。校验依据为会话 meta 的
         ``project_name``；meta 不存在（异常 / 已删）时不阻断命中，保持既有幂等
         语义——跨项目串号的前提是命中会话 meta 存在且项目不同。"""
-        meta = await self.meta_store.get(session_id)
+        meta = await self.meta_store.get(session_id, user_id=user_id)
         return meta is None or meta.project_name == project_name
 
     def _record_new_session_client_key(self, client_key: str, session_id: str) -> None:
@@ -392,10 +408,11 @@ class AssistantService:
         self,
         project_name: str,
         content: str,
-        images: list["ImageAttachment"] | None,
+        images: Sequence["ImageAttachment"] | None,
         locale: str,
         client_key: str | None,
         sdk_type: str = "claude",
+        user_id: str = DEFAULT_USER_ID,
     ) -> dict[str, Any]:
         """实际创建新会话并投递首条消息，不涉及 client_key 幂等映射记账。"""
         text, sdk_prompt, echo_blocks = self._prepare_prompt(content, images)
@@ -410,6 +427,7 @@ class AssistantService:
             locale=locale,
             user_entry=user_entry,
             client_key=client_key,
+            user_id=user_id,
         )
         managed = self.session_manager.sessions.get(new_sdk_session_id)
         entry = managed.initial_user_log_entry if managed is not None else None
@@ -432,6 +450,7 @@ class AssistantService:
         images: list["ImageAttachment"] | None = None,
         locale: str = DEFAULT_LOCALE,
         client_key: str | None = None,
+        user_id: str = DEFAULT_USER_ID,
     ) -> dict[str, Any]:
         """改写 ``session_id`` 中锚点处的那条用户消息，返回承接改写的新会话。
 
@@ -453,6 +472,7 @@ class AssistantService:
                 images=images,
                 locale=locale,
                 client_key=None,
+                user_id=user_id,
             )
         async with self._rewrite_locks.lock_for(f"{session_id}:{client_key}"):
             return await self._rewrite_message_once(
@@ -463,6 +483,7 @@ class AssistantService:
                 images=images,
                 locale=locale,
                 client_key=client_key,
+                user_id=user_id,
             )
 
     async def _rewrite_message_once(
@@ -475,8 +496,9 @@ class AssistantService:
         images: list["ImageAttachment"] | None,
         locale: str,
         client_key: str | None,
+        user_id: str,
     ) -> dict[str, Any]:
-        meta = await self.meta_store.get(session_id)
+        meta = await self.meta_store.get(session_id, user_id=user_id)
         if meta is None or meta.project_name != project_name:
             raise FileNotFoundError(f"session not found: {session_id}")
 
@@ -488,7 +510,7 @@ class AssistantService:
         # 原会话已被取代：同一 client_key 的重试在新分支里认领自己的权威条目，
         # 其余情形是对一个已作废分支发起的改写，明确拒绝而非再分叉一次。
         if meta.superseded_by is not None:
-            replay = await self._replay_rewrite(meta.superseded_by, client_key)
+            replay = await self._replay_rewrite(meta.superseded_by, client_key, user_id=user_id)
             if replay is not None:
                 return replay
             raise SessionSupersededError(f"session {session_id} has already been superseded by {meta.superseded_by}")
@@ -507,16 +529,16 @@ class AssistantService:
         if await self.session_manager.get_pending_questions_snapshot(session_id):
             raise PendingQuestionError(f"session {session_id} has pending questions")
 
-        await self._settle_running_session(session_id)
+        await self._settle_running_session(session_id, user_id=user_id)
 
-        branched = await self._branch_or_reject(session_id, anchor_entry_uuid)
+        branched = await self._branch_or_reject(session_id, anchor_entry_uuid, user_id=user_id)
         new_session_id = branched.session_id
         # 分支一旦发布（superseded 指针已指向新会话），其后每一步都在补偿范围内：
         # 中途失败若不撤回，原会话被隐藏、新会话又没收到改写后的消息，重试还会
         # 撞上「已被取代」。send_message 的每条抛出路径都不留下受理条目（投递失败
         # 的条目由它自己补偿删除，启动失败发生在写入之前），因此整体撤回不丢数据。
         try:
-            new_meta = await self.meta_store.get(new_session_id)
+            new_meta = await self.meta_store.get(new_session_id, user_id=user_id)
             if branched.resumable:
                 # 懒生成先行：改写后的消息要排在复制来的前缀历史之后。
                 await self.event_log.ensure_backfilled(new_session_id, project_cwd)
@@ -531,9 +553,10 @@ class AssistantService:
                 user_entry=user_entry,
                 client_key=client_key,
                 resumable=branched.resumable,
+                user_id=user_id,
             )
         except BaseException:
-            await self._discard_branch(session_id, new_session_id)
+            await self._discard_branch(session_id, new_session_id, user_id)
             raise
 
         return {
@@ -543,14 +566,16 @@ class AssistantService:
             "entry": entry,
         }
 
-    async def _replay_rewrite(self, new_session_id: str, client_key: str | None) -> dict[str, Any] | None:
+    async def _replay_rewrite(
+        self, new_session_id: str, client_key: str | None, user_id: str = DEFAULT_USER_ID
+    ) -> dict[str, Any] | None:
         """幂等重放：给定 client_key 的改写是否已由 ``new_session_id`` 承接。"""
         if not client_key:
             return None
         entry = await self.event_log_store.find_by_client_key(new_session_id, client_key)
         if entry is None:
             return None
-        meta = await self.meta_store.get(new_session_id)
+        meta = await self.meta_store.get(new_session_id, user_id=user_id)
         return {
             "status": "accepted",
             "session_id": new_session_id,
@@ -558,14 +583,14 @@ class AssistantService:
             "entry": entry,
         }
 
-    async def _settle_running_session(self, session_id: str) -> None:
+    async def _settle_running_session(self, session_id: str, user_id: str = DEFAULT_USER_ID) -> None:
         """中断运行中的轮次并等它落到终态——运行中的会话分叉不出干净的前缀。
 
         对用户是一步操作：改写请求自带中断，不需要先点停止。终态由 inbox 任务
         在收到 SDK 的 result 消息后推导，只能观察状态；被中断轮次尾巴上的消息
         本就排在锚点之后、要随原分支作废，无需等它们落库。
         """
-        status = await self.session_manager.interrupt_session(session_id)
+        status = await self.session_manager.interrupt_session(session_id, user_id=user_id)
         if status != "running":
             return
         deadline = asyncio.get_running_loop().time() + self._INTERRUPT_SETTLE_TIMEOUT
@@ -573,12 +598,14 @@ class AssistantService:
             if asyncio.get_running_loop().time() >= deadline:
                 raise InterruptSettleTimeoutError(f"session {session_id} did not settle after interrupt")
             await asyncio.sleep(self._INTERRUPT_SETTLE_POLL)
-            status = await self.session_manager.get_status(session_id) or "idle"
+            status = await self.session_manager.get_status(session_id, user_id=user_id) or "idle"
 
-    async def _branch_or_reject(self, session_id: str, anchor_entry_uuid: str) -> BranchedSession:
+    async def _branch_or_reject(
+        self, session_id: str, anchor_entry_uuid: str, user_id: str = DEFAULT_USER_ID
+    ) -> BranchedSession:
         """分叉，并把分支服务的异常翻译回编排层能分辨的拒绝理由。"""
         try:
-            return await self.session_branch.branch(session_id, anchor_entry_uuid)
+            return await self.session_branch.branch(session_id, anchor_entry_uuid, user_id=user_id)
         except BranchAnchorError as exc:
             # 编排层的预检放行了、切片却拒绝：解析出的 uuid 在 transcript 里查无
             # 此条（锚点是运行中轮次刚发出、SDK 尚未回放的那条），或该条目载有
@@ -587,7 +614,7 @@ class AssistantService:
                 f"anchor {anchor_entry_uuid} is not a forkable user message of session {session_id}"
             ) from exc
         except SessionBranchError as exc:
-            meta = await self.meta_store.get(session_id)
+            meta = await self.meta_store.get(session_id, user_id=user_id)
             if meta is not None and meta.superseded_by is not None:
                 # 预检与分叉之间输给了另一次改写（指针的条件更新只让一个赢）。
                 raise SessionSupersededError(
@@ -595,7 +622,9 @@ class AssistantService:
                 ) from exc
             raise
 
-    async def _discard_branch(self, origin_session_id: str, new_session_id: str) -> None:
+    async def _discard_branch(
+        self, origin_session_id: str, new_session_id: str, user_id: str = DEFAULT_USER_ID
+    ) -> None:
         """撤回一个没能承接住改写的分支：先断开它的运行时，再清数据。"""
         try:
             if new_session_id in self.session_manager.sessions:
@@ -609,12 +638,12 @@ class AssistantService:
         except Exception:
             logger.exception("删除未完成分支会话事件日志失败 session_id=%s", new_session_id)
         try:
-            await self.session_branch.discard(origin_session_id, new_session_id)
+            await self.session_branch.discard(origin_session_id, new_session_id, user_id=user_id)
         except Exception:
             logger.exception("撤回未完成分支失败 origin=%s new=%s", origin_session_id, new_session_id)
 
     @staticmethod
-    def _image_block(img: "ImageAttachment") -> dict[str, Any]:
+    def _image_block(img: "ImageAttachment | NormalizedChatImage") -> dict[str, Any]:
         """Build a single image content block dict."""
         return {
             "type": "image",
@@ -628,7 +657,7 @@ class AssistantService:
     @staticmethod
     def _build_multimodal_prompt(
         text: str,
-        images: list["ImageAttachment"],
+        images: Sequence["ImageAttachment | NormalizedChatImage"],
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Build an async generator yielding a single multimodal user message for Claude SDK.
 
@@ -656,35 +685,40 @@ class AssistantService:
         answers: dict[str, str],
         *,
         meta: SessionMeta | None = None,
+        user_id: str = DEFAULT_USER_ID,
     ) -> dict[str, Any]:
         """Submit answers for a pending AskUserQuestion."""
         if meta is None:
-            meta = await self.meta_store.get(session_id)
+            meta = await self.meta_store.get(session_id, user_id=user_id)
             if meta is None:
                 raise FileNotFoundError(f"session not found: {session_id}")
         await self.session_manager.answer_user_question(session_id, question_id, answers)
         return {"status": "accepted", "session_id": session_id, "question_id": question_id}
 
-    async def interrupt_session(self, session_id: str, *, meta: SessionMeta | None = None) -> dict[str, Any]:
+    async def interrupt_session(
+        self, session_id: str, *, meta: SessionMeta | None = None, user_id: str = DEFAULT_USER_ID
+    ) -> dict[str, Any]:
         """Interrupt a running session."""
         if meta is None:
-            meta = await self.meta_store.get(session_id)
+            meta = await self.meta_store.get(session_id, user_id=user_id)
             if meta is None:
                 raise FileNotFoundError(f"session not found: {session_id}")
-        session_status = await self.session_manager.interrupt_session(session_id)
+        session_status = await self.session_manager.interrupt_session(session_id, user_id=meta.user_id)
         return {
             "status": "accepted",
             "session_id": session_id,
             "session_status": session_status,
         }
 
-    async def switch_agent(self, session_id: str, sdk_type: str, *, meta: SessionMeta | None = None) -> dict[str, Any]:
+    async def switch_agent(
+        self, session_id: str, sdk_type: str, *, meta: SessionMeta | None = None, user_id: str = DEFAULT_USER_ID
+    ) -> dict[str, Any]:
         """切换会话当前活跃的 Agent SDK 类型（claude ↔ openai）。"""
         if meta is None:
-            meta = await self.meta_store.get(session_id)
+            meta = await self.meta_store.get(session_id, user_id=user_id)
             if meta is None:
                 raise FileNotFoundError(f"session not found: {session_id}")
-        updated = await self.session_manager.switch_agent(session_id, sdk_type, meta=meta)
+        updated = await self.session_manager.switch_agent(session_id, sdk_type, meta=meta, user_id=meta.user_id)
         return {"status": "switched", "session_id": session_id, "meta": updated.model_dump()}
 
     # ==================== 会话事件日志（UI 时间线唯一读源） ====================
@@ -695,13 +729,14 @@ class AssistantService:
         *,
         meta: SessionMeta | None = None,
         after_seq: int = -1,
+        user_id: str = DEFAULT_USER_ID,
     ) -> dict[str, Any]:
         """冷读事件日志（历史回放 / 非 running 会话初始加载）。"""
         if meta is None:
-            meta = await self.meta_store.get(session_id)
+            meta = await self.meta_store.get(session_id, user_id=user_id)
             if meta is None:
                 raise FileNotFoundError(f"session not found: {session_id}")
-        status = await self.session_manager.get_status(session_id) or meta.status
+        status = await self.session_manager.get_status(session_id, user_id=meta.user_id) or meta.status
         project_cwd = self._resolve_project_cwd_safe(meta.project_name)
         entries = await self.event_log.list_entries(session_id, project_cwd, after_seq=after_seq)
         draft_state = (
@@ -722,6 +757,7 @@ class AssistantService:
         meta: SessionMeta | None = None,
         request: Request | None = None,
         after_seq: int = -1,
+        user_id: str = DEFAULT_USER_ID,
     ) -> AsyncIterator[ServerSentEvent]:
         """SSE entry 流：事件 ``id`` 即 seq，断线重连按 cursor 续传、不整帧重算。
 
@@ -731,11 +767,12 @@ class AssistantService:
         与终态 status 后即结束。
         """
         if meta is None:
-            meta = await self.meta_store.get(session_id)
+            meta = await self.meta_store.get(session_id, user_id=user_id)
             if meta is None:
                 raise FileNotFoundError(f"session not found: {session_id}")
 
-        initial_status = await self.session_manager.get_status(session_id) or meta.status
+        user_id = meta.user_id
+        initial_status = await self.session_manager.get_status(session_id, user_id=user_id) or meta.status
         project_cwd = self._resolve_project_cwd_safe(meta.project_name)
 
         if initial_status != "running":
@@ -750,7 +787,10 @@ class AssistantService:
         locale = get_locale(request) if request is not None else DEFAULT_LOCALE
         last_seq = after_seq
         async with self.session_manager.stream_messages(
-            session_id, idle_timeout=self.stream_heartbeat_seconds, locale=locale
+            session_id,
+            idle_timeout=self.stream_heartbeat_seconds,
+            locale=locale,
+            user_id=user_id,
         ) as stream:
             ready = await anext(stream, None)
             if not isinstance(ready, SubscriptionReady):
@@ -767,7 +807,7 @@ class AssistantService:
             for question in await self.session_manager.get_pending_questions_snapshot(session_id):
                 yield self._sse_event("question", {**question, "session_id": session_id})
 
-            status: SessionStatus = await self.session_manager.get_status(session_id) or initial_status
+            status: SessionStatus = await self.session_manager.get_status(session_id, user_id=user_id) or initial_status
             if status != "running":
                 yield self._sse_event(
                     "status",
@@ -793,7 +833,7 @@ class AssistantService:
                             break
 
                         continue
-                    live_status = await self.session_manager.get_status(session_id) or status
+                    live_status = await self.session_manager.get_status(session_id, user_id=user_id) or status
                     if live_status != "running":
                         yield self._sse_event(
                             "status",
@@ -849,10 +889,11 @@ class AssistantService:
         self,
         session_id: str,
         failure: dict[str, Any],
+        user_id: str = DEFAULT_USER_ID,
     ) -> AsyncIterator[ServerSentEvent]:
         """即时发送冷恢复启动失败；只落终态，不把故障详情写入历史。"""
         entry = build_failure_entry(failure)
-        await self.meta_store.update_status(session_id, "error")
+        await self.meta_store.update_status(session_id, "error", user_id=user_id)
         yield self._sse_event("entry", entry)
         yield self._sse_event(
             "status",

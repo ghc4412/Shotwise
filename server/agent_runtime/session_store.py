@@ -7,6 +7,7 @@ Wraps SessionRepository with a convenience class.
 from __future__ import annotations
 
 from lib.db import safe_session_factory
+from lib.db.base import DEFAULT_USER_ID
 from lib.db.repositories.session_repo import SessionRepository
 from server.agent_runtime.models import SessionMeta, SessionStatus
 
@@ -15,6 +16,7 @@ def _dict_to_session(d: dict) -> SessionMeta:
     """Convert a repository dict to a SessionMeta dataclass."""
     return SessionMeta(
         id=d["sdk_session_id"],  # DB 内部 id 不暴露，对外统一用 sdk_session_id
+        user_id=d.get("user_id") or DEFAULT_USER_ID,
         project_name=d["project_name"],
         title=d.get("title") or "",
         status=d["status"],
@@ -39,6 +41,7 @@ class SessionMetaStore:
         project_name: str,
         sdk_session_id: str,
         sdk_type: str = "claude",
+        user_id: str = DEFAULT_USER_ID,
         *,
         fork_parent_session_id: str | None = None,
         fork_anchor_uuid: str | None = None,
@@ -50,27 +53,28 @@ class SessionMetaStore:
                 project_name=project_name,
                 sdk_session_id=sdk_session_id,
                 sdk_type=sdk_type,
+                user_id=user_id,
                 fork_parent_session_id=fork_parent_session_id,
                 fork_anchor_uuid=fork_anchor_uuid,
             )
         return _dict_to_session(d)
 
-    async def get(self, session_id: str) -> SessionMeta | None:
+    async def get(self, session_id: str, user_id: str | None = None) -> SessionMeta | None:
 
         async with self._session_factory() as session:
             repo = SessionRepository(session)
-            d = await repo.get(session_id)
+            d = await repo.get(session_id, user_id=user_id)
         if d is None:
             return None
         return _dict_to_session(d)
 
-    async def mark_superseded(self, session_id: str, superseded_by: str) -> bool:
+    async def mark_superseded(self, session_id: str, superseded_by: str, user_id: str | None = None) -> bool:
         async with self._session_factory() as session:
-            return await SessionRepository(session).mark_superseded(session_id, superseded_by)
+            return await SessionRepository(session).mark_superseded(session_id, superseded_by, user_id=user_id)
 
-    async def clear_superseded(self, session_id: str, superseded_by: str) -> bool:
+    async def clear_superseded(self, session_id: str, superseded_by: str, user_id: str | None = None) -> bool:
         async with self._session_factory() as session:
-            return await SessionRepository(session).clear_superseded(session_id, superseded_by)
+            return await SessionRepository(session).clear_superseded(session_id, superseded_by, user_id=user_id)
 
     async def list(
         self,
@@ -78,6 +82,7 @@ class SessionMetaStore:
         status: SessionStatus | None = None,
         limit: int = 50,
         offset: int = 0,
+        user_id: str | None = None,
     ) -> list[SessionMeta]:
 
         async with self._session_factory() as session:
@@ -87,14 +92,15 @@ class SessionMetaStore:
                 status=status,
                 limit=limit,
                 offset=offset,
+                user_id=user_id,
             )
         return [_dict_to_session(d) for d in result]
 
-    async def update_status(self, session_id: str, status: SessionStatus) -> bool:
+    async def update_status(self, session_id: str, status: SessionStatus, user_id: str | None = None) -> bool:
 
         async with self._session_factory() as session:
             repo = SessionRepository(session)
-            return await repo.update_status(session_id, status)
+            return await repo.update_status(session_id, status, user_id=user_id)
 
     async def update_sdk_type(
         self,
@@ -102,6 +108,7 @@ class SessionMetaStore:
         sdk_type: str,
         *,
         claude_resume_id: str | None = None,
+        user_id: str | None = None,
     ) -> bool:
 
         async with self._session_factory() as session:
@@ -110,16 +117,17 @@ class SessionMetaStore:
                 session_id,
                 sdk_type,
                 claude_resume_id=claude_resume_id,
+                user_id=user_id,
             )
 
-    async def interrupt_running_sessions(self) -> int:
+    async def interrupt_running_sessions(self, user_id: str | None = None) -> int:
 
         async with self._session_factory() as session:
             repo = SessionRepository(session)
-            return await repo.interrupt_running()
+            return await repo.interrupt_running(user_id=user_id)
 
-    async def delete(self, session_id: str) -> bool:
+    async def delete(self, session_id: str, user_id: str | None = None) -> bool:
 
         async with self._session_factory() as session:
             repo = SessionRepository(session)
-            return await repo.delete(session_id)
+            return await repo.delete(session_id, user_id=user_id)

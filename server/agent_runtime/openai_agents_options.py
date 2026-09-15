@@ -28,8 +28,13 @@ from lib.agent_protocol import (
     PROTOCOL_RESPONSES,
     normalize_protocol,
 )
+from lib.db.base import DEFAULT_USER_ID
 from lib.i18n import DEFAULT_LOCALE
 from server.agent_runtime.document_workflow import PROJECT_DOCUMENT_WORKFLOW
+from server.agent_runtime.options_assembler import (
+    MemoryContextLoader,
+    load_agent_memory_context,
+)
 
 _OPENAI_PERSONA_PROMPT = """你是 Shotwise 智能体，一个专业的 AI 视频内容创作助手。
 你负责把小说内容转化为可发布的短视频内容，并通过已注册的工具完成项目操作。
@@ -67,6 +72,9 @@ class OpenAIAgentsOptionsAssembler:
         max_turns_provider: Callable[[], int | None] | None = None,
         session_db_path: Path | None = None,
         history_loader: Callable[[str], Any] | None = None,
+        session_factory_provider: Callable[[], Any] | None = None,
+        user_id_provider: Callable[[], str] | None = None,
+        memory_context_loader: MemoryContextLoader | None = None,
     ) -> None:
         self.projects_root = Path(projects_root)
         self._resolve_project_cwd = resolve_project_cwd
@@ -75,6 +83,9 @@ class OpenAIAgentsOptionsAssembler:
         self._max_turns_provider = max_turns_provider
         self._session_db_path = session_db_path or (self.projects_root / ".openai_agents_sessions.db")
         self._history_loader = history_loader
+        self._session_factory_provider = session_factory_provider or (lambda: None)
+        self._user_id_provider = user_id_provider or (lambda: DEFAULT_USER_ID)
+        self._memory_context_loader = memory_context_loader
 
     async def build(
         self,
@@ -83,6 +94,7 @@ class OpenAIAgentsOptionsAssembler:
         session_id: str,
         model: str = "",
         locale: str = DEFAULT_LOCALE,
+        user_id: str = DEFAULT_USER_ID,
     ) -> OpenAIAgentsBuildResult:
         from agents import OpenAIProvider, SQLiteSession, set_tracing_disabled
 
@@ -106,8 +118,25 @@ class OpenAIAgentsOptionsAssembler:
 
         from server.agent_runtime.sdk_tools import build_shotwise_agents_tools
 
-        tools = build_shotwise_agents_tools(project_name=project_name, projects_root=self.projects_root)
-        system_prompt = self._build_system_prompt(project_name, locale, [getattr(t, "name", "") for t in tools])
+        tools = build_shotwise_agents_tools(
+            project_name=project_name,
+            projects_root=self.projects_root,
+            user_id=user_id,
+            session_id=session_id,
+        )
+        memory_query = ""
+        if self._memory_context_loader is not None:
+            memory_context = await self._memory_context_loader(user_id, project_name, memory_query)
+        else:
+            memory_context = await load_agent_memory_context(
+                self._session_factory_provider(),
+                user_id,
+                project_name,
+                memory_query,
+            )
+        system_prompt = self._build_system_prompt(
+            project_name, locale, [getattr(t, "name", "") for t in tools], memory_context=memory_context
+        )
         session = SQLiteSession(session_id=session_id, db_path=str(self._session_db_path))
         if self._history_loader is not None and session_id:
             entries = await self._history_loader(session_id)
@@ -140,7 +169,14 @@ class OpenAIAgentsOptionsAssembler:
             result.setdefault(key, "")
         return result
 
-    def _build_system_prompt(self, project_name: str, locale: str, tool_names: list[str]) -> str:
+    def _build_system_prompt(
+        self,
+        project_name: str,
+        locale: str,
+        tool_names: list[str],
+        *,
+        memory_context: str | None = None,
+    ) -> str:
         lang = {"zh": "中文", "en": "英语", "vi": "越南语"}.get(locale, "中文")
         try:
             self._resolve_project_cwd(project_name)
@@ -158,6 +194,7 @@ class OpenAIAgentsOptionsAssembler:
             f"## 当前可用工具\n{', '.join(name for name in tool_names if name)}\n"
             "只可使用上述工具。"
             f"{project_context}"
+            f"{memory_context or ''}"
         )
 
 

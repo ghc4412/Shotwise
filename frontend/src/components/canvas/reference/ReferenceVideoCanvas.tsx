@@ -100,6 +100,17 @@ function draftKey(projectName: string, episode: number, unitId: string): string 
   return `${projectName}::${episode}::${unitId}`;
 }
 
+function sameReference(left: ReferenceResource, right: ReferenceResource): boolean {
+  if (left.type !== right.type || normalizeAssetName(left.name) !== normalizeAssetName(right.name)) return false;
+  if (!left.variant_id && !left.variant_slug && !right.variant_id && !right.variant_slug) return true;
+  if (left.variant_id && right.variant_id) return left.variant_id === right.variant_id;
+  return Boolean(
+    left.variant_slug &&
+      right.variant_slug &&
+      normalizeAssetName(left.variant_slug) === normalizeAssetName(right.variant_slug),
+  );
+}
+
 function toastError(e: unknown, format?: (msg: string) => string): void {
   const msg = errMsg(e);
   useAppStore.getState().pushToast(format ? format(msg) : msg, "error");
@@ -472,7 +483,12 @@ export function ReferenceVideoCanvas({
       const key = normalizeAssetName(name);
       if (!Object.hasOwn(out, key)) out[key] = kind;
     };
-    for (const name of Object.keys(project?.characters ?? {})) claim(name, "character");
+    for (const [name, character] of Object.entries(project?.characters ?? {})) {
+      claim(name, "character");
+      for (const [slug, variant] of Object.entries(character.variants ?? {})) {
+        claim(`${name}/${variant.slug || slug}`, "character");
+      }
+    }
     for (const name of Object.keys(project?.scenes ?? {})) claim(name, "scene");
     for (const name of Object.keys(project?.props ?? {})) claim(name, "prop");
     return out;
@@ -548,12 +564,8 @@ export function ReferenceVideoCanvas({
   const handleRemoveRef = useCallback(
     (ref: ReferenceResource) => {
       if (!selected) return;
-      // 存量 references 的 name 可能是 NFD（外部编辑/旧数据落盘），归一后比对，
-      // 否则视觉同名的条目删不掉
-      const target = normalizeAssetName(ref.name);
-      const next = selected.references.filter(
-        (r) => !(normalizeAssetName(r.name) === target && r.type === ref.type),
-      );
+      // Compare stable variant identity first, falling back to the slug for legacy references.
+      const next = selected.references.filter((r) => !sameReference(r, ref));
       patchReferencesAtomic(selected.unit_id, next);
     },
     [patchReferencesAtomic, selected],
@@ -562,15 +574,13 @@ export function ReferenceVideoCanvas({
   const handleAddRef = useCallback(
     (ref: ReferenceResource) => {
       if (!selected) return;
-      // 落盘值统一 NFC：PATCH 的 references 写回口径与 mergeReferences 的产出一致，否则
-      // 挑选到的 NFD 名称会绕过归一边界直接落盘。
-      const normalizedRef: ReferenceResource = { ...ref, name: normalizeAssetName(ref.name) };
-      if (
-        selected.references.some(
-          (r) => r.type === normalizedRef.type && normalizeAssetName(r.name) === normalizedRef.name,
-        )
-      )
-        return;
+      // Normalize names before persistence so picker output follows the parser's NFC boundary.
+      const normalizedRef: ReferenceResource = {
+        ...ref,
+        name: normalizeAssetName(ref.name),
+        variant_slug: ref.variant_slug ? normalizeAssetName(ref.variant_slug) : undefined,
+      };
+      if (selected.references.some((r) => sameReference(r, normalizedRef))) return;
       const next = [...selected.references, normalizedRef];
       patchReferencesAtomic(selected.unit_id, next);
     },

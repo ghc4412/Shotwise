@@ -78,14 +78,30 @@ function structuredDisplayUnits(draft: ReferenceStep1Draft): DisplayUnit[] {
  * 未登记名不进列表——未登记会在正文高亮里以红色呈现，footer 不重复报它）。晋升后端会重新
  * 权威派生一份落盘，这里的派生不作为任何写入依据。
  */
+function referenceFromMention(name: string, lookup: MentionLookup): ReferenceResource | undefined {
+  const assetKind = lookup[name];
+  if (!assetKind) return undefined;
+  // Slash syntax is variant syntax only for a registered character parent. This
+  // keeps ordinary scene/prop names containing punctuation intact.
+  const slash = name.indexOf("/");
+  if (
+    assetKind === "character" &&
+    slash > 0 &&
+    slash === name.lastIndexOf("/") &&
+    lookup[name.slice(0, slash)] === "character"
+  ) {
+    return { type: "character", name: name.slice(0, slash), variant_slug: name.slice(slash + 1) };
+  }
+  return { type: assetKind, name };
+}
+
 function deriveDisplayReferences(text: string, lookup: MentionLookup): ReferenceResource[] {
   const out: ReferenceResource[] = [];
   // extractMentions（非 tokenizePrompt）：规范台词行里的说话人不产参考图，与后端
   // extract_mentions 同口径——tokenizePrompt 是给高亮用的，不做这条跳过。
   for (const name of extractMentions(text)) {
-    const assetKind = lookup[name];
-    if (!assetKind) continue;
-    out.push({ type: assetKind, name });
+    const reference = referenceFromMention(name, lookup);
+    if (reference) out.push(reference);
   }
   return out;
 }
@@ -177,7 +193,7 @@ function ReferencePills({ references }: { references: ReferenceResource[] }) {
         const palette = assetColor(ref.type);
         return (
           <span
-            key={`${ref.type}:${ref.name}`}
+            key={`${ref.type}:${ref.variant_slug ? `${ref.name} / ${ref.variant_slug}` : ref.name}:${ref.variant_id ?? ref.variant_slug ?? ""}`}
             className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] ${palette.textClass} ${palette.bgClass}`}
             translate="no"
           >

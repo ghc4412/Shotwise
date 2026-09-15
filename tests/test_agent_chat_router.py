@@ -207,11 +207,11 @@ class _StubSessionManager:
         self.status = status
         self._flood = flood
 
-    async def get_status(self, session_id):
+    async def get_status(self, session_id, **kwargs):
         return self.status
 
     @contextlib.asynccontextmanager
-    async def stream_messages(self, session_id, *, idle_timeout=5.0):
+    async def stream_messages(self, session_id, *, idle_timeout=5.0, user_id=None):
         events = self._events
         flood = self._flood
 

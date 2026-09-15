@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from lib import PROJECT_ROOT
 from lib.api_errors import BadRequestError, ConflictError, NotFoundError, ServiceUnavailableError
 from lib.i18n import Translator, get_locale
+from lib.image_utils import ChatImageError
 from server.agent_runtime.failure_observation import build_startup_failure_observation
 from server.agent_runtime.models import SessionMeta
 from server.agent_runtime.service import (
@@ -27,7 +28,7 @@ from server.agent_runtime.service import (
 )
 from server.agent_runtime.session_branch import SessionBranchError
 from server.agent_runtime.session_manager import AgentStartupError, SessionBusyError, SessionCapacityError
-from server.auth import CurrentUserFlexible
+from server.auth import CurrentUser, CurrentUserFlexible
 
 router = APIRouter()
 
@@ -61,10 +62,15 @@ def agent_startup_failure_detail(
 
 
 async def _validate_session_ownership(
-    service: AssistantService, session_id: str, project_name: str, _t: Callable[..., str]
+    service: AssistantService,
+    session_id: str,
+    project_name: str,
+    _t: Callable[..., str],
+    *,
+    user_id: str,
 ) -> "SessionMeta":
     """Validate session belongs to the specified project and return it."""
-    session = await service.get_session(session_id)
+    session = await service.get_session(session_id, user_id=user_id)
     if session is None:
         raise HTTPException(status_code=404, detail=_t("session_not_found", session_id=session_id))
     if session.project_name != project_name:
@@ -76,9 +82,10 @@ async def _assistant_service_for_stream(
     project_name: str,
     session_id: str,
     _t: Translator,
+    _user: CurrentUserFlexible,
 ) -> tuple[AssistantService, SessionMeta]:
     service = get_assistant_service()
-    meta = await _validate_session_ownership(service, session_id, project_name, _t)
+    meta = await _validate_session_ownership(service, session_id, project_name, _t, user_id=_user.id)
     return service, meta
 
 
@@ -118,6 +125,7 @@ async def send_message(
     req: SendRequest,
     request: Request,
     _t: Translator,
+    user: CurrentUser,
 ):
     try:
         service = get_assistant_service()
@@ -129,6 +137,7 @@ async def send_message(
             locale=get_locale(request),
             client_key=req.client_key,
             sdk_type=req.sdk_type,
+            user_id=user.id,
         )
         return result
     except SessionCapacityError as exc:
@@ -140,6 +149,8 @@ async def send_message(
     except SessionBusyError as exc:
         logger.warning("会话发送请求冲突: %s", exc)
         raise ConflictError("session_busy") from exc
+    except ChatImageError as exc:
+        raise BadRequestError(exc.key) from exc
     except ValueError as exc:
         # 空消息内容 / 非法项目名等坏请求，str(exc) 只进日志
         logger.warning("会话发送请求非法: %s", exc)
@@ -166,6 +177,7 @@ async def rewrite_message(
     req: RewriteRequest,
     request: Request,
     _t: Translator,
+    user: CurrentUser,
 ):
     """改写会话中某条历史用户消息：分叉出新会话并在其上重跑。
 
@@ -182,6 +194,7 @@ async def rewrite_message(
             images=req.images,
             locale=get_locale(request),
             client_key=req.client_key,
+            user_id=user.id,
         )
     except RewriteAnchorError as exc:
         raise BadRequestError("rewrite_anchor_invalid") from exc
@@ -205,6 +218,8 @@ async def rewrite_message(
     except SessionBusyError as exc:
         logger.warning("会话改写请求冲突: %s", exc)
         raise ConflictError("session_busy") from exc
+    except ChatImageError as exc:
+        raise BadRequestError(exc.key) from exc
     except ValueError as exc:
         logger.warning("会话改写请求非法: %s", exc)
         raise BadRequestError("request_invalid") from exc
@@ -227,13 +242,14 @@ async def rewrite_message(
 async def list_sessions(
     project_name: str,
     _t: Translator,
+    user: CurrentUser,
     status: Literal["idle", "running", "completed", "error", "interrupted"] | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ):
     try:
         sessions = await get_assistant_service().list_sessions(
-            project_name=project_name, status=status, limit=limit, offset=offset
+            project_name=project_name, status=status, limit=limit, offset=offset, user_id=user.id
         )
         return {"sessions": [s.model_dump() for s in sessions]}
     except HTTPException:
@@ -244,10 +260,10 @@ async def list_sessions(
 
 
 @router.get("/sessions/{session_id}")
-async def get_session(project_name: str, session_id: str, _t: Translator):
+async def get_session(project_name: str, session_id: str, _t: Translator, user: CurrentUser):
     try:
         service = get_assistant_service()
-        session = await _validate_session_ownership(service, session_id, project_name, _t)
+        session = await _validate_session_ownership(service, session_id, project_name, _t, user_id=user.id)
         return session.model_dump()
     except HTTPException:
         raise
@@ -257,11 +273,11 @@ async def get_session(project_name: str, session_id: str, _t: Translator):
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(project_name: str, session_id: str, _t: Translator):
+async def delete_session(project_name: str, session_id: str, _t: Translator, user: CurrentUser):
     try:
         service = get_assistant_service()
-        await _validate_session_ownership(service, session_id, project_name, _t)
-        deleted = await service.delete_session(session_id)
+        await _validate_session_ownership(service, session_id, project_name, _t, user_id=user.id)
+        deleted = await service.delete_session(session_id, user_id=user.id)
         if not deleted:
             raise HTTPException(status_code=404, detail=_t("session_not_found", session_id=session_id))
         return {"success": True}
@@ -293,13 +309,14 @@ async def list_entries(
     project_name: str,
     session_id: str,
     _t: Translator,
+    user: CurrentUser,
     after: int = Query(default=-1, ge=-1),
 ):
     """冷读会话事件日志（历史回放；``after`` 为 seq 游标）。"""
     try:
         service = get_assistant_service()
-        meta = await _validate_session_ownership(service, session_id, project_name, _t)
-        return await service.list_session_entries(session_id, meta=meta, after_seq=after)
+        meta = await _validate_session_ownership(service, session_id, project_name, _t, user_id=user.id)
+        return await service.list_session_entries(session_id, meta=meta, after_seq=after, user_id=user.id)
     except HTTPException:
         raise
     except FileNotFoundError as exc:
@@ -333,7 +350,9 @@ async def stream_entries(
         except ValueError:
             logger.debug("忽略无效的 Last-Event-ID: %r，回退到游标 %s", last_event_id, cursor)
     try:
-        async for event in service.stream_entry_events(session_id, meta=meta, request=request, after_seq=cursor):
+        async for event in service.stream_entry_events(
+            session_id, meta=meta, request=request, after_seq=cursor, user_id=_user.id
+        ):
             yield event
     except HTTPException:
         raise
@@ -344,7 +363,7 @@ async def stream_entries(
             session_id=session_id,
             title=_t("agent_startup_failed_title"),
         )
-        async for event in service.stream_startup_failure_events(session_id, detail["failure"]):
+        async for event in service.stream_startup_failure_events(session_id, detail["failure"], user_id=_user.id):
             yield event
     except Exception:
         logger.exception("请求处理失败")
@@ -352,11 +371,11 @@ async def stream_entries(
 
 
 @router.post("/sessions/{session_id}/interrupt")
-async def interrupt_session(project_name: str, session_id: str, _t: Translator):
+async def interrupt_session(project_name: str, session_id: str, _t: Translator, user: CurrentUser):
     try:
         service = get_assistant_service()
-        meta = await _validate_session_ownership(service, session_id, project_name, _t)
-        result = await service.interrupt_session(session_id, meta=meta)
+        meta = await _validate_session_ownership(service, session_id, project_name, _t, user_id=user.id)
+        result = await service.interrupt_session(session_id, meta=meta, user_id=user.id)
         return result
     except HTTPException:
         raise
@@ -371,14 +390,14 @@ async def interrupt_session(project_name: str, session_id: str, _t: Translator):
 
 
 @router.post("/sessions/{session_id}/switch-agent")
-async def switch_agent(project_name: str, session_id: str, req: SwitchAgentRequest, _t: Translator):
+async def switch_agent(project_name: str, session_id: str, req: SwitchAgentRequest, _t: Translator, user: CurrentUser):
     """切换会话当前活跃的 Agent SDK 类型（claude ↔ openai）。"""
     try:
         service = get_assistant_service()
-        meta = await _validate_session_ownership(service, session_id, project_name, _t)
+        meta = await _validate_session_ownership(service, session_id, project_name, _t, user_id=user.id)
         if req.sdk_type not in ("claude", "openai"):
             raise BadRequestError("agent_sdk_type_unknown", sdk_type=req.sdk_type)
-        result = await service.switch_agent(session_id, req.sdk_type, meta=meta)
+        result = await service.switch_agent(session_id, req.sdk_type, meta=meta, user_id=user.id)
         return result
     except HTTPException:
         raise
@@ -399,17 +418,19 @@ async def answer_question(
     question_id: str,
     req: AnswerQuestionRequest,
     _t: Translator,
+    user: CurrentUser,
 ):
     if not req.answers:
         raise HTTPException(status_code=400, detail=_t("answers_required"))
     try:
         service = get_assistant_service()
-        meta = await _validate_session_ownership(service, session_id, project_name, _t)
+        meta = await _validate_session_ownership(service, session_id, project_name, _t, user_id=user.id)
         result = await service.answer_user_question(
             session_id=session_id,
             question_id=question_id,
             answers=req.answers,
             meta=meta,
+            user_id=user.id,
         )
         return result
     except HTTPException:

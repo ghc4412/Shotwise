@@ -6,6 +6,10 @@ Used by WebUI upload endpoints to validate, compress, and normalize uploaded ima
 
 from __future__ import annotations
 
+import re
+from base64 import b64decode, b64encode
+from collections.abc import Sequence
+from dataclasses import dataclass
 from io import BytesIO
 
 from PIL import Image, ImageOps
@@ -21,6 +25,29 @@ _JPEG_QUALITY = 85
 # sentinel：意为「不向 PIL 传 subsampling」。PIL 的 subsampling=-1 仅在 JPEG→JPEG 时表示
 # “保持源色度”，对 PNG/其它源解码后再编码不合法，故默认用本 sentinel 拦掉，保证缺省行为不变。
 _SUBSAMPLING_KEEP = -1
+
+# Chat attachments are persisted in the session event log as well as sent to the SDK.
+# Keep both paths bounded after one server-side normalization pass.
+CHAT_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+CHAT_IMAGES_MAX_BYTES = 24 * 1024 * 1024
+CHAT_IMAGES_MAX_BASE64_CHARS = 32 * 1024 * 1024
+_DATA_URL_RE = re.compile(r"^data:(?P<media_type>[^;,]+);base64,(?P<data>.*)$", re.DOTALL)
+_CHAT_MEDIA_TYPES = {"image/jpeg": "JPEG", "image/png": "PNG", "image/webp": "WEBP"}
+
+
+class ChatImageError(ValueError):
+    """A user-correctable chat attachment validation failure."""
+
+    def __init__(self, key: str) -> None:
+        super().__init__(key)
+        self.key = key
+
+
+@dataclass(frozen=True)
+class NormalizedChatImage:
+    data: str
+    media_type: str
+
 
 # EXIF Orientation tag（ImageOps.exif_transpose 读取的字段）
 _EXIF_ORIENTATION = 0x0112
@@ -180,3 +207,54 @@ def normalize_uploaded_image(
         return compress_image_bytes(content), ".jpg"
     validate_image_bytes(content)
     return content, original_suffix or ".png"
+
+
+def normalize_chat_images(images: Sequence[object]) -> list[NormalizedChatImage]:
+    """Decode, validate, compress, and bound chat image attachments.
+
+    The frontend may send either bare base64 or a data URL. The returned JPEG
+    payload is the only representation callers should pass to both the model
+    SDK and the session event log.
+    """
+    normalized: list[NormalizedChatImage] = []
+    total = 0
+    total_base64_chars = 0
+    for image in images:
+        data = getattr(image, "data", None)
+        media_type = getattr(image, "media_type", None)
+        if not isinstance(data, str) or not isinstance(media_type, str):
+            raise ChatImageError("assistant_image_invalid")
+        match = _DATA_URL_RE.fullmatch(data)
+        if match:
+            data = match.group("data")
+            media_type = match.group("media_type")
+        media_type = media_type.strip().lower()
+        expected_format = _CHAT_MEDIA_TYPES.get(media_type)
+        if expected_format is None:
+            raise ChatImageError("assistant_image_type_unsupported")
+        if len(data) > CHAT_IMAGE_MAX_BYTES * 2:
+            raise ChatImageError("assistant_image_too_large")
+        total_base64_chars += len(data)
+        if total_base64_chars > CHAT_IMAGES_MAX_BASE64_CHARS:
+            raise ChatImageError("assistant_images_too_large")
+        try:
+            raw = b64decode(data, validate=True)
+        except Exception as exc:
+            raise ChatImageError("assistant_image_invalid") from exc
+        try:
+            with Image.open(BytesIO(raw)) as probe:
+                _ensure_pixel_budget(probe.size)
+                if probe.format != expected_format:
+                    raise ChatImageError("assistant_image_invalid")
+            compressed = compress_image_bytes(raw)
+        except ImagePixelLimitError as exc:
+            raise ChatImageError("assistant_image_pixels_too_large") from exc
+        except Exception as exc:
+            raise ChatImageError("assistant_image_invalid") from exc
+        if len(compressed) > CHAT_IMAGE_MAX_BYTES:
+            raise ChatImageError("assistant_image_too_large")
+        total += len(compressed)
+        if total > CHAT_IMAGES_MAX_BYTES:
+            raise ChatImageError("assistant_images_too_large")
+        normalized.append(NormalizedChatImage(data=b64encode(compressed).decode("ascii"), media_type="image/jpeg"))
+    return normalized

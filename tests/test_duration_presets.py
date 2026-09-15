@@ -54,7 +54,7 @@ pytestmark = pytest.mark.unit
         ("MiniMax-Hailuo-2.3", [6]),
         ("MiniMax-Hailuo-2.3-Fast", [6]),
         # 不带 hailuo 的 minimax id 不再命中固定 6，落回默认（裸 minimax token 已移除）
-        ("minimax-abab-6.5", DEFAULT_FALLBACK),
+        ("minimax-abab-6.5", None),
         # MiniMax H3（含大小写/前缀变体，不落入 hailuo 的固定 6 预设）
         ("minimax-h3", list(range(4, 16))),
         ("MiniMax-H3", list(range(4, 16))),
@@ -67,11 +67,11 @@ pytestmark = pytest.mark.unit
         # Pika
         ("pika-2.0", [3, 5, 10]),
         # 未知模型 → fallback
-        ("totally-unknown-model", DEFAULT_FALLBACK),
-        ("", DEFAULT_FALLBACK),
+        ("totally-unknown-model", None),
+        ("", None),
     ],
 )
-def test_infer_supported_durations_known_and_unknown(model_id: str, expected: list[int]):
+def test_infer_supported_durations_known_and_unknown(model_id: str, expected: list[int] | None):
     assert infer_supported_durations(model_id) == expected
 
 

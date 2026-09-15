@@ -38,6 +38,7 @@ from lib.episode_paths import episode_script_relpath
 from lib.generation_queue import get_generation_queue
 from lib.i18n import Translator
 from lib.json_io import domain_error_on_value_error
+from lib.media_catalog import MediaIndexSummary, project_media_catalog
 from lib.profile_manifest import ContentMode
 from lib.project_change_hints import project_change_source
 from lib.project_manager import (
@@ -53,11 +54,13 @@ from lib.style_templates import is_known_template, resolve_template_prompt
 from server.auth import CurrentUser, create_download_token, verify_download_token
 from server.routers._reorder import full_permutation_error
 from server.routers._validators import validate_backend_value
+from server.services.memory_service import MemoryService
 from server.services.project_archive import (
     ProjectArchiveService,
     ProjectArchiveValidationError,
 )
 from server.services.project_cover import resolve_project_cover
+from server.services.project_list_cache import get_project_list_read_cache
 
 router = APIRouter()
 
@@ -78,6 +81,38 @@ def get_status_calculator() -> StatusCalculator:
 
 def get_archive_service() -> ProjectArchiveService:
     return ProjectArchiveService(get_project_manager())
+
+
+def _project_media_summary(manager: Any, name: str) -> dict[str, Any]:
+    """Read the persisted media summary without scanning the project tree."""
+
+    projects_root = getattr(manager, "projects_root", None)
+    if projects_root is None:
+        # Test doubles and alternate managers may expose their root under ``base``.
+        projects_root = getattr(manager, "base", None)
+    if projects_root is None:
+        raise AttributeError("project manager does not expose a projects root")
+    try:
+        summary = project_media_catalog(Path(projects_root) / name).summary()
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return _empty_project_media_summary()
+    return {
+        "asset_count": summary.asset_count,
+        "last_indexed_at": summary.last_indexed_at,
+        "status": summary.status,
+        "summary_version": summary.summary_version,
+        "error": summary.error,
+    }
+
+
+def _empty_project_media_summary() -> dict[str, Any]:
+    return {
+        "asset_count": 0,
+        "last_indexed_at": None,
+        "status": "stale",
+        "summary_version": MediaIndexSummary().summary_version,
+        "error": None,
+    }
 
 
 # 项目级模型字段：创建时逐一校验并写入 project.json，PATCH 时另加 audio_backend。
@@ -232,6 +267,7 @@ def _cleanup_temp_dir(dir_path: str) -> None:
 @router.post("/projects/import")
 async def import_project_archive(
     _t: Translator,
+    current_user: CurrentUser,
     file: UploadFile = File(...),
     conflict_policy: str = Form("prompt"),
 ):
@@ -264,6 +300,15 @@ async def import_project_archive(
             )
 
         result = await asyncio.to_thread(_sync)
+        project_memory_result = {"imported": 0, "skipped": 0}
+        if result.project_memory_payload is not None:
+            async with async_session_factory() as session:
+                async with session.begin():
+                    project_memory_result = await MemoryService(session).import_project_memories(
+                        user_id=current_user.id,
+                        project_name=result.project_name,
+                        payload=result.project_memory_payload,
+                    )
         return {
             "success": True,
             "project_name": result.project_name,
@@ -271,6 +316,7 @@ async def import_project_archive(
             "warnings": [warning.render(_t) for warning in result.warnings],
             "conflict_resolution": result.conflict_resolution,
             "diagnostics": result.diagnostics,
+            "project_memories": project_memory_result,
         }
     except ProjectArchiveValidationError as exc:
         return JSONResponse(
@@ -352,7 +398,7 @@ async def create_export_token(
 
         diagnostics = await asyncio.to_thread(_sync)
         username = current_user.sub
-        download_token = create_download_token(username, name)
+        download_token = create_download_token(username, name, user_id=current_user.id)
         return {
             "download_token": download_token,
             "expires_in": 300,
@@ -380,7 +426,7 @@ async def export_project_archive(
     import jwt as pyjwt
 
     try:
-        verify_download_token(download_token, name)
+        download_claims = verify_download_token(download_token, name)
     except pyjwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail=_t("download_expired"))
     except ValueError:
@@ -389,8 +435,15 @@ async def export_project_archive(
         raise HTTPException(status_code=401, detail=_t("download_token_invalid"))
 
     try:
+        user_id = download_claims.get("user_id")
+        project_memories: list[dict[str, Any]] = []
+        if isinstance(user_id, str) and user_id:
+            async with async_session_factory() as session:
+                project_memories = await MemoryService(session).list_memories(
+                    user_id=user_id, scope="project", project_name=name
+                )
         archive_path, download_name = await asyncio.to_thread(
-            lambda: get_archive_service().export_project(name, scope=scope)
+            lambda: get_archive_service().export_project(name, scope=scope, project_memories=project_memories)
         )
         return FileResponse(
             archive_path,
@@ -493,60 +546,15 @@ async def list_projects():
     def _sync():
         manager = get_project_manager()
         calculator = get_status_calculator()
+        read_cache = get_project_list_read_cache()
         projects = []
         for name in manager.list_projects():
             try:
-                # 尝试加载项目元数据
-                if manager.project_exists(name):
-                    project = manager.load_project(name)
-                    # 一次性预加载每集剧本，喂给 cover + status 两路下游，去除重复 JSON I/O。
-                    # key 为 episode['script_file'] 原值（match resolve_project_cover /
-                    # StatusCalculator 对 key 的期望）。任何一集加载失败都不影响列表：
-                    # 仅跳过入 map，下游消费者自然按"缺失"路径兜底。
-                    preloaded_scripts: dict[str, dict] = {}
-                    for ep in project.get("episodes") or []:
-                        script_file = ep.get("script_file")
-                        if not script_file:
-                            continue
-                        try:
-                            preloaded_scripts[script_file] = manager.load_script(name, script_file)
-                        except (FileNotFoundError, OSError, json.JSONDecodeError, ValueError) as load_err:
-                            # 与 resolve_project_cover / StatusCalculator._load_episode_script
-                            # 对齐：I/O 缺失 + JSON/schema 解析失败 → 跳过此集，继续预加载其他集；
-                            # 非预期异常（RuntimeError/MemoryError 等）让其冒泡到外层 try，走 basic info 兜底行。
-                            logger.debug(
-                                "list_projects 预加载剧本失败 project=%s script=%s err=%s",
-                                name,
-                                script_file,
-                                load_err,
-                            )
-
-                    # 封面走 resolve_project_cover fallback 链：
-                    # video_thumbnail → storyboard_image → scene_sheet → character_sheet
-                    # —— 兼顾 reference / grid / storyboard 三种生成模式。
-                    thumbnail = resolve_project_cover(manager, name, project, preloaded_scripts=preloaded_scripts)
-
-                    # 使用 StatusCalculator 计算进度（读时计算）
-                    status = calculator.calculate_project_status(name, project, preloaded_scripts=preloaded_scripts)
-
-                    raw_title = project.get("title")
-                    metadata = project.get("metadata")
-                    projects.append(
-                        {
-                            "name": name,
-                            # title 缺失/为 None/类型异常时统一归一为空串,前端 i18n
-                            # 兜底显示「未命名项目」,确保接口契约始终返回 str。
-                            "title": raw_title if isinstance(raw_title, str) else "",
-                            "style": project.get("style", ""),
-                            "style_template_id": project.get("style_template_id"),
-                            "style_image": project.get("style_image"),
-                            "thumbnail": thumbnail,
-                            "created_at": metadata.get("created_at") if isinstance(metadata, dict) else None,
-                            "updated_at": metadata.get("updated_at") if isinstance(metadata, dict) else None,
-                            "status": status,
-                        }
-                    )
-                else:
+                # 直接加载项目元数据；无 project.json 的目录由 FileNotFoundError 走空项目分支。
+                # 避免先 project_exists() 再 load_project() 的重复文件系统检查。
+                try:
+                    project = read_cache.load_project(manager, name)
+                except FileNotFoundError:
                     # 没有 project.json 的项目
                     projects.append(
                         {
@@ -555,12 +563,72 @@ async def list_projects():
                             "style": "",
                             "thumbnail": None,
                             "status": {},
+                            "media_summary": _empty_project_media_summary(),
                         }
                     )
+                    continue
+
+                # 一次性预加载每集剧本，喂给 cover + status 两路下游，去除重复 JSON I/O。
+                # key 为 episode['script_file'] 原值（match resolve_project_cover /
+                # StatusCalculator 对 key 的期望）。任何一集加载失败都不影响列表：
+                # 仅跳过入 map，下游消费者自然按"缺失"路径兜底。
+                preloaded_scripts: dict[str, dict] = {}
+                for ep in project.get("episodes") or []:
+                    script_file = ep.get("script_file")
+                    if not script_file:
+                        continue
+                    try:
+                        preloaded_scripts[script_file] = read_cache.load_script(manager, name, script_file)
+                    except (FileNotFoundError, OSError, json.JSONDecodeError, ValueError) as load_err:
+                        # 与 resolve_project_cover / StatusCalculator._load_episode_script
+                        # 对齐：I/O 缺失 + JSON/schema 解析失败 → 跳过此集，继续预加载其他集；
+                        # 非预期异常（RuntimeError/MemoryError 等）让其冒泡到外层 try，走 basic info 兜底行。
+                        logger.debug(
+                            "list_projects 预加载剧本失败 project=%s script=%s err=%s",
+                            name,
+                            script_file,
+                            load_err,
+                        )
+
+                # 封面走 resolve_project_cover fallback 链：
+                # video_thumbnail → storyboard_image → scene_sheet → character_sheet
+                # —— 兼顾 reference / grid / storyboard 三种生成模式。
+                thumbnail = resolve_project_cover(manager, name, project, preloaded_scripts=preloaded_scripts)
+
+                # 使用 StatusCalculator 计算进度（读时计算）
+                status = calculator.calculate_project_status(name, project, preloaded_scripts=preloaded_scripts)
+
+                raw_title = project.get("title")
+                metadata = project.get("metadata")
+                projects.append(
+                    {
+                        "name": name,
+                        # title 缺失/为 None/类型异常时统一归一为空串,前端 i18n
+                        # 兜底显示「未命名项目」,确保接口契约始终返回 str。
+                        "title": raw_title if isinstance(raw_title, str) else "",
+                        "style": project.get("style", ""),
+                        "style_template_id": project.get("style_template_id"),
+                        "style_image": project.get("style_image"),
+                        "thumbnail": thumbnail,
+                        "created_at": metadata.get("created_at") if isinstance(metadata, dict) else None,
+                        "updated_at": metadata.get("updated_at") if isinstance(metadata, dict) else None,
+                        "status": status,
+                        "media_summary": _project_media_summary(manager, name),
+                    }
+                )
             except Exception as e:
                 # 出错时返回基本信息
                 logger.warning("加载项目 '%s' 元数据失败: %s", name, e)
-                projects.append({"name": name, "title": "", "style": "", "thumbnail": None, "status": {}})
+                projects.append(
+                    {
+                        "name": name,
+                        "title": "",
+                        "style": "",
+                        "thumbnail": None,
+                        "status": {},
+                        "media_summary": _empty_project_media_summary(),
+                    }
+                )
 
         return {"projects": projects}
 
@@ -722,10 +790,11 @@ async def get_project(
         def _sync():
             manager = get_project_manager()
             calculator = get_status_calculator()
+            read_cache = get_project_list_read_cache()
             if not manager.project_exists(name):
                 raise HTTPException(status_code=404, detail=_t("project_not_found", name=name))
 
-            project = manager.load_project(name)
+            project = read_cache.load_project(manager, name)
 
             # 注入计算字段（不写入 JSON，仅用于 API 响应）
             project = calculator.enrich_project(name, project)
@@ -736,7 +805,7 @@ async def get_project(
                 script_file = ep.get("script_file", "")
                 if script_file:
                     try:
-                        script = manager.load_script(name, script_file)
+                        script = read_cache.load_script(manager, name, script_file)
                         script = calculator.enrich_script(script, generation_mode=project.get("generation_mode"))
                         key = (
                             script_file.replace("scripts/", "", 1)

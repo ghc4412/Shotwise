@@ -76,6 +76,27 @@ import type {
   CharacterRelationEdge,
   CharacterRelationPosition,
   CharacterRelationsData,
+  CharacterVariant,
+  CreateMemoryRequest,
+  MemoryCandidate,
+  MemoryEntry,
+  MemoryExport,
+  MemoryListResponse,
+  UpdateMemoryRequest,
+  AssemblyPlanListResponse,
+  AssemblyPlanResponse,
+  CreateAssemblyPlanRequest,
+  CreateAssemblyPlanRevisionRequest,
+  ConfirmAssemblyPlanPreviewRequest,
+  ConfirmAssemblyPlanPreviewResponse,
+  TransitionAssemblyPlanRequest,
+  CheckAssemblyPlanStaleRequest,
+  AssemblyRenderJob,
+  CreateAssemblyFinalRenderRequest,
+  AssemblyFinalReview,
+  AssemblyFinalReviewFramePosition,
+  ConfirmAssemblyFinalReviewRequest,
+  ConfirmAssemblyFinalReviewResponse,
 } from "@/types";
 import type { GenerationRoute } from "@/utils/generation-mode";
 import type { GridCapability, GridGeneration } from "@/types/grid";
@@ -95,6 +116,7 @@ import type {
 import { getToken, clearToken } from "@/utils/auth";
 import { isDemoProject } from "@/onboarding/demo-project";
 import i18n from "./i18n";
+import { openAuthenticatedSse, type SseConnection } from "@/utils/sse";
 
 // ==================== Helper types ====================
 
@@ -599,13 +621,6 @@ function withAuth(endpoint: string, options: RequestInit = {}): RequestInit {
   return { ...options, headers };
 }
 
-/** 为 URL 追加 token query param（用于 EventSource） */
-function withAuthQuery(url: string): string {
-  const token = getToken();
-  if (!token) return url;
-  const sep = url.includes("?") ? "&" : "?";
-  return `${url}${sep}token=${encodeURIComponent(token)}`;
-}
 
 class API {
   /**
@@ -906,6 +921,46 @@ class API {
       {
         method: "DELETE",
       }
+    );
+  }
+
+  static async listCharacterVariants(projectName: string, charName: string): Promise<{ variants: CharacterVariant[] }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/characters/${encodeURIComponent(charName)}/variants`,
+    );
+  }
+
+  static async createCharacterVariant(
+    projectName: string,
+    charName: string,
+    variant: Omit<CharacterVariant, "id" | "character_id"> & { slug: string },
+  ): Promise<{ success: boolean; variant: CharacterVariant }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/characters/${encodeURIComponent(charName)}/variants`,
+      { method: "POST", body: JSON.stringify(variant) },
+    );
+  }
+
+  static async updateCharacterVariant(
+    projectName: string,
+    charName: string,
+    variantId: string,
+    updates: Partial<Omit<CharacterVariant, "id" | "character_id">>,
+  ): Promise<{ success: boolean; variant: CharacterVariant }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/characters/${encodeURIComponent(charName)}/variants/${encodeURIComponent(variantId)}`,
+      { method: "PATCH", body: JSON.stringify(updates) },
+    );
+  }
+
+  static async deleteCharacterVariant(
+    projectName: string,
+    charName: string,
+    variantId: string,
+  ): Promise<{ success: boolean; variant: CharacterVariant }> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/characters/${encodeURIComponent(charName)}/variants/${encodeURIComponent(variantId)}`,
+      { method: "DELETE" },
     );
   }
 
@@ -1843,18 +1898,20 @@ class API {
   static async generateCharacter(
     projectName: string,
     charName: string,
-    prompt: string
+    prompt: string,
+    regenerate = false
   ): Promise<{
     success: boolean;
-    task_id: string;
+    task_id: string | null;
     deduped: boolean;
+    reused?: boolean;
     message: string;
   }> {
     return this.request(
       `/projects/${encodeURIComponent(projectName)}/generate/character/${encodeURIComponent(charName)}`,
       {
         method: "POST",
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, ...(regenerate ? { regenerate: true } : {}) }),
       }
     );
   }
@@ -1868,18 +1925,20 @@ class API {
   static async generateProjectScene(
     projectName: string,
     sceneName: string,
-    prompt: string
+    prompt: string,
+    regenerate = false
   ): Promise<{
     success: boolean;
-    task_id: string;
+    task_id: string | null;
     deduped: boolean;
+    reused?: boolean;
     message: string;
   }> {
     return this.request(
       `/projects/${encodeURIComponent(projectName)}/generate/scene/${encodeURIComponent(sceneName)}`,
       {
         method: "POST",
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, ...(regenerate ? { regenerate: true } : {}) }),
       }
     );
   }
@@ -1893,18 +1952,20 @@ class API {
   static async generateProjectProp(
     projectName: string,
     propName: string,
-    prompt: string
+    prompt: string,
+    regenerate = false
   ): Promise<{
     success: boolean;
-    task_id: string;
+    task_id: string | null;
     deduped: boolean;
+    reused?: boolean;
     message: string;
   }> {
     return this.request(
       `/projects/${encodeURIComponent(projectName)}/generate/prop/${encodeURIComponent(propName)}`,
       {
         method: "POST",
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, ...(regenerate ? { regenerate: true } : {}) }),
       }
     );
   }
@@ -1918,18 +1979,20 @@ class API {
   static async generateProjectProduct(
     projectName: string,
     productName: string,
-    prompt: string
+    prompt: string,
+    regenerate = false
   ): Promise<{
     success: boolean;
-    task_id: string;
+    task_id: string | null;
     deduped: boolean;
+    reused?: boolean;
     message: string;
   }> {
     return this.request(
       `/projects/${encodeURIComponent(projectName)}/generate/product/${encodeURIComponent(productName)}`,
       {
         method: "POST",
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, ...(regenerate ? { regenerate: true } : {}) }),
       }
     );
   }
@@ -2173,11 +2236,9 @@ class API {
     );
   }
 
-  static openProjectEventStream(options: ProjectEventStreamOptions): EventSource {
-    const url = withAuthQuery(
-      `${API_BASE}/projects/${encodeURIComponent(options.projectName)}/events/stream`
-    );
-    const source = new EventSource(url);
+  static openProjectEventStream(options: ProjectEventStreamOptions): SseConnection {
+    const url = `${API_BASE}/projects/${encodeURIComponent(options.projectName)}/events/stream`;
+    const source = openAuthenticatedSse({ url, headers: withAuth(url).headers });
 
     const parsePayload = (event: MessageEvent): unknown => {
       try {
@@ -2439,7 +2500,7 @@ class API {
     );
   }
 
-  /** entry 流 SSE URL（after 为 seq 游标；重连续传由 EventSource Last-Event-ID 承担）。 */
+  /** entry 流 SSE URL（after 为 seq 游标）。认证凭证通过 Authorization header 发送。 */
   static getAssistantEntriesStreamUrl(
     projectName: string,
     sessionId: string,
@@ -2447,7 +2508,16 @@ class API {
   ): string {
     const base = `${API_BASE}${this.assistantBase(projectName)}/sessions/${encodeURIComponent(sessionId)}/entries/stream`;
     const url = after >= 0 ? `${base}?after=${after}` : base;
-    return withAuthQuery(url);
+    return url;
+  }
+
+  static openAssistantEntriesStream(
+    projectName: string,
+    sessionId: string,
+    after: number = -1,
+  ): SseConnection {
+    const url = this.getAssistantEntriesStreamUrl(projectName, sessionId, after);
+    return openAuthenticatedSse({ url, headers: withAuth(url).headers });
   }
 
   static async listAssistantSkills(
@@ -2541,6 +2611,102 @@ class API {
     return this.request(`/api-keys/${keyId}`, { method: "DELETE" });
   }
 
+  // ==================== Agent 长期记忆 API ====================
+
+  /** 获取当前用户已确认的全局记忆。 */
+  static async listUserMemories(): Promise<MemoryListResponse<MemoryEntry>> {
+    return this.request("/memories/user");
+  }
+
+  /** 创建一条用户级长期记忆。 */
+  static async createUserMemory(body: CreateMemoryRequest): Promise<MemoryEntry> {
+    return this.request("/memories/user", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  /** 更新一条属于当前用户的长期记忆。 */
+  static async updateMemory(memoryId: string, body: UpdateMemoryRequest): Promise<MemoryEntry> {
+    return this.request(`/memories/${encodeURIComponent(memoryId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+  }
+
+  /** 删除一条属于当前用户的长期记忆。 */
+  static async deleteMemory(memoryId: string): Promise<void> {
+    return this.request(`/memories/${encodeURIComponent(memoryId)}`, { method: "DELETE" });
+  }
+
+  /** 清空当前用户的全局记忆。 */
+  static async clearUserMemories(): Promise<{ deleted: number }> {
+    return this.request("/memories/user", { method: "DELETE" });
+  }
+
+  /** 获取当前项目已确认的长期记忆。 */
+  static async listProjectMemories(projectName: string): Promise<MemoryListResponse<MemoryEntry>> {
+    return this.request(`/projects/${encodeURIComponent(projectName)}/memories`);
+  }
+
+  /** 创建一条项目级长期记忆。 */
+  static async createProjectMemory(projectName: string, body: CreateMemoryRequest): Promise<MemoryEntry> {
+    return this.request(`/projects/${encodeURIComponent(projectName)}/memories`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  /** 清空指定项目的长期记忆。 */
+  static async clearProjectMemories(projectName: string): Promise<{ deleted: number }> {
+    return this.request(`/projects/${encodeURIComponent(projectName)}/memories`, { method: "DELETE" });
+  }
+
+  /** 将项目记忆导入指定项目；服务端只接受项目记忆，不会写入用户级记忆。 */
+  static async importProjectMemories(
+    projectName: string,
+    payload: unknown,
+  ): Promise<{ imported: number; skipped: number }> {
+    return this.request(`/projects/${encodeURIComponent(projectName)}/memories/import`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /** 导入用户主动选择的记忆包；按作用域追加并去重，不覆盖已有记忆。 */
+  static async importMemories(
+    payload: unknown,
+    projectName?: string,
+  ): Promise<{ imported: number; skipped: number }> {
+    const query = projectName ? `?project_name=${encodeURIComponent(projectName)}` : "";
+    return this.request(`/memories/import${query}`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /** 获取待用户确认的记忆候选。默认不传项目筛选，返回当前用户全部候选。 */
+  static async listMemoryCandidates(): Promise<MemoryListResponse<MemoryCandidate>> {
+    return this.request("/memory-candidates");
+  }
+
+  static async acceptMemoryCandidate(candidateId: string): Promise<{
+    memory: MemoryEntry;
+    candidate_id: string;
+    status: string;
+  }> {
+    return this.request(`/memory-candidates/${encodeURIComponent(candidateId)}/accept`, { method: "POST" });
+  }
+
+  static async rejectMemoryCandidate(candidateId: string): Promise<{ candidate_id: string; status: string }> {
+    return this.request(`/memory-candidates/${encodeURIComponent(candidateId)}/reject`, { method: "POST" });
+  }
+
+  /** 导出当前用户记忆；未传项目名时只包含用户级记忆。 */
+  static async exportMemories(projectName?: string): Promise<MemoryExport> {
+    const query = projectName ? `?project_name=${encodeURIComponent(projectName)}` : "";
+    return this.request(`/memories/export${query}`);
+  }
   // ==================== Provider 管理 API ====================
 
   /** 获取所有 provider 列表及状态。 */
@@ -2731,12 +2897,22 @@ class API {
     return this.request(`/custom-providers/${id}/models`, { method: "PUT", body: JSON.stringify({ models }) });
   }
 
-  static async discoverModels(data: { discovery_format: string; base_url: string; api_key: string }): Promise<{ models: DiscoveredModel[] }> {
-    return this.request("/custom-providers/discover", { method: "POST", body: JSON.stringify(data) });
+  static async discoverModels(
+    data: { discovery_format: string; base_url: string; api_key: string },
+    options: { signal?: AbortSignal } = {},
+  ): Promise<{ models: DiscoveredModel[] }> {
+    return this.request("/custom-providers/discover", {
+      method: "POST",
+      body: JSON.stringify(data),
+      signal: options.signal,
+    });
   }
 
-  static async discoverModelsForProvider(id: number): Promise<{ models: DiscoveredModel[] }> {
-    return this.request(`/custom-providers/${id}/discover`, { method: "POST" });
+  static async discoverModelsForProvider(
+    id: number,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<{ models: DiscoveredModel[] }> {
+    return this.request(`/custom-providers/${id}/discover`, { method: "POST", signal: options.signal });
   }
 
   static async testCustomConnection(data: { discovery_format: string; base_url: string; api_key: string }): Promise<{ success: boolean; message: string }> {
@@ -3295,6 +3471,164 @@ class API {
   static async recompileCreationPlan(planId: string): Promise<Record<string, unknown>> {
     return this.request("/creation-plans/" + encodeURIComponent(planId) + "/recompile", { method: "POST" });
   }
+  static async listAssemblyPlans(
+    projectName: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<AssemblyPlanListResponse> {
+    return this.request(
+      `/projects/${encodeURIComponent(projectName)}/assembly-plans`,
+      { signal: options.signal },
+    );
+  }
+
+  static async getAssemblyPlan(
+    planId: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<AssemblyPlanResponse> {
+    return this.request(`/assembly-plans/${encodeURIComponent(planId)}`, { signal: options.signal });
+  }
+
+  static async createAssemblyPlan(
+    projectName: string,
+    body: CreateAssemblyPlanRequest,
+  ): Promise<AssemblyPlanResponse> {
+    return this.request(`/projects/${encodeURIComponent(projectName)}/assembly-plans`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  static async createAssemblyPlanRevision(
+    planId: string,
+    body: CreateAssemblyPlanRevisionRequest,
+  ): Promise<AssemblyPlanResponse> {
+    return this.request(`/assembly-plans/${encodeURIComponent(planId)}/revisions`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  /** Confirm the reviewed preview for one immutable revision. This is deliberately
+   * separate from the generic status endpoint so the UI cannot forge preview readiness. */
+  static async confirmAssemblyPlanPreview(
+    planId: string,
+    body: ConfirmAssemblyPlanPreviewRequest,
+  ): Promise<ConfirmAssemblyPlanPreviewResponse> {
+    return this.request(`/assembly-plans/${encodeURIComponent(planId)}/preview-confirm`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  /** Confirm the reviewed preview before transitioning the plan into final rendering. */
+  static async confirmAssemblyPlanRender(
+    planId: string,
+    body: ConfirmAssemblyPlanPreviewRequest,
+  ): Promise<ConfirmAssemblyPlanPreviewResponse> {
+    return this.request(`/assembly-plans/${encodeURIComponent(planId)}/render-confirm`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  static async createAssemblyFinalRender(
+    planId: string,
+    body: CreateAssemblyFinalRenderRequest,
+  ): Promise<AssemblyRenderJob> {
+    return this.request(`/assembly-plans/${encodeURIComponent(planId)}/final-renders`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  static async getAssemblyFinalReview(planId: string): Promise<AssemblyFinalReview> {
+    return this.request(`/assembly-plans/${encodeURIComponent(planId)}/final-review`);
+  }
+
+  static async downloadAssemblyFinalReviewFrame(
+    artifactId: string,
+    position: AssemblyFinalReviewFramePosition,
+  ): Promise<Blob> {
+    const endpoint = `/render-artifacts/${encodeURIComponent(artifactId)}/review-frames/${position}`;
+    const response = await fetch(`${API_BASE}${endpoint}`, withAuth(endpoint, { method: "GET" }));
+    await throwIfNotOk(response, "加载最终审阅帧失败");
+    return response.blob();
+  }
+
+  static async downloadAssemblySubtitles(
+    planId: string,
+    format: "srt" | "vtt",
+  ): Promise<Blob> {
+    const endpoint = `/assembly-plans/${encodeURIComponent(planId)}/subtitles?format=${format}`;
+    const response = await fetch(`${API_BASE}${endpoint}`, withAuth(endpoint, { method: "GET" }));
+    await throwIfNotOk(response, "下载字幕失败");
+    return response.blob();
+  }
+
+  static async downloadAssemblyJianyingDraft(planId: string): Promise<Blob> {
+    const endpoint = `/assembly-plans/${encodeURIComponent(planId)}/jianying-draft`;
+    const response = await fetch(`${API_BASE}${endpoint}`, withAuth(endpoint, { method: "GET" }));
+    await throwIfNotOk(response, "下载剪映草稿失败");
+    return response.blob();
+  }
+
+  static async confirmAssemblyFinalReview(
+    artifactId: string,
+    body: ConfirmAssemblyFinalReviewRequest,
+  ): Promise<ConfirmAssemblyFinalReviewResponse> {
+    return this.request(`/render-artifacts/${encodeURIComponent(artifactId)}/review-confirm`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  static async getRenderJob(jobId: string): Promise<AssemblyRenderJob> {
+    return this.request(`/render-jobs/${encodeURIComponent(jobId)}`);
+  }
+
+  static async retryRenderJob(jobId: string): Promise<AssemblyRenderJob> {
+    return this.request(`/render-jobs/${encodeURIComponent(jobId)}/retry`, {
+      method: "POST",
+    });
+  }
+
+  static async retryFinalRenderJob(jobId: string): Promise<AssemblyRenderJob> {
+    return this.request(`/render-jobs/${encodeURIComponent(jobId)}/final-retry`, {
+      method: "POST",
+    });
+  }
+
+  static getRenderJobArtifactUrl(jobId: string): string {
+    return `${API_BASE}/render-jobs/${encodeURIComponent(jobId)}/artifact`;
+  }
+
+  static async downloadRenderJobArtifact(jobId: string): Promise<Blob> {
+    const endpoint = `/render-jobs/${encodeURIComponent(jobId)}/artifact`;
+    const response = await fetch(`${API_BASE}${endpoint}`, withAuth(endpoint, { method: "GET" }));
+    await throwIfNotOk(response, "下载最终成片失败");
+    return response.blob();
+  }
+
+  static async transitionAssemblyPlan(
+    planId: string,
+    body: TransitionAssemblyPlanRequest,
+  ): Promise<AssemblyPlanResponse> {
+    return this.request(`/assembly-plans/${encodeURIComponent(planId)}/status`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  static async checkAssemblyPlanStale(
+    planId: string,
+    body: CheckAssemblyPlanStaleRequest,
+  ): Promise<AssemblyPlanResponse> {
+    return this.request(`/assembly-plans/${encodeURIComponent(planId)}/stale-check`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
   static async listMediaAssets(
     projectName: string,
     options?: {

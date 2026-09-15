@@ -495,7 +495,7 @@ class TestRenderUnitPrompt:
 
         assert render_ad_unit_prompt(shots, style="水彩插画") == ""
 
-    def test_dialogue_without_speaker_renders_as_voiceover(self):
+    def test_dialogue_without_speaker_is_excluded_from_video_prompt(self):
         shots = [
             _shot(
                 "E1S1",
@@ -510,4 +510,5 @@ class TestRenderUnitPrompt:
 
         prompt = render_ad_unit_prompt(shots)
 
-        assert "画外音说 {颈椎终于舒服了}" in prompt
+        assert "颈椎终于舒服了" not in prompt
+        assert "画外音说" not in prompt

@@ -105,7 +105,24 @@ describe("useAssistantSession", () => {
     localStorage.clear();
     vi.restoreAllMocks();
     vi.stubGlobal("EventSource", MockEventSource as unknown as typeof EventSource);
+    vi.spyOn(API, "openAssistantEntriesStream").mockImplementation((projectName, sessionId, after) => {
+      return new MockEventSource(API.getAssistantEntriesStreamUrl(projectName, sessionId, after));
+    });
     vi.spyOn(API, "listAssistantSkills").mockResolvedValue({ skills: [] });
+  });
+
+  it("restores the SDK type saved on the selected session", async () => {
+    const openAiSession = { ...makeSession("session-1", "idle"), sdk_type: "openai" as const };
+    vi.spyOn(API, "listAssistantSessions").mockResolvedValue({ sessions: [openAiSession] });
+    vi.spyOn(API, "getAssistantSession").mockResolvedValue({ session: openAiSession });
+    vi.spyOn(API, "listAssistantEntries").mockResolvedValue(makeEntriesResponse());
+
+    renderHook(() => useAssistantSession("demo"));
+
+    await waitFor(() => {
+      expect(useAssistantStore.getState().currentSessionId).toBe("session-1");
+    });
+    expect(useAssistantStore.getState().sdkType).toBe("openai");
   });
 
   it("loads idle session timeline from the entries endpoint (cold read)", async () => {

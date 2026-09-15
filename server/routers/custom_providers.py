@@ -14,7 +14,7 @@ from dataclasses import asdict
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import AfterValidator, BaseModel, Field, field_validator
+from pydantic import AfterValidator, BaseModel, Field, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.api_errors import BadRequestError
@@ -176,25 +176,25 @@ class ModelInput(BaseModel):
             logger.warning("能力覆盖含未开放键，保存时已剔除: %s", ", ".join(dropped))
         return kept or None
 
+    @model_validator(mode="after")
+    def _require_video_durations(self) -> ModelInput:
+        """视频模型必须携带供应商明确声明的时长能力。"""
+        if endpoint_to_media_type(self.endpoint) == "video" and not self.supported_durations:
+            raise ValueError("video model supported_durations must be explicitly declared")
+        return self
+
     def to_db_dict(self) -> dict:
         """返回适合写入数据库的字典（supported_durations 序列化为 JSON 字符串）。
 
-        视频类 endpoint：supported_durations 缺省（None）或显式传 []（空列表，下游视为非法）时，
-        统一归一为缺省并由 duration_presets 启发式填补。
-        非视频类 endpoint 保持 None。
+        视频类 endpoint 的 supported_durations 已在模型校验阶段确认非空；非视频类 endpoint
+        保持 None。
         """
-        from lib.custom_provider.duration_presets import infer_supported_durations
-        from lib.custom_provider.endpoints import endpoint_to_media_type
-
         d = self.model_dump()
         durations = self.supported_durations
         is_video = endpoint_to_media_type(self.endpoint) == "video"
-        # video endpoint：把 [] 当作缺省（下游/前端都不接受空列表），交给 preset 兜底
-        if is_video and durations is not None and len(durations) == 0:
-            durations = None
-        if durations is None and is_video:
-            # endpoint 经 EndpointType 校验，值必在 ENDPOINT_REGISTRY 内，无需 ValueError 兜底
-            durations = infer_supported_durations(self.model_id)
+        if is_video and not durations:
+            # 防止绕过 Pydantic 构造或未来改动校验顺序后把空能力写入数据库。
+            raise ValueError("video model supported_durations must be explicitly declared")
         d["supported_durations"] = json.dumps(durations) if durations is not None else None
         return d
 

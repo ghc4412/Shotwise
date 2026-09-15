@@ -42,6 +42,13 @@ from lib.asset_types import (
     resolve_asset_key,
     validate_asset_name,
 )
+from lib.character_variants import (
+    VARIANT_STATUSES,
+    find_character_variant,
+    iter_character_variants,
+    new_variant_id,
+    validate_variant_slug,
+)
 from lib.episode_duration_plan import (
     DurationPlanningStrategy,
     EpisodeDurationPlanConfig,
@@ -2495,6 +2502,163 @@ class ProjectManager:
             }
 
         return self.update_project(project_name, _mutate)
+
+    def list_character_variants(self, project_name: str, name: str) -> list[dict[str, Any]]:
+        """List normalized variants for a project character."""
+        project = self.load_project(project_name)
+        bucket = project.get("characters")
+        character_key = resolve_asset_key(bucket, name)
+        if not isinstance(bucket, dict) or character_key is None:
+            raise KeyError(name)
+        return iter_character_variants(bucket[character_key], character_key)
+
+    def get_character_variant(self, project_name: str, name: str, variant_id: str) -> dict[str, Any]:
+        """Return one character variant by stable id or slug."""
+        project = self.load_project(project_name)
+        bucket = project.get("characters")
+        character_key = resolve_asset_key(bucket, name)
+        if not isinstance(bucket, dict) or character_key is None:
+            raise KeyError(name)
+        variant = find_character_variant(bucket[character_key], character_key, variant_id)
+        if variant is None:
+            raise KeyError(variant_id)
+        return variant
+
+    def _validate_variant_image_path(self, project_name: str, image_path: str) -> str:
+        """Validate a project-relative variant image path without requiring the file yet."""
+        if not image_path:
+            return ""
+        safe_join(self.get_project_path(project_name), image_path)
+        return image_path.replace("\\", "/")
+
+    @staticmethod
+    def _validate_variant_status(status: str) -> str:
+        if status not in VARIANT_STATUSES:
+            raise ValueError(status)
+        return status
+
+    def create_character_variant(
+        self,
+        project_name: str,
+        name: str,
+        slug: str,
+        *,
+        display_name: str | None = None,
+        description: str = "",
+        image_path: str = "",
+        status: str = "draft",
+        metadata: Mapping[str, Any] | None = None,
+        image_asset_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a stable-id character variant."""
+        clean_slug = validate_variant_slug(slug)
+        clean_image = self._validate_variant_image_path(project_name, image_path)
+        clean_status = self._validate_variant_status(status)
+
+        def _mutate(project: dict) -> None:
+            bucket = project.get("characters")
+            character_key = resolve_asset_key(bucket, name)
+            if not isinstance(bucket, dict) or character_key is None:
+                raise KeyError(name)
+            character = bucket[character_key]
+            if not isinstance(character, dict):
+                raise KeyError(name)
+            variants = character.setdefault("variants", {})
+            if not isinstance(variants, dict):
+                raise ValueError(clean_slug)
+            if resolve_asset_key(variants, clean_slug) is not None:
+                raise ValueError(clean_slug)
+            item: dict[str, Any] = {
+                "id": new_variant_id(),
+                "character_id": character_key,
+                "slug": clean_slug,
+                "display_name": display_name or clean_slug,
+                "description": description,
+                "image_path": clean_image,
+                "status": clean_status,
+                "metadata": dict(metadata or {}),
+            }
+            if image_asset_id:
+                item["image_asset_id"] = image_asset_id
+            variants[clean_slug] = item
+
+        self.update_project(project_name, _mutate)
+        return self.get_character_variant(project_name, name, clean_slug)
+
+    def update_character_variant(
+        self,
+        project_name: str,
+        name: str,
+        variant_id: str,
+        *,
+        slug: str | None = None,
+        display_name: str | None = None,
+        description: str | None = None,
+        image_path: str | None = None,
+        status: str | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        image_asset_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Update a variant while preserving fields omitted by the caller."""
+        clean_slug = validate_variant_slug(slug) if slug is not None else None
+        clean_image = self._validate_variant_image_path(project_name, image_path) if image_path is not None else None
+        clean_status = self._validate_variant_status(status) if status is not None else None
+
+        def _mutate(project: dict) -> None:
+            bucket = project.get("characters")
+            character_key = resolve_asset_key(bucket, name)
+            if not isinstance(bucket, dict) or character_key is None:
+                raise KeyError(name)
+            character = bucket[character_key]
+            variants = character.get("variants") if isinstance(character, dict) else None
+            if not isinstance(variants, dict):
+                raise KeyError(variant_id)
+            current = find_character_variant(character, character_key, variant_id)
+            if current is None:
+                raise KeyError(variant_id)
+            old_slug = current["slug"]
+            target_slug = clean_slug or old_slug
+            existing_key = resolve_asset_key(variants, target_slug)
+            if existing_key is not None and existing_key != old_slug:
+                raise ValueError(target_slug)
+            raw = variants.pop(old_slug, None)
+            if not isinstance(raw, dict):
+                raw = dict(current)
+            raw.update({"character_id": character_key, "slug": target_slug})
+            if display_name is not None:
+                raw["display_name"] = display_name
+            if description is not None:
+                raw["description"] = description
+            if clean_image is not None:
+                raw["image_path"] = clean_image
+            if clean_status is not None:
+                raw["status"] = clean_status
+            if metadata is not None:
+                raw["metadata"] = dict(metadata)
+            if image_asset_id is not None:
+                raw["image_asset_id"] = image_asset_id
+            variants[target_slug] = raw
+
+        self.update_project(project_name, _mutate)
+        return self.get_character_variant(project_name, name, clean_slug or variant_id)
+
+    def delete_character_variant(self, project_name: str, name: str, variant_id: str) -> dict[str, Any]:
+        """Delete a character variant by stable id or slug."""
+        variant = self.get_character_variant(project_name, name, variant_id)
+
+        def _mutate(project: dict) -> None:
+            bucket = project.get("characters")
+            character_key = resolve_asset_key(bucket, name)
+            if not isinstance(bucket, dict) or character_key is None:
+                raise KeyError(name)
+            character = bucket[character_key]
+            variants = character.get("variants") if isinstance(character, dict) else None
+            if not isinstance(variants, dict):
+                raise KeyError(variant_id)
+            variants.pop(variant["slug"], None)
+
+        self.update_project(project_name, _mutate)
+        return variant
 
     def update_project_character_sheet(self, project_name: str, name: str, sheet_path: str) -> dict:
         """更新项目级角色设计图路径"""

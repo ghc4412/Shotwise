@@ -592,6 +592,9 @@ class _FakePMRegenerate(_FakePMPath):
             "grid_storyboard": True,
         }
 
+    def load_script(self, name, script_file):
+        return _narration_script()
+
 
 def test_regenerate_grid_success(monkeypatch, tmp_path):
     grid = GridGeneration.create(

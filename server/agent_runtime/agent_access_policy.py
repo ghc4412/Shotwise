@@ -281,7 +281,7 @@ class AgentAccessPolicy:
         # Path.resolve() may add the current drive to a drive-less Windows root,
         # making pure policy checks with synthetic roots compare unlike paths.
         read_target = resolved if resolved.exists() else logical_norm
-        return self._check_read_access(read_target, project_cwd)
+        return self._check_read_access(read_target, project_cwd, raw_file_path=file_path)
 
     def build_sandbox_settings(self, project_cwd: Path) -> dict[str, Any]:
         """构造 SandboxSettings dict（SDK Python TypedDict 未声明 filesystem
@@ -536,7 +536,9 @@ class AgentAccessPolicy:
         """
         return project_cwd.as_posix().replace("/", "-").replace(".", "-")
 
-    def _check_read_access(self, resolved: Path, project_cwd: Path) -> tuple[bool, str | None]:
+    def _check_read_access(
+        self, resolved: Path, project_cwd: Path, *, raw_file_path: str | None = None
+    ) -> tuple[bool, str | None]:
         """Read/Glob/Grep 的跨项目隔离 + host 文件系统封锁。
 
         cwd 内放行；SDK tool-results / /tmp/claude-*/tasks 例外放行；
@@ -552,7 +554,14 @@ class AgentAccessPolicy:
             if resolved.is_relative_to(sdk_project_dir) and "tool-results" in resolved.parts:
                 return True, None
         # SDK 后台任务输出例外（前缀计算见 _sdk_tmp_prefixes，实例内缓存一次）。
-        if str(resolved).startswith(self._sdk_tmp_prefixes) and "tasks" in resolved.parts:
+        # SDK 在 Windows 兼容路径中可能返回 POSIX 形式的 /tmp/claude-*；
+        # Path 会把它映射成当前盘符，因此同时检查原始字符串，避免误拒合法输出。
+        raw_posix = (raw_file_path or "").replace("\\", "/")
+        raw_parts = {part for part in raw_posix.split("/") if part}
+        if (
+            str(resolved).startswith(self._sdk_tmp_prefixes)
+            or raw_posix.startswith(("/tmp/claude-", "/private/tmp/claude-"))
+        ) and ("tasks" in resolved.parts or "tasks" in raw_parts):
             return True, None
         # projects_root 下：当前项目以外的子目录拒，根直放文件放行
         projects_root = self.projects_root

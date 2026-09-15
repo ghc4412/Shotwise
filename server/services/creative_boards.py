@@ -99,7 +99,7 @@ async def _raise_board_update_failure(
     )
 
 
-async def _board_payload(session: AsyncSession, board: CreativeBoard) -> dict[str, object]:
+async def _board_payload(session: AsyncSession, board: CreativeBoard) -> dict[str, Any]:
     items = (
         (
             await session.execute(
@@ -158,7 +158,7 @@ async def _board_payload(session: AsyncSession, board: CreativeBoard) -> dict[st
     }
 
 
-def _snapshot_from_board_payload(payload: Mapping[str, Any]) -> dict[str, object]:
+def _snapshot_from_board_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "name": payload["name"],
         "viewport": payload["viewport"],
@@ -270,8 +270,8 @@ def _normalise_snapshot(snapshot: Mapping[str, Any], *, fallback_created_at: dat
     }
 
 
-def _version_payload(version: CreativeBoardVersion, *, include_snapshot: bool) -> dict[str, object]:
-    result: dict[str, object] = {
+def _version_payload(version: CreativeBoardVersion, *, include_snapshot: bool) -> dict[str, Any]:
+    result: dict[str, Any] = {
         "id": version.id,
         "board_id": version.board_id,
         "version_number": version.version_number,
@@ -291,7 +291,7 @@ async def create_board(
     name: str,
     viewport: Mapping[str, Any] | None = None,
     display_settings: Mapping[str, Any] | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     now = utc_now()
     board = CreativeBoard(
         id=uuid.uuid4().hex,
@@ -311,7 +311,7 @@ async def create_board(
     return await _board_payload(session, board)
 
 
-async def list_boards(session: AsyncSession, *, user_id: str, project_id: str) -> dict[str, object]:
+async def list_boards(session: AsyncSession, *, user_id: str, project_id: str) -> dict[str, Any]:
     boards = (
         (
             await session.execute(
@@ -337,7 +337,7 @@ async def list_boards(session: AsyncSession, *, user_id: str, project_id: str) -
     }
 
 
-async def get_board(session: AsyncSession, board_id: str, *, user_id: str) -> dict[str, object]:
+async def get_board(session: AsyncSession, board_id: str, *, user_id: str) -> dict[str, Any]:
     return await _board_payload(session, await _owned_board(session, board_id, user_id))
 
 
@@ -374,7 +374,7 @@ async def update_board(
     viewport: Mapping[str, Any] | None = None,
     display_settings: Mapping[str, Any] | None = None,
     expected_revision: int | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     board = await _owned_board(session, board_id, user_id)
     now = utc_now()
     values: dict[str, Any] = {"updated_at": now, "revision": CreativeBoard.revision + 1}
@@ -416,7 +416,7 @@ async def add_item(
     group_id: str | None = None,
     display_settings: Mapping[str, Any] | None = None,
     expected_revision: int | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     board = await _owned_board(session, board_id, user_id)
     if item_type not in ALLOWED_ITEM_TYPES:
         raise CreativeBoardValidationError("unsupported board item type")
@@ -466,7 +466,7 @@ async def update_item(
     update_group_id: bool = False,
     display_settings: Mapping[str, Any] | None = None,
     expected_revision: int | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     board = await _owned_board(session, board_id, user_id)
     item = await session.scalar(
         select(CreativeBoardItem).where(CreativeBoardItem.id == item_id, CreativeBoardItem.board_id == board.id)
@@ -503,7 +503,7 @@ async def delete_item(
     *,
     user_id: str,
     expected_revision: int | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     board = await _owned_board(session, board_id, user_id)
     item = await session.scalar(
         select(CreativeBoardItem).where(CreativeBoardItem.id == item_id, CreativeBoardItem.board_id == board.id)
@@ -546,7 +546,7 @@ async def add_edge(
     ordinal: int | None = None,
     metadata: Mapping[str, Any] | None = None,
     expected_revision: int | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     board = await _owned_board(session, board_id, user_id)
     if relation not in ALLOWED_RELATIONS:
         raise CreativeBoardValidationError("unsupported board edge relation")
@@ -615,7 +615,7 @@ async def delete_edge(
     *,
     user_id: str,
     expected_revision: int | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     board = await _owned_board(session, board_id, user_id)
     edge = await session.scalar(
         select(CreativeBoardEdge).where(CreativeBoardEdge.id == edge_id, CreativeBoardEdge.board_id == board.id)
@@ -647,7 +647,7 @@ async def delete_board(
     *,
     user_id: str,
     expected_revision: int | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     board = await _owned_board(session, board_id, user_id)
     revision = board.revision
     updated_at = board.updated_at
@@ -680,7 +680,7 @@ async def replace_board_snapshot(
     user_id: str,
     snapshot: Mapping[str, Any],
     expected_revision: int | None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     """Atomically replace the complete board snapshot and advance its revision."""
     board = await _owned_board(session, board_id, user_id)
     normalised = _normalise_snapshot(snapshot, fallback_created_at=board.created_at)
@@ -747,7 +747,7 @@ async def create_version(
     user_id: str,
     version_name: str,
     expected_revision: int | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     board = await _owned_board(session, board_id, user_id)
     if expected_revision is not None and board.revision != expected_revision:
         await _raise_board_update_failure(session, board_id, user_id=user_id, expected_revision=expected_revision)
@@ -773,7 +773,7 @@ async def create_version(
     return _version_payload(version, include_snapshot=True)
 
 
-async def list_versions(session: AsyncSession, board_id: str, *, user_id: str) -> dict[str, object]:
+async def list_versions(session: AsyncSession, board_id: str, *, user_id: str) -> dict[str, Any]:
     board = await _owned_board(session, board_id, user_id)
     versions = (
         (
@@ -789,7 +789,7 @@ async def list_versions(session: AsyncSession, board_id: str, *, user_id: str) -
     return {"items": [_version_payload(version, include_snapshot=False) for version in versions]}
 
 
-async def get_version(session: AsyncSession, board_id: str, version_id: str, *, user_id: str) -> dict[str, object]:
+async def get_version(session: AsyncSession, board_id: str, version_id: str, *, user_id: str) -> dict[str, Any]:
     board = await _owned_board(session, board_id, user_id)
     version = await session.scalar(
         select(CreativeBoardVersion).where(
@@ -808,7 +808,7 @@ async def restore_version(
     *,
     user_id: str,
     expected_revision: int,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     version = await get_version(session, board_id, version_id, user_id=user_id)
     snapshot = cast(Mapping[str, Any], version["snapshot"])
     return await replace_board_snapshot(
@@ -827,7 +827,7 @@ async def copy_board(
     user_id: str,
     name: str | None = None,
     version_id: str | None = None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     board = await _owned_board(session, board_id, user_id)
     if version_id is None:
         source = _snapshot_from_board_payload(await _board_payload(session, board))

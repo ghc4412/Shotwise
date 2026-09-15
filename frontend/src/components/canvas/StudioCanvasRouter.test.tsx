@@ -456,7 +456,7 @@ describe("StudioCanvasRouter", () => {
       project_name: "demo",
       status: "admitted",
       cancel_requested: false,
-      tasks: [{ item_id: "SEG-1", task_id: "task-1", status: "queued" }],
+      tasks: [{ item_id: "SEG-1", resource_id: "SEG-1", task_id: "task-1", status: "queued", occupied: true, progress: null, progress_source: null, phase_code: null, reason: null }],
     });
     vi.spyOn(API, "getProviders").mockResolvedValue({ providers: [] });
     vi.spyOn(API, "listCustomProviders").mockResolvedValue({ providers: [] });
@@ -799,7 +799,7 @@ describe("StudioCanvasRouter", () => {
     });
     vi.spyOn(API, "updateCharacter").mockResolvedValue({ success: true });
     vi.spyOn(API, "uploadFile").mockResolvedValue({ success: true, path: "x", url: "y" });
-    vi.spyOn(API, "generateCharacter").mockResolvedValue({ success: true, task_id: "t-1", deduped: false, message: "已提交" });
+    vi.spyOn(API, "generateCharacter").mockResolvedValue({ success: true, task_id: "t-1", deduped: false, reused: false, message: "已提交" });
     vi.spyOn(API, "addCharacter").mockResolvedValue({ success: true });
 
     renderAt("/characters");
@@ -826,6 +826,7 @@ describe("StudioCanvasRouter", () => {
         "demo",
         "Hero",
         "hero description",
+        false,
       );
       expect(useAppStore.getState().toast?.text).toContain("生成任务已提交");
       expect(useAppStore.getState().toast?.tone).toBe("success");
@@ -899,7 +900,7 @@ describe("StudioCanvasRouter", () => {
 
     fireEvent.click(screen.getByText("generate-scene"));
     await waitFor(() => {
-      expect(API.generateProjectScene).toHaveBeenCalledWith("demo", "Temple", "ancient temple");
+      expect(API.generateProjectScene).toHaveBeenCalledWith("demo", "Temple", "ancient temple", false);
       expect(useAppStore.getState().toast?.text).toContain("提交失败");
     });
   });
@@ -931,7 +932,7 @@ describe("StudioCanvasRouter", () => {
 
     fireEvent.click(screen.getByText("generate-prop"));
     await waitFor(() => {
-      expect(API.generateProjectProp).toHaveBeenCalledWith("demo", "Sword", "rusty sword");
+      expect(API.generateProjectProp).toHaveBeenCalledWith("demo", "Sword", "rusty sword", false);
       expect(useAppStore.getState().toast?.text).toContain("提交失败");
     });
   });
@@ -947,12 +948,12 @@ describe("StudioCanvasRouter", () => {
       project: makeProjectData(),
       scripts: { "episode_1.json": makeScript() },
     });
-    vi.spyOn(API, "generateProjectScene").mockResolvedValue({ success: true, task_id: "t-1", deduped: false, message: "已提交" });
+    vi.spyOn(API, "generateProjectScene").mockResolvedValue({ success: true, task_id: "t-1", deduped: false, reused: false, message: "已提交" });
 
     renderAt("/scenes");
     fireEvent.click(screen.getByText("generate-scene"));
     await waitFor(() => {
-      expect(API.generateProjectScene).toHaveBeenCalledWith("demo", "Temple", "ancient temple");
+      expect(API.generateProjectScene).toHaveBeenCalledWith("demo", "Temple", "ancient temple", false);
       const { tasks, optimisticActive } = useTasksStore.getState();
       expect(selectActiveResourceIds(tasks, "scene", "demo", optimisticActive).has("Temple")).toBe(true);
     });
@@ -969,12 +970,12 @@ describe("StudioCanvasRouter", () => {
       project: makeProjectData(),
       scripts: { "episode_1.json": makeScript() },
     });
-    vi.spyOn(API, "generateProjectProp").mockResolvedValue({ success: true, task_id: "t-1", deduped: false, message: "已提交" });
+    vi.spyOn(API, "generateProjectProp").mockResolvedValue({ success: true, task_id: "t-1", deduped: false, reused: false, message: "已提交" });
 
     renderAt("/props");
     fireEvent.click(screen.getByText("generate-prop"));
     await waitFor(() => {
-      expect(API.generateProjectProp).toHaveBeenCalledWith("demo", "Sword", "rusty sword");
+      expect(API.generateProjectProp).toHaveBeenCalledWith("demo", "Sword", "rusty sword", false);
       const { tasks, optimisticActive } = useTasksStore.getState();
       expect(selectActiveResourceIds(tasks, "prop", "demo", optimisticActive).has("Sword")).toBe(true);
     });
@@ -1422,7 +1423,7 @@ describe("StudioCanvasRouter", () => {
 
     fireEvent.click(screen.getByText("generate-character"));
     await waitFor(() => {
-      expect(API.generateCharacter).toHaveBeenCalledWith("demo", "Hero", "hero description");
+      expect(API.generateCharacter).toHaveBeenCalledWith("demo", "Hero", "hero description", false);
       expect(useAppStore.getState().toast?.text).toContain("提交失败");
       expect(useAppStore.getState().toast?.tone).toBe("error");
     });

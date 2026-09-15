@@ -37,6 +37,24 @@ from lib.reference_video.draft_validation import DraftViolation, render_violatio
 QUARANTINE_KIND_STEP1 = "reference_video_step1"
 QUARANTINE_KIND_STEP2 = "reference_video_step2"
 
+QUARANTINE_SCHEMA_V1 = 1
+QUARANTINE_SCHEMA_VERSION = 2
+
+
+class UnsupportedQuarantineSchemaError(ValueError):
+    """隔离草稿使用了当前版本无法读取的未来信封版本。"""
+
+    def __init__(self, version: int, path: Path | None = None) -> None:
+        location = f" ({path})" if path is not None else ""
+        super().__init__(
+            f"隔离草稿{location}使用了不受支持的 schema_version={version}；当前支持版本为 {QUARANTINE_SCHEMA_VERSION}"
+        )
+        self.version = version
+        self.path = path
+
+
+_KNOWN_ENVELOPE_KEYS = {"schema_version", "kind", "episode", "meta", "violations", "content"}
+
 _QUARANTINE_FILENAMES: dict[str, str] = {
     QUARANTINE_KIND_STEP1: REFERENCE_VIDEO_STEP1_QUARANTINE_FILENAME,
     QUARANTINE_KIND_STEP2: REFERENCE_VIDEO_STEP2_QUARANTINE_FILENAME,
@@ -60,6 +78,7 @@ class QuarantinedDraft:
     content: dict[str, Any]
     violations: list[dict[str, Any]]
     meta: dict[str, Any]
+    extra: dict[str, Any]
     path: Path
 
 
@@ -81,6 +100,7 @@ def write_quarantine(
     content: dict[str, Any],
     violations: list[DraftViolation],
     meta: dict[str, Any] | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> Path:
     """把违约产物与报告写入隔离草稿（原子写，整份覆盖），返回草稿路径。
 
@@ -89,17 +109,40 @@ def write_quarantine(
     """
     path = quarantine_path(project_path, episode, kind)
     path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_json(
-        path,
+    existing = load_json_or_none(path)
+    preserved = (
+        {key: value for key, value in existing.items() if key not in _KNOWN_ENVELOPE_KEYS}
+        if isinstance(existing, dict)
+        else {}
+    )
+    preserved.update(extra or {})
+    envelope = dict(preserved)
+    envelope.update(
         {
+            "schema_version": QUARANTINE_SCHEMA_VERSION,
             "kind": kind,
             "episode": episode,
             "meta": meta or {},
             "violations": violation_entries(violations),
             "content": content,
-        },
+        }
     )
+    atomic_write_json(path, envelope)
     return path
+
+
+def migrate_quarantine_envelope(data: dict[str, Any], *, path: Path | None = None) -> dict[str, Any] | None:
+    """将已知的旧信封迁移到当前内存形状，不参与业务字段校验。"""
+    raw_version = data.get("schema_version", QUARANTINE_SCHEMA_V1)
+    if isinstance(raw_version, bool) or not isinstance(raw_version, int):
+        return None
+    if raw_version > QUARANTINE_SCHEMA_VERSION:
+        raise UnsupportedQuarantineSchemaError(raw_version, path)
+    if raw_version < QUARANTINE_SCHEMA_V1:
+        return None
+    migrated = dict(data)
+    migrated["schema_version"] = QUARANTINE_SCHEMA_VERSION
+    return migrated
 
 
 def read_quarantine(project_path: Path, episode: int, kind: str) -> QuarantinedDraft | None:
@@ -116,6 +159,9 @@ def read_quarantine(project_path: Path, episode: int, kind: str) -> QuarantinedD
     path = quarantine_path(project_path, episode, kind)
     data = load_json_or_none(path)
     if not isinstance(data, dict):
+        return None
+    data = migrate_quarantine_envelope(data, path=path)
+    if data is None:
         return None
     content = data.get("content")
     if not isinstance(content, dict):
@@ -136,6 +182,7 @@ def read_quarantine(project_path: Path, episode: int, kind: str) -> QuarantinedD
         content=content,
         violations=violations,
         meta=raw_meta if isinstance(raw_meta, dict) else {},
+        extra={key: value for key, value in data.items() if key not in _KNOWN_ENVELOPE_KEYS},
         path=path,
     )
 
@@ -176,13 +223,14 @@ def quarantine_and_report(
     content: dict[str, Any],
     violations: list[DraftViolation],
     meta: dict[str, Any] | None = None,
+    extra: dict[str, Any] | None = None,
 ) -> str:
     """违约处置的单一出口：落隔离草稿 + 渲染报告，返回回给 agent 的报告文本。
 
     落盘与报告成对出现——报告要指名草稿路径，路径由落盘决定；两步分开写在各调用点，迟早会
     出现「报告说去改某个文件、而那个文件没被写出来」的分叉。
     """
-    path = write_quarantine(project_path, episode, kind, content=content, violations=violations, meta=meta)
+    path = write_quarantine(project_path, episode, kind, content=content, violations=violations, meta=meta, extra=extra)
     return render_report(path, kind, violations, episode=episode)
 
 
@@ -190,12 +238,16 @@ __all__ = [
     "PROMOTE_TOOL_NAME",
     "QUARANTINE_KIND_STEP1",
     "QUARANTINE_KIND_STEP2",
+    "QUARANTINE_SCHEMA_V1",
+    "QUARANTINE_SCHEMA_VERSION",
     "STEP1_EDIT_TOOL_NAME",
+    "UnsupportedQuarantineSchemaError",
     "QuarantinedDraft",
     "clear_quarantine",
     "quarantine_and_report",
     "quarantine_exists",
     "quarantine_path",
+    "migrate_quarantine_envelope",
     "read_quarantine",
     "render_report",
     "violation_entries",

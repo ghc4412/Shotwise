@@ -166,59 +166,104 @@ export function normalizeAssetName(name: string): string {
   return name.normalize("NFC");
 }
 
-function bucketHasName(bucket: Record<string, unknown> | undefined, target: string): boolean {
-  if (!bucket) return false;
-  // Object.keys 而非 `in`：`toString` / `constructor` / `__proto__` 都是合法资产名
-  // （`validate_asset_name` 只挡路径分隔符与 Windows 保留字符），`in` 会命中原型链上的
-  // 同名属性，把未登记的名字判成已登记；Object.keys 只返回自有可枚举属性，同样安全。
-  return Object.keys(bucket).some((key) => normalizeAssetName(key) === target);
+function bucketEntry(
+  bucket: Record<string, unknown> | undefined,
+  target: string,
+): [string, Record<string, unknown>] | undefined {
+  if (!bucket) return undefined;
+  for (const key of Object.keys(bucket)) {
+    if (normalizeAssetName(key) === target) {
+      const value = bucket[key];
+      return [key, (value && typeof value === "object" ? value : {}) as Record<string, unknown>];
+    }
+  }
+  return undefined;
+}
+
+function characterVariantMention(
+  project: ProjectBuckets,
+  name: string,
+): ReferenceResource | undefined {
+  const slash = name.indexOf("/");
+  if (slash <= 0 || slash === name.length - 1 || name.indexOf("/", slash + 1) >= 0) return undefined;
+  const characterName = normalizeAssetName(name.slice(0, slash));
+  const variantSlug = normalizeAssetName(name.slice(slash + 1));
+  const character = bucketEntry(project.characters, characterName);
+  if (!character) return undefined;
+  const variantsValue = character[1].variants;
+  if (!variantsValue || typeof variantsValue !== "object" || Array.isArray(variantsValue)) return undefined;
+  const variants = variantsValue as Record<string, unknown>;
+  for (const key of Object.keys(variants)) {
+    const raw: unknown = variants[key];
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const variant = raw as Record<string, unknown>;
+    const candidateSlug = typeof variant.slug === "string" ? variant.slug : "";
+    if (normalizeAssetName(key) !== variantSlug && normalizeAssetName(candidateSlug) !== variantSlug) continue;
+    return {
+      type: "character",
+      name: characterName,
+      variant_id: typeof variant.id === "string" ? variant.id : undefined,
+      variant_slug: typeof variant.slug === "string" ? variant.slug : key,
+    };
+  }
+  return undefined;
+}
+
+export function resolveMention(
+  project: ProjectBuckets | null | undefined,
+  name: string,
+): ReferenceResource | undefined {
+  if (!project) return undefined;
+  const normalized = normalizeAssetName(name);
+  const variant = characterVariantMention(project, normalized);
+  if (variant) return variant;
+  const buckets: [AssetKind, Record<string, unknown> | undefined][] = [
+    ["character", project.characters],
+    ["scene", project.scenes],
+    ["prop", project.props],
+  ];
+  for (const [type, bucket] of buckets) {
+    const entry = bucketEntry(bucket, normalized);
+    if (entry) return { type, name: normalizeAssetName(entry[0]) };
+  }
+  return undefined;
 }
 
 export function resolveMentionType(
   project: ProjectBuckets | null | undefined,
   name: string,
 ): AssetKind | undefined {
-  if (!project) return undefined;
-  const target = normalizeAssetName(name);
-  if (bucketHasName(project.characters, target)) return "character";
-  if (bucketHasName(project.scenes, target)) return "scene";
-  if (bucketHasName(project.props, target)) return "prop";
-  return undefined;
+  return resolveMention(project, name)?.type;
 }
 
-/**
- * Re-derive the references list for a unit given new prompt text.
- *
- * Rules:
- *  1. Preserve the order of `existing` entries whose names still appear in prompt.
- *  2. Drop entries whose names no longer appear.
- *  3. Append new mentions (in first-appearance order) that resolve to a known bucket.
- *  4. Skip unknown mentions (they become UI warning chips, not references).
- *  5. Deduplicate by name.
- */
+/** Re-derive references while preserving explicit variant identity. */
 export function mergeReferences(
   prompt: string,
   existing: ReferenceResource[],
   project: ProjectBuckets | null | undefined,
 ): ReferenceResource[] {
-  // mention 名出自解析器、已是规范形；既有 references 出自后端落盘值，来源不同故仍需归一后
-  // 再判等/去重。输出的 name 一律是规范形，与后端 `resolve_references` 的产出口径一致。
   const mentioned = new Set(extractMentions(prompt));
+  const keyOf = (ref: ReferenceResource) =>
+    `${ref.type}:${normalizeAssetName(ref.name)}:${ref.variant_id ?? ref.variant_slug ?? ""}`;
   const kept: ReferenceResource[] = [];
-  const keptNames = new Set<string>();
+  const keptKeys = new Set<string>();
   for (const ref of existing) {
-    const name = normalizeAssetName(ref.name);
-    if (mentioned.has(name) && !keptNames.has(name)) {
-      kept.push({ ...ref, name });
-      keptNames.add(name);
+    const displayName = ref.variant_slug ? `${ref.name}/${ref.variant_slug}` : ref.name;
+    const mention = normalizeAssetName(displayName);
+    const key = keyOf(ref);
+    if (mentioned.has(mention) && !keptKeys.has(key)) {
+      kept.push({ ...ref, name: normalizeAssetName(ref.name) });
+      keptKeys.add(key);
     }
   }
   for (const name of mentioned) {
-    if (keptNames.has(name)) continue;
-    const type = resolveMentionType(project, name);
-    if (!type) continue;
-    kept.push({ type, name });
-    keptNames.add(name);
+    const resolved = resolveMention(project, name);
+    if (!resolved) continue;
+    const key = keyOf(resolved);
+    if (!keptKeys.has(key)) {
+      kept.push(resolved);
+      keptKeys.add(key);
+    }
   }
   return kept;
 }

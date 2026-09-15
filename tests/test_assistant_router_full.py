@@ -24,7 +24,17 @@ class _FakeService:
             "bad": make_session_meta(id="bad", project_name=PROJECT),
         }
 
-    async def send_or_create(self, project_name, content, session_id=None, images=None, locale=None, client_key=None):
+    async def send_or_create(
+        self,
+        project_name,
+        content,
+        session_id=None,
+        images=None,
+        locale=None,
+        client_key=None,
+        sdk_type=None,
+        user_id=None,
+    ):
         if project_name == "missing":
             raise FileNotFoundError(project_name)
         if project_name == "at-capacity":
@@ -39,12 +49,12 @@ class _FakeService:
     async def list_sessions(self, **kwargs):
         return [make_session_meta(id="session-1", project_name=kwargs.get("project_name") or "demo")]
 
-    async def get_session(self, session_id):
+    async def get_session(self, session_id, **kwargs):
         if session_id == "error":
             raise RuntimeError("boom")
         return self.sessions.get(session_id)
 
-    async def delete_session(self, session_id):
+    async def delete_session(self, session_id, **kwargs):
         return session_id in self.sessions
 
     async def interrupt_session(self, session_id, **kwargs):
@@ -196,7 +206,14 @@ class TestAssistantRouterFull:
         fake = _FakeService()
 
         async def _timeout_send_or_create(
-            project_name, content, session_id=None, images=None, locale=None, client_key=None
+            project_name,
+            content,
+            session_id=None,
+            images=None,
+            locale=None,
+            client_key=None,
+            sdk_type=None,
+            user_id=None,
         ):
             raise TimeoutError("timeout")
 

@@ -68,13 +68,18 @@ from server.routers import (
     files,
     generate,
     grids,
+    jianying_assembly,
+    media_assembly,
     media_assets,
+    media_rendering,
+    memories,
     onboarding,
     products,
     project_events,
     projects,
     props,
     providers,
+    publishing,
     reference_videos,
     scenes,
     script_review,
@@ -89,6 +94,9 @@ from server.routers import (
 from server.routers import auth as auth_router
 from server.services.creation_skill_catalog import sync_official_creation_skills
 from server.services.project_events import ProjectEventService
+from server.services.publishing_adapters import get_publishing_adapter
+from server.services.publishing_events import emit_publish_job_event
+from server.services.publishing_worker import PublishingWorker
 from server.services.workflow_execution import workflow_executor_loop
 
 # Windows 事件循环修正的兜底：reload 模式的完整修复见 server/run_dev.py（uvicorn
@@ -474,6 +482,12 @@ async def lifespan(app: FastAPI):
     await project_event_service.start()
     logger.info("ProjectEventService 已启动")
 
+    logger.info("启动 PublishingWorker...")
+    publishing_worker = create_publishing_worker()
+    app.state.publishing_worker = publishing_worker
+    await publishing_worker.start()
+    logger.info("PublishingWorker 已启动")
+
     logger.info("启动 WorkflowExecutor...")
     workflow_executor_task = asyncio.create_task(workflow_executor_loop())
     app.state.workflow_executor_task = workflow_executor_task
@@ -491,6 +505,11 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         logger.info("WorkflowExecutor 已停止")
+    publishing_worker = getattr(app.state, "publishing_worker", None)
+    if publishing_worker:
+        logger.info("正在停止 PublishingWorker...")
+        await publishing_worker.stop()
+        logger.info("PublishingWorker 已停止")
     project_event_service = getattr(app.state, "project_event_service", None)
     if project_event_service:
         logger.info("正在停止 ProjectEventService...")
@@ -690,6 +709,17 @@ app.include_router(providers.router, prefix="/api/v1", dependencies=[Depends(get
 app.include_router(system_config.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["系统配置"])
 app.include_router(system.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["系统"])
 app.include_router(api_keys.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["API Key 管理"])
+app.include_router(memories.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["Agent 记忆"])
+app.include_router(
+    media_assembly.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["Media Assembly"]
+)
+app.include_router(
+    media_rendering.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["Media Rendering"]
+)
+app.include_router(publishing.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["Publishing"])
+app.include_router(
+    jianying_assembly.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["Jianying Export"]
+)
 app.include_router(agent_chat.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["Agent 对话"])
 app.include_router(agent_config.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["Agent 配置"])
 app.include_router(
@@ -722,6 +752,17 @@ app.include_router(projects.self_auth_router, prefix="/api/v1", tags=["项目管
 
 def create_generation_worker() -> GenerationWorker:
     return GenerationWorker()
+
+
+def create_publishing_worker() -> PublishingWorker:
+    def on_job_updated(job) -> None:
+        emit_publish_job_event(job.project_name, job.id)
+
+    return PublishingWorker(
+        session_factory=async_session_factory,
+        adapter_registry=get_publishing_adapter,
+        on_job_updated=on_job_updated,
+    )
 
 
 @app.get("/health")

@@ -22,6 +22,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     proj_dir = projects_root / "demo"
     proj_dir.mkdir()
     (proj_dir / "scripts").mkdir()
+    (proj_dir / "characters").mkdir()
     (proj_dir / "project.json").write_text(
         json.dumps(
             {
@@ -29,7 +30,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
                 "content_mode": "narration",
                 "generation_mode": "reference_video",
                 "style": "s",
-                "characters": {"张三": {"description": "x"}},
+                "characters": {"张三": {"description": "x", "character_sheet": "characters/张三.png"}},
                 "scenes": {"酒馆": {"description": "x"}},
                 "props": {},
                 "episodes": [{"episode": 1, "title": "E1", "script_file": "scripts/episode_1.json"}],
@@ -38,6 +39,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
         ),
         encoding="utf-8",
     )
+    (proj_dir / "characters" / "张三.png").write_bytes(b"png")
     (proj_dir / "scripts" / "episode_1.json").write_text(
         json.dumps(
             {

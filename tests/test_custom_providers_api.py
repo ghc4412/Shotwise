@@ -154,6 +154,7 @@ class TestCreateProvider:
                         "model_id": "kling-v1",
                         "display_name": "Kling v1",
                         "endpoint": "newapi-video",
+                        "supported_durations": [4, 8],
                         "is_default": True,
                         "is_enabled": True,
                     },
@@ -469,6 +470,7 @@ class TestReplaceModels:
                         "model_id": "replacement",
                         "display_name": "Replacement",
                         "endpoint": "newapi-video",
+                        "supported_durations": [4, 8],
                     }
                 ]
             },
@@ -1276,6 +1278,7 @@ class TestDuplicateDefaultRejected:
                         "model_id": "video-model",
                         "display_name": "Video Model",
                         "endpoint": "newapi-video",
+                        "supported_durations": [4, 8],
                         "is_default": True,
                         "is_enabled": True,
                     },
@@ -1371,6 +1374,7 @@ class TestResolutionField:
                         "model_id": "m1",
                         "display_name": "M1",
                         "endpoint": "newapi-video",
+                        "supported_durations": [4, 8],
                         "is_default": True,
                         "is_enabled": True,
                         "resolution": "720p",
@@ -1402,6 +1406,7 @@ class TestResolutionField:
                         "model_id": "m1",
                         "display_name": "M1",
                         "endpoint": "newapi-video",
+                        "supported_durations": [4, 8],
                         "is_enabled": True,
                     },
                 ],
@@ -1437,6 +1442,7 @@ class TestEndpointDeclaration:
                         "model_id": "relay-video",
                         "display_name": "Relay Video",
                         "endpoint": "openai-video",
+                        "supported_durations": [4, 8],
                         "is_default": True,
                         "endpoint_declaration": declaration,
                     }
@@ -1465,6 +1471,7 @@ class TestEndpointDeclaration:
                         "model_id": "relay-video",
                         "display_name": "Relay Video",
                         "endpoint": "openai-video",
+                        "supported_durations": [4, 8],
                         "endpoint_declaration": {
                             "method": "POST",
                             "path": "https://attacker.example/steal",
@@ -1493,6 +1500,7 @@ class TestEndpointDeclaration:
                         "model_id": "m1",
                         "display_name": "M1",
                         "endpoint": "newapi-video",
+                        "supported_durations": [4, 8],
                         "is_enabled": True,
                         "resolution": "1080p",
                     },
@@ -1511,6 +1519,7 @@ class TestEndpointDeclaration:
                         "model_id": "m1",
                         "display_name": "M1",
                         "endpoint": "newapi-video",
+                        "supported_durations": [4, 8],
                         "is_enabled": True,
                     },
                 ],
@@ -1787,10 +1796,10 @@ class TestGetProviderCredentials:
         assert resp.status_code == 404
 
 
-class TestSupportedDurationsAutoFill:
-    """video endpoint 模型创建时若未传 supported_durations，应由预设表自动填充。"""
+class TestSupportedDurationsDeclaration:
+    """video endpoint 模型必须显式声明供应商真实支持的时长。"""
 
-    def test_create_video_model_without_durations_autofills(self, client: TestClient):
+    def test_create_video_model_without_durations_is_rejected(self, client: TestClient):
         resp = client.post(
             "/api/v1/custom-providers",
             json={
@@ -1810,13 +1819,8 @@ class TestSupportedDurationsAutoFill:
                 ],
             },
         )
-        assert resp.status_code == 201, resp.text
-        provider_id = resp.json()["id"]
-
-        resp = client.get(f"/api/v1/custom-providers/{provider_id}")
-        assert resp.status_code == 200
-        model = resp.json()["models"][0]
-        assert model["supported_durations"] == [4, 8, 12]
+        assert resp.status_code == 422, resp.text
+        assert "supported_durations" in resp.text
 
     def test_create_video_model_user_provided_durations_kept(self, client: TestClient):
         resp = client.post(

@@ -1579,6 +1579,17 @@ class TestProjectsRouter:
     def test_list_projects_shares_script_preload_with_status(self, tmp_path, monkeypatch):
         """list_projects 一次性加载 episode scripts，传给 StatusCalculator，去除 cover + status 双重 I/O。"""
         fake_pm = _FakePM(tmp_path)
+        # 项目列表只消费 project.json 和剧本摘要，不应回归到媒体目录指纹扫描。
+        monkeypatch.setattr(
+            projects,
+            "compute_asset_fingerprints",
+            lambda *_args, **_kwargs: pytest.fail("project list must not scan media fingerprints"),
+        )
+        monkeypatch.setattr(
+            fake_pm,
+            "project_exists",
+            lambda _name: pytest.fail("project list must not stat project.json before loading it"),
+        )
         # 统计 load_script 调用次数：共享预加载后，ready 项目应只触发一次。
         orig_load_script = fake_pm.load_script
         calls: list[tuple[str, str]] = []
@@ -1603,6 +1614,16 @@ class TestProjectsRouter:
         # 预加载 map 被传给 StatusCalculator
         assert fake_calc.last_preloaded_scripts is not None
         assert "scripts/episode_1.json" in fake_calc.last_preloaded_scripts
+
+        payload = resp.json()["projects"]
+        ready = next(project for project in payload if project["name"] == "ready")
+        assert ready["media_summary"] == {
+            "asset_count": 0,
+            "last_indexed_at": None,
+            "status": "stale",
+            "summary_version": 1,
+            "error": None,
+        }
 
     @pytest.mark.unit
     def test_list_projects_returns_style_image_field(self, tmp_path, monkeypatch):

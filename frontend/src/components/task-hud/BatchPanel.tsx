@@ -62,6 +62,11 @@ function BatchTaskList({ tasks }: { tasks: DurableBatchTaskSummary[] }) {
         <div key={task.item_id + ":" + task.task_id} className="flex min-w-0 items-center gap-2 py-1 text-[10.5px]">
           <TaskStatusIcon status={task.status} />
           <span className="min-w-0 flex-1 truncate" style={{ color: "var(--color-text-3)" }}>{task.item_id}</span>
+          <span className="num shrink-0" style={{ color: task.occupied ? "var(--color-accent-2)" : "var(--color-text-4)" }}>
+            {task.progress == null ? "—" : `${Math.round(Math.max(0, Math.min(1, task.progress)) * 100)}%`}
+          </span>
+          {task.phase_code && <span className="max-w-28 shrink-0 truncate" style={{ color: "var(--color-text-4)" }} title={task.phase_code}>{task.phase_code}</span>}
+          {task.occupied && <span className="shrink-0" style={{ color: "var(--color-accent-2)" }}>{t("durable_batch_task_occupied")}</span>}
           <span className="num shrink-0" style={{ color: "var(--color-text-4)" }}>{shortId(task.task_id)}</span>
           <span className="shrink-0" style={{ color: "var(--color-text-4)" }}>{t("durable_batch_task_status_" + task.status)}</span>
         </div>

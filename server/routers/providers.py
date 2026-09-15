@@ -12,7 +12,7 @@ import logging
 import os
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import AfterValidator, BaseModel
@@ -591,7 +591,10 @@ async def patch_model_types(
         flush=False,
     )
     await session.commit()
-    return {"model_type_overrides": overrides, "discovered_models": discovered_models}
+    return UpdateModelTypesResponse(
+        model_type_overrides=overrides,
+        discovered_models=discovered_models,
+    )
 
 
 @router.patch("/{provider_id}/config", status_code=204)
@@ -857,7 +860,7 @@ def _read_model_type_overrides(raw: str | Mapping[str, Any] | None) -> dict[str,
     if not isinstance(payload, dict):
         return {}
     return {
-        model_id: media_type
+        model_id: cast(ModelMediaType, media_type)
         for model_id, media_type in payload.items()
         if isinstance(model_id, str) and isinstance(media_type, str) and media_type in _MODEL_MEDIA_TYPES
     }

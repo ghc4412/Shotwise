@@ -129,3 +129,121 @@ def test_media_audit_is_dry_run_and_reports_candidates(tmp_path: Path, monkeypat
     assert report["would_index_count"] == 1
     assert {item["code"] for item in report["diagnostics"]} >= {"missing_file", "unsupported_media"}
     assert not (root / ".media-assets.json").exists()
+
+
+def test_summary_is_backward_compatible_and_does_not_touch_media_files(tmp_path: Path) -> None:
+    root = tmp_path / "demo"
+    root.mkdir()
+    index_file = root / ".media-assets.json"
+    index_file.write_text(
+        json.dumps(
+            {
+                "assets": {},
+                "bindings": {},
+                "derivations": {},
+                "diagnostics": [],
+                "reconciliation": [],
+                "summary": {"asset_count": "invalid", "status": "unknown", "summary_version": "old"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = MediaCatalog(index_file).summary()
+
+    assert summary.asset_count == 0
+    assert summary.last_indexed_at is None
+    assert summary.status == "stale"
+    assert summary.summary_version == 1
+    assert summary.error is None
+
+
+def test_summary_creates_and_uses_rebuildable_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "demo"
+    root.mkdir()
+    index_file = root / ".media-assets.json"
+    index_file.write_text(
+        json.dumps(
+            {
+                "assets": {},
+                "bindings": {},
+                "derivations": {},
+                "diagnostics": [],
+                "reconciliation": [],
+                "summary": {"asset_count": 2, "status": "ready", "summary_version": 1},
+            }
+        ),
+        encoding="utf-8",
+    )
+    catalog = MediaCatalog(index_file)
+
+    assert catalog.summary().asset_count == 2
+    cache_file = root / ".media-assets.summary.json"
+    assert cache_file.exists()
+
+    monkeypatch.setattr(catalog, "_load", lambda: pytest.fail("summary cache should avoid full index parsing"))
+    assert catalog.summary().status == "ready"
+
+
+def test_summary_cache_invalidates_when_canonical_index_changes(tmp_path: Path) -> None:
+    root = tmp_path / "demo"
+    root.mkdir()
+    index_file = root / ".media-assets.json"
+    index_file.write_text(
+        json.dumps({"assets": {}, "summary": {"asset_count": 1, "status": "ready", "summary_version": 1}}),
+        encoding="utf-8",
+    )
+    catalog = MediaCatalog(index_file)
+    assert catalog.summary().asset_count == 1
+
+    index_file.write_text(
+        json.dumps({"assets": {}, "summary": {"asset_count": 3, "status": "stale", "summary_version": 1}}),
+        encoding="utf-8",
+    )
+    assert catalog.summary().asset_count == 3
+    assert catalog.summary().status == "stale"
+
+
+def test_summary_cache_corruption_falls_back_and_repairs(tmp_path: Path) -> None:
+    root = tmp_path / "demo"
+    root.mkdir()
+    index_file = root / ".media-assets.json"
+    index_file.write_text(
+        json.dumps({"assets": {}, "summary": {"asset_count": 4, "status": "failed", "summary_version": 1}}),
+        encoding="utf-8",
+    )
+    catalog = MediaCatalog(index_file)
+    assert catalog.summary().asset_count == 4
+    cache_file = root / ".media-assets.summary.json"
+    cache_file.write_text("{broken", encoding="utf-8")
+
+    assert catalog.summary().asset_count == 4
+    repaired = json.loads(cache_file.read_text(encoding="utf-8"))
+    assert repaired["summary"]["status"] == "failed"
+
+
+def test_summary_lifecycle_persists_status_and_asset_count(tmp_path: Path) -> None:
+    root = tmp_path / "demo"
+    path = root / "uploads" / "image.png"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"image")
+    catalog = MediaCatalog(root / ".media-assets.json")
+
+    assert catalog.summary().status == "stale"
+    catalog.mark_syncing()
+    assert catalog.summary().status == "syncing"
+
+    asset = catalog.register(project_id="demo", path=path, origin="upload")
+    assert asset is not None
+    assert catalog.summary().asset_count == 1
+    assert catalog.summary().status == "stale"
+
+    ready = catalog.mark_ready()
+    assert ready.status == "ready"
+    assert ready.asset_count == 1
+    assert ready.last_indexed_at is not None
+
+    failed = catalog.mark_failed("scan failed")
+    assert failed.status == "failed"
+    assert failed.error == "scan failed"
+    assert failed.asset_count == 1

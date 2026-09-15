@@ -10,6 +10,11 @@ from typing import Any
 
 from claude_agent_sdk import tool
 
+from lib.generation_preflight import (
+    format_preflight_error,
+    merge_preflight_results,
+    validate_item_asset_references,
+)
 from lib.generation_queue_client import (
     BatchTaskResult,
     TaskSpec,
@@ -170,7 +175,7 @@ def generate_storyboards_tool(ctx: ToolContext):
                     script, resolve_content_mode(script, project_data), project_data.get("generation_mode")
                 )
 
-            items, id_field, _char_field, _scene_field, _prop_field = get_storyboard_items(script)
+            items, id_field, char_field, scene_field, prop_field = get_storyboard_items(script)
             selected = _select_items(items, id_field, segment_ids)
             if not selected:
                 # 区分两种零结果：调用方显式传了 segment_ids（None vs []，None 即
@@ -204,6 +209,25 @@ def generate_storyboards_tool(ctx: ToolContext):
                 id_field,
                 script_filename,
             )
+
+            # 任何一个待入队分镜引用无效，都阻断整个批次；不能让前面的图片
+            # 已经入队后才发现后续角色/场景/道具未登记或缺图。
+            preflight = merge_preflight_results(
+                *(
+                    validate_item_asset_references(
+                        project_data,
+                        project_dir,
+                        items_by_id[plan.resource_id],
+                        char_field=char_field,
+                        scene_field=scene_field,
+                        prop_field=prop_field,
+                    )
+                    for plan in plans
+                )
+            )
+            preflight_error = format_preflight_error(preflight)
+            if preflight_error:
+                raise ValueError(preflight_error)
 
             recorder = _FailureRecorder(project_dir / "storyboards")
             successes, failures = await batch_enqueue_and_wait(

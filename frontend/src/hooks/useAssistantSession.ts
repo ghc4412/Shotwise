@@ -13,6 +13,7 @@ import type {
   TimelineEntry,
 } from "@/types";
 import type { AgentModelMenuEntry } from "@/types/agent-credential";
+import { SSE_CLOSED, type SseConnection } from "@/utils/sse";
 
 export interface AttachedImage {
   id: string;
@@ -91,7 +92,7 @@ function saveLastSessionId(projectName: string, sessionId: string): void {
 export function useAssistantSession(projectName: string | null) {
   const { t } = useTranslation("dashboard");
   const store = useAssistantStore;
-  const streamRef = useRef<EventSource | null>(null);
+  const streamRef = useRef<SseConnection | null>(null);
   const streamSessionRef = useRef<string | null>(null);
   const reconnectRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const statusRef = useRef<string>("idle");
@@ -300,7 +301,7 @@ export function useAssistantSession(projectName: string | null) {
       if (
         streamRef.current &&
         streamSessionRef.current === sessionId &&
-        streamRef.current.readyState !== EventSource.CLOSED
+        streamRef.current.readyState !== SSE_CLOSED
       ) {
         return;
       }
@@ -310,8 +311,7 @@ export function useAssistantSession(projectName: string | null) {
 
       // 冷订阅游标：已有条目之后；浏览器自动重连由 Last-Event-ID 续传
       const after = lastEntrySeq(store.getState().entries);
-      const url = API.getAssistantEntriesStreamUrl(projectName!, sessionId, after);
-      const source = new EventSource(url);
+      const source = API.openAssistantEntriesStream(projectName!, sessionId, after);
       streamRef.current = source;
       const isActiveStream = () =>
         streamRef.current === source &&
@@ -384,7 +384,7 @@ export function useAssistantSession(projectName: string | null) {
         // 浏览器原生自动重连携带 Last-Event-ID 续传；此处仅兜底
         // 连接被判死（CLOSED）的场景，运行中或发送中才重建。
         if (
-          source.readyState === EventSource.CLOSED &&
+          source.readyState === SSE_CLOSED &&
           (statusRef.current === "running" || store.getState().sending)
         ) {
           reconnectRef.current = setTimeout(() => {
@@ -418,6 +418,10 @@ export function useAssistantSession(projectName: string | null) {
     if (signal.aborted) return;
     const raw = res as Record<string, unknown>;
     const sessionObj = (raw.session ?? raw) as Record<string, unknown>;
+    const sdkType = sessionObj.sdk_type;
+    if (sdkType === "claude" || sdkType === "openai") {
+      store.getState().setSdkType(sdkType);
+    }
     const status = (sessionObj.status as string) ?? "idle";
     statusRef.current = status;
     store.getState().setSessionStatus(status as "idle");
@@ -434,6 +438,24 @@ export function useAssistantSession(projectName: string | null) {
       store.getState().setDraftSnapshot(data.draft ?? null, data.draft_rev ?? 0);
     }
   }, [projectName, clearPendingQuestion, connectStream, store]);
+
+  // 页面切回前台时取消退避并立即恢复断开的活动会话流。
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      const sessionId = store.getState().currentSessionId;
+      if (!sessionId || statusRef.current !== "running") return;
+      if (reconnectRef.current) {
+        clearTimeout(reconnectRef.current);
+        reconnectRef.current = null;
+      }
+      if (!streamRef.current || streamRef.current.readyState === SSE_CLOSED) {
+        connectStream(sessionId);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [connectStream, store]);
 
   // 加载会话
   useEffect(() => {

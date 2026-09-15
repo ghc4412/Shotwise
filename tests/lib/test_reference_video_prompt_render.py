@@ -227,9 +227,23 @@ def test_speaker_without_reference_audio_warns_and_keeps_voice_style():
     assert {"key": WARN_SPEAKER_WITHOUT_AUDIO, "params": {"name": "旁白人"}} in rendered.warnings
 
 
-def test_voiceover_line_renders_as_offscreen_speech():
+def test_voiceover_line_is_kept_for_preview_but_not_sent_to_video_model():
     rendered = render_unit_prompt("镜头1：空镜。\n{多年以后他仍记得这句话。}", _project(), [], _SOFT)
-    assert "画外音说 {多年以后他仍记得这句话。}" in rendered.prompt
+    assert "多年以后他仍记得这句话。" not in rendered.prompt
+    assert "画外音说" not in rendered.prompt
+    assert rendered.audio_speakers == []
+
+
+def test_dropping_voiceover_does_not_drop_adjacent_visual_lines():
+    rendered = render_unit_prompt(
+        "镜头1：左侧开门。\n{多年以后他仍记得这句话。}\n镜头内右侧有人回头。",
+        _project(),
+        [],
+        _SOFT,
+    )
+    assert "左侧开门。" in rendered.prompt
+    assert "镜头内右侧有人回头。" in rendered.prompt
+    assert "多年以后他仍记得这句话。" not in rendered.prompt
 
 
 def test_unregistered_speaker_line_is_sent_verbatim_with_warning():
