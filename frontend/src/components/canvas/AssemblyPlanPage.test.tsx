@@ -20,6 +20,9 @@ vi.mock("@/api", () => ({
     confirmAssemblyPlanPreview: vi.fn(),
     confirmAssemblyPlanRender: vi.fn(),
     createAssemblyFinalRender: vi.fn(),
+    createAssemblyPreviewRender: vi.fn(),
+    transitionAssemblyPlan: vi.fn(),
+    retryRenderJob: vi.fn(),
     getRenderJob: vi.fn(),
     retryFinalRenderJob: vi.fn(),
     downloadRenderJobArtifact: vi.fn(),
@@ -89,6 +92,19 @@ function makeFinalJob(overrides: Partial<AssemblyRenderJob> = {}): AssemblyRende
     plan_id: "plan-1",
     revision_number: 2,
     kind: "final",
+    status: "queued",
+    attempt: 1,
+    max_attempts: 3,
+    ...overrides,
+  };
+}
+
+function makePreviewJob(overrides: Partial<AssemblyRenderJob> = {}): AssemblyRenderJob {
+  return {
+    id: "preview-job-1",
+    plan_id: "plan-1",
+    revision_number: 2,
+    kind: "preview",
     status: "queued",
     attempt: 1,
     max_attempts: 3,
@@ -354,6 +370,65 @@ describe("AssemblyPlanPage", () => {
     expect(await screen.findByText("渲染错误：ffmpeg failed")).toBeInTheDocument();
     await user.click(screen.getByTestId("assembly-final-retry"));
     await waitFor(() => expect(API.retryFinalRenderJob).toHaveBeenCalledWith("final-job-1"));
+  });
+
+  it("confirms a draft plan and enables the preview render control", async () => {
+    const user = userEvent.setup();
+    vi.mocked(API.listAssemblyPlans).mockResolvedValue({ items: [makePlan()] });
+    vi.mocked(API.getAssemblyPlan).mockResolvedValue(makePlan());
+    vi.mocked(API.transitionAssemblyPlan).mockResolvedValue(makePlan({ status: "confirmed" }));
+
+    renderPage();
+    const previewButton = await screen.findByTestId("assembly-generate-preview");
+    expect(previewButton).toBeDisabled();
+    expect(screen.getByTestId("assembly-confirm-plan-hint")).toBeInTheDocument();
+
+    await user.click(screen.getByTestId("assembly-confirm-plan"));
+
+    await waitFor(() => expect(API.transitionAssemblyPlan).toHaveBeenCalledWith("plan-1", { status: "confirmed" }));
+    expect(await screen.findByTestId("assembly-generate-preview")).toBeEnabled();
+  });
+
+  it("creates a low-resolution preview, polls the job, and reveals the artifact", async () => {
+    const user = userEvent.setup();
+    vi.mocked(API.listAssemblyPlans).mockResolvedValue({ items: [makePlan({ status: "confirmed" })] });
+    vi.mocked(API.getAssemblyPlan)
+      .mockResolvedValueOnce(makePlan({ status: "confirmed" }))
+      .mockResolvedValue(makeReadyPlan());
+    vi.mocked(API.createAssemblyPreviewRender).mockResolvedValue(makePreviewJob());
+    vi.mocked(API.getRenderJob).mockResolvedValue(makePreviewJob({
+      status: "succeeded",
+      completed_at: "2026-09-13T00:03:00Z",
+      artifact: { id: "preview-1", url: "/preview.mp4", kind: "preview" },
+    }));
+
+    renderPage();
+    await user.click(await screen.findByTestId("assembly-generate-preview"));
+
+    await waitFor(() => expect(API.createAssemblyPreviewRender).toHaveBeenCalledWith("plan-1", {
+      revision_number: 2,
+      max_attempts: 3,
+    }));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1600));
+    });
+    await waitFor(() => expect(API.getAssemblyPlan).toHaveBeenCalledTimes(2), { timeout: 3000 });
+    expect(await screen.findByTestId("assembly-preview-player")).toBeInTheDocument();
+    // The plan lands in preview_ready; the backend rejects new preview jobs until a fresh
+    // confirmed revision exists, so the control must stay disabled instead of failing.
+    const previewButtonAfterRender = screen.getByTestId("assembly-generate-preview");
+    expect(previewButtonAfterRender).toBeDisabled();
+    expect(previewButtonAfterRender).toHaveTextContent("生成低清预览");
+  });
+
+  it("keeps the preview render control disabled for a ready but unconfirmed preview", async () => {
+    vi.mocked(API.listAssemblyPlans).mockResolvedValue({ items: [makeReadyPlan()] });
+    vi.mocked(API.getAssemblyPlan).mockResolvedValue(makeReadyPlan());
+
+    renderPage();
+    const previewButton = await screen.findByTestId("assembly-generate-preview");
+    expect(previewButton).toBeDisabled();
+    expect(previewButton).toHaveTextContent("生成低清预览");
   });
 
   it("shows a backend error instead of fabricating a plan", async () => {

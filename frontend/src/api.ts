@@ -93,6 +93,7 @@ import type {
   CheckAssemblyPlanStaleRequest,
   AssemblyRenderJob,
   CreateAssemblyFinalRenderRequest,
+  CreateAssemblyPreviewRenderRequest,
   AssemblyFinalReview,
   AssemblyFinalReviewFramePosition,
   ConfirmAssemblyFinalReviewRequest,
@@ -3536,6 +3537,16 @@ class API {
     body: CreateAssemblyFinalRenderRequest,
   ): Promise<AssemblyRenderJob> {
     return this.request(`/assembly-plans/${encodeURIComponent(planId)}/final-renders`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  static async createAssemblyPreviewRender(
+    planId: string,
+    body: CreateAssemblyPreviewRenderRequest,
+  ): Promise<AssemblyRenderJob> {
+    return this.request(`/assembly-plans/${encodeURIComponent(planId)}/preview-renders`, {
       method: "POST",
       body: JSON.stringify(body),
     });

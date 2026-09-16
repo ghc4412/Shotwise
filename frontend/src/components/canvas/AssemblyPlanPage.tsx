@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -154,6 +154,13 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
   const [creatingFinalRender, setCreatingFinalRender] = useState(false);
   const [retryingFinalRender, setRetryingFinalRender] = useState(false);
   const [finalRenderError, setFinalRenderError] = useState<string | null>(null);
+  const [confirmingPlan, setConfirmingPlan] = useState(false);
+  const [planConfirmError, setPlanConfirmError] = useState<string | null>(null);
+  const [previewJob, setPreviewJob] = useState<AssemblyRenderJob | null>(null);
+  const [creatingPreviewRender, setCreatingPreviewRender] = useState(false);
+  const [retryingPreviewRender, setRetryingPreviewRender] = useState(false);
+  const [previewRenderError, setPreviewRenderError] = useState<string | null>(null);
+  const refreshedPreviewJobRef = useRef<string | null>(null);
   const [finalArtifactBlob, setFinalArtifactBlob] = useState<{ jobId: string; url: string } | null>(null);
   const [finalReview, setFinalReview] = useState<AssemblyFinalReview | null>(null);
   const [loadingFinalReview, setLoadingFinalReview] = useState(false);
@@ -216,6 +223,13 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
       setFinalReviewConfirmedAt(null);
       setConfirmingFinalReview(false);
       setReviewFrameUrls({});
+      setPreviewJob(null);
+      setPreviewRenderError(null);
+      setPlanConfirmError(null);
+      setConfirmingPlan(false);
+      setCreatingPreviewRender(false);
+      setRetryingPreviewRender(false);
+      refreshedPreviewJobRef.current = null;
       return;
     }
     const controller = new AbortController();
@@ -233,6 +247,13 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
     setFinalReviewError(null);
     setFinalReviewConfirmedAt(null);
     setReviewFrameUrls({});
+    setPreviewJob(null);
+    setPreviewRenderError(null);
+    setPlanConfirmError(null);
+    setConfirmingPlan(false);
+    setCreatingPreviewRender(false);
+    setRetryingPreviewRender(false);
+    refreshedPreviewJobRef.current = null;
     void API.getAssemblyPlan(matchingPlan.id, { signal: controller.signal })
       .then(setPlan)
       .catch((reason: unknown) => {
@@ -274,6 +295,23 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
   const finalRenderRunning = finalJob?.status === "queued" || finalJob?.status === "running";
   const finalRenderCompleted = finalJob?.status === "succeeded";
   const finalRenderFailed = finalJob?.status === "failed";
+  const previewRenderRunning = previewJob?.status === "queued" || previewJob?.status === "running";
+  const previewRenderFailed = previewJob?.status === "failed";
+  const previewRenderConfirmed = plan?.status === "confirmed";
+  const previewRenderHasArtifact = Boolean(
+    revision && previewRevisionMatches && plan?.preview_artifact && previewUrl && !isStale,
+  );
+  // POST /preview-renders only starts a job for a confirmed plan, so a ready-but-unconfirmed
+  // preview has to be superseded by a new revision before it can be rendered again.
+  const previewRenderAvailable = Boolean(
+    previewRenderConfirmed &&
+      revision &&
+      validation.valid &&
+      !isStale &&
+      !configurationDirty &&
+      !creatingPreviewRender &&
+      !previewRenderRunning,
+  );
   const finalReviewFramesReady = FINAL_REVIEW_POSITIONS.every((position) => Boolean(reviewFrameUrls[position]));
   const finalReviewRevisionMatches = Boolean(
     finalReview &&
@@ -398,6 +436,47 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [finalJob, finalDirectArtifactUrl]);
+
+  useEffect(() => {
+    if (!previewJob || !plan) return;
+    if (previewJob.status !== "succeeded" && previewJob.status !== "failed") return;
+    if (refreshedPreviewJobRef.current === previewJob.id) return;
+    refreshedPreviewJobRef.current = previewJob.id;
+    const planId = plan.id;
+    const timer = window.setTimeout(() => {
+      void API.getAssemblyPlan(planId)
+        .then(setPlan)
+        .catch(() => {
+          // A transient refresh failure keeps the last known plan in place.
+        });
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [previewJob, plan]);
+
+  useEffect(() => {
+    if (!previewJob || !["queued", "running"].includes(previewJob.status)) return;
+    const jobId = previewJob.id;
+    let disposed = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const next = await API.getRenderJob(jobId);
+        if (disposed) return;
+        setPreviewJob(next);
+        setPreviewRenderError(null);
+      } catch (reason: unknown) {
+        if (!disposed) {
+          setPreviewRenderError(errorMessage(reason));
+          timer = window.setTimeout(() => void poll(), 1500);
+        }
+      }
+    };
+    timer = window.setTimeout(() => void poll(), 1500);
+    return () => {
+      disposed = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [previewJob]);
 
   useEffect(() => {
     // The controls mirror the saved revision until the user changes them locally.
@@ -562,6 +641,52 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
     }
   };
 
+  const confirmPlan = async () => {
+    if (!plan || plan.status !== "draft" || confirmingPlan) return;
+    setConfirmingPlan(true);
+    setPlanConfirmError(null);
+    try {
+      const confirmed = await API.transitionAssemblyPlan(plan.id, { status: "confirmed" });
+      setPlan(confirmed);
+    } catch (reason: unknown) {
+      setPlanConfirmError(errorMessage(reason));
+    } finally {
+      setConfirmingPlan(false);
+    }
+  };
+
+  const createPreviewRender = async () => {
+    if (!plan || !revision || !previewRenderAvailable) return;
+    setCreatingPreviewRender(true);
+    setPreviewRenderError(null);
+    try {
+      const job = await API.createAssemblyPreviewRender(plan.id, {
+        revision_number: revision.version_number,
+        max_attempts: 3,
+      });
+      refreshedPreviewJobRef.current = null;
+      setPreviewJob(job);
+    } catch (reason: unknown) {
+      setPreviewRenderError(errorMessage(reason));
+    } finally {
+      setCreatingPreviewRender(false);
+    }
+  };
+
+  const retryPreviewRender = async () => {
+    if (!previewJob || !previewRenderFailed || retryingPreviewRender) return;
+    setRetryingPreviewRender(true);
+    setPreviewRenderError(null);
+    try {
+      refreshedPreviewJobRef.current = null;
+      setPreviewJob(await API.retryRenderJob(previewJob.id));
+    } catch (reason: unknown) {
+      setPreviewRenderError(errorMessage(reason));
+    } finally {
+      setRetryingPreviewRender(false);
+    }
+  };
+
   if (loadingPlans || loadingPlan) {
     return (
       <div className="flex h-full items-center justify-center text-[var(--color-text-3)]" data-testid="assembly-loading">
@@ -629,6 +754,19 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
                   {isStale ? <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-1 text-[10px] font-medium text-amber-700"><AlertTriangle className="h-3 w-3" aria-hidden />{t("assembly_plan_stale")}</span> : null}
                 </div>
                 <h2 className="mt-3 text-sm font-semibold text-[var(--color-text)]">{plan.name}</h2>
+                {plan.status === "draft" ? (
+                  <button
+                    type="button"
+                    onClick={() => void confirmPlan()}
+                    disabled={confirmingPlan}
+                    className="mt-3 inline-flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    data-testid="assembly-confirm-plan"
+                  >
+                    {confirmingPlan ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <CheckCircle className="h-3.5 w-3.5" aria-hidden />}
+                    {t(confirmingPlan ? "assembly_plan_confirming" : "assembly_confirm_plan")}
+                  </button>
+                ) : null}
+                {planConfirmError ? <p className="mt-2 text-[10px] text-red-700" role="alert">{t("assembly_plan_confirm_error", { message: planConfirmError })}</p> : null}
               </div>
               <StatCard label={t("assembly_plan_revision")} value={`v${plan.current_revision_number}`} testId="assembly-revision" />
               <StatCard label={t("assembly_total_duration")} value={formatDuration(totalDuration)} testId="assembly-duration" />
@@ -663,11 +801,35 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
                     {plan.status === "preview_pending" ? t("assembly_preview_pending_description") : previewReady ? t("assembly_preview_ready_description") : t("assembly_preview_not_ready_description")}
                   </p>
                 </div>
-                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium ${previewReady ? "bg-emerald-500/10 text-emerald-700" : "bg-amber-500/10 text-amber-700"}`}>
-                  {previewReady ? <CheckCircle2 className="h-3 w-3" aria-hidden /> : <Loader2 className="h-3 w-3" aria-hidden />}
-                  {t(previewReady ? "assembly_preview_ready" : "assembly_preview_pending")}
-                </span>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium ${previewReady ? "bg-emerald-500/10 text-emerald-700" : "bg-amber-500/10 text-amber-700"}`}>
+                    {previewReady ? <CheckCircle2 className="h-3 w-3" aria-hidden /> : <Loader2 className="h-3 w-3" aria-hidden />}
+                    {t(previewReady ? "assembly_preview_ready" : "assembly_preview_pending")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void createPreviewRender()}
+                    disabled={!previewRenderAvailable}
+                    className="inline-flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    data-testid="assembly-generate-preview"
+                  >
+                    {creatingPreviewRender || previewRenderRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <PlayCircle className="h-3.5 w-3.5" aria-hidden />}
+                    {previewRenderRunning ? t("assembly_preview_rendering") : previewRenderConfirmed && previewRenderHasArtifact ? t("assembly_regenerate_preview") : t("assembly_generate_preview")}
+                  </button>
+                </div>
               </div>
+              {plan.status === "draft" ? <p className="mt-3 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-800" data-testid="assembly-confirm-plan-hint">{t("assembly_confirm_plan_hint")}</p> : null}
+              {previewRenderError || previewJob?.error_message ? (
+                <p className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-700" role="alert" data-testid="assembly-preview-render-error">
+                  {t("assembly_preview_render_error", { message: previewRenderError ?? previewJob?.error_message ?? "" })}
+                </p>
+              ) : null}
+              {previewRenderFailed ? (
+                <button type="button" onClick={() => void retryPreviewRender()} disabled={retryingPreviewRender} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[var(--color-hairline)] px-3 py-2 text-xs font-medium text-[var(--color-text)] disabled:opacity-50" data-testid="assembly-preview-retry">
+                  {retryingPreviewRender ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+                  {t("assembly_preview_retry")}
+                </button>
+              ) : null}
               {previewUrl ? (
                 <div className="mt-4 overflow-hidden rounded-lg border border-[var(--color-hairline-soft)] bg-black">
                   <video className="max-h-[420px] w-full" controls preload="metadata" src={previewUrl} poster={revision.timeline[0]?.thumbnail_url ?? undefined} data-testid="assembly-preview-player">

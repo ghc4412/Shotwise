@@ -90,6 +90,11 @@ export interface CreateAssemblyFinalRenderRequest {
   max_attempts?: number;
 }
 
+export interface CreateAssemblyPreviewRenderRequest {
+  revision_number?: number;
+  max_attempts?: number;
+}
+
 export interface AssemblyRenderArtifact {
   id: string;
   kind?: string;
