@@ -7,6 +7,8 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from lib.media_assembly.plan import packaging_section_enabled
+
 _NUMBER = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)"
 _SILENCE_START = re.compile(rf"silence_start:\s*(?P<start>{_NUMBER})", re.IGNORECASE)
 _SILENCE_END = re.compile(
@@ -295,7 +297,7 @@ def expected_timeline_duration(
     if isinstance(packaging, Mapping):
         for name in ("cover", "intro", "outro"):
             section = packaging.get(name)
-            if isinstance(section, Mapping) and section.get("duration_seconds") is not None:
+            if packaging_section_enabled(section) and section.get("duration_seconds") is not None:
                 total += _duration(section.get("duration_seconds"), name=f"packaging.{name}.duration_seconds")
     return total
 

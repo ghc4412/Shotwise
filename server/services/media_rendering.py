@@ -21,6 +21,7 @@ from lib.db.models.assembly_plan import AssemblyPlan, AssemblyPlanRevision
 from lib.db.models.render_job import RenderArtifact, RenderJob, RenderReviewSnapshot
 from lib.db.repositories.assembly_plan_repository import AssemblyPlanRepository
 from lib.media_assembly.audio import AudioMixConfig, AudioTrack, VolumePoint
+from lib.media_assembly.plan import resolve_timeline_sources
 from lib.media_assembly.rendering import (
     RenderToolError,
     burn_in_subtitles,
@@ -819,6 +820,7 @@ async def run_final_job(session: AsyncSession, job_id: str, *, user_id: str) -> 
         timeline = json.loads(revision.timeline_json)
         if not isinstance(timeline, list):
             raise RenderJobConflictError("timeline_invalid", status=plan.status)
+        timeline = resolve_timeline_sources(timeline, json.loads(revision.source_snapshot_json or "{}"))
         profile = json.loads(revision.output_profile_json)
         if not isinstance(profile, dict):
             raise RenderJobConflictError("output_profile_invalid", status=plan.status)
@@ -963,6 +965,7 @@ async def run_preview_job(session: AsyncSession, job_id: str, *, user_id: str) -
         timeline = json.loads(revision.timeline_json)
         if not isinstance(timeline, list):
             raise RenderJobConflictError("timeline_invalid", status=plan.status)
+        timeline = resolve_timeline_sources(timeline, json.loads(revision.source_snapshot_json or "{}"))
         project_root = _project_root(plan.project_name)
         relative_path, output_path = _artifact_path(project_root, job.id, job.revision_number)
         profile = json.loads(revision.output_profile_json)

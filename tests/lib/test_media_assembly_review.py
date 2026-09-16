@@ -135,3 +135,17 @@ def test_edge_black_frames_are_warning_but_middle_black_frames_are_blocking() ->
 
     assert opening["severity"] == "warning"
     assert middle["severity"] == "blocking"
+
+
+def test_expected_timeline_duration_ignores_disabled_packaging() -> None:
+    assert (
+        expected_timeline_duration(
+            [{"duration_seconds": 10, "trim_start_seconds": 1, "trim_end_seconds": 2}],
+            {
+                "cover": {"enabled": False, "duration_seconds": 5},
+                "intro": {"enabled": False, "duration_seconds": 2},
+                "outro": {"text": "The End", "duration_seconds": 2},
+            },
+        )
+        == 9
+    )

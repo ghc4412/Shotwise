@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, TypeGuard
 
 PLAN_STATUSES = frozenset(
     {
@@ -207,6 +207,61 @@ def _validate_subtitles(value: Any, errors: list[dict[str, Any]]) -> None:
             previous_end = max(previous_end, float(end))
 
 
+def packaging_section_enabled(section: object) -> TypeGuard[Mapping[str, Any]]:
+    """Return whether a packaging section participates in rendering.
+
+    Sections are active by default; only an explicit ``enabled: false`` opts out,
+    so validation, duration review, and rendering share one rule.
+    """
+    return isinstance(section, Mapping) and section.get("enabled") is not False
+
+
+def _snapshot_source_paths(source_snapshot: Any) -> dict[str, str]:
+    """Map unit ids to their media paths from a plan's source snapshot."""
+    if not isinstance(source_snapshot, Mapping):
+        return {}
+    items = source_snapshot.get("items")
+    if not isinstance(items, Sequence) or isinstance(items, (str, bytes, bytearray)):
+        return {}
+    paths: dict[str, str] = {}
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        unit_id = item.get("unit_id")
+        source = item.get("source")
+        path = source.get("path") if isinstance(source, Mapping) else None
+        if isinstance(unit_id, str) and isinstance(path, str) and path.strip():
+            paths[unit_id] = path
+    return paths
+
+
+def resolve_timeline_sources(timeline: Any, source_snapshot: Any) -> list[Any]:
+    """Resolve timeline source refs that only name a source unit.
+
+    The compact Agent contract lets a timeline item identify its clip with a bare
+    ``unit_id``.  Plans persisted from that shape stored the unit id in
+    ``source_ref`` instead of the manifest media path, so rendering looked for a
+    file literally named after the unit.  Re-resolve those refs from the plan's
+    own snapshot so stored revisions stay renderable; explicit paths are kept.
+    """
+    if not isinstance(timeline, list):
+        return []
+    paths = _snapshot_source_paths(source_snapshot)
+    resolved: list[Any] = []
+    for item in timeline:
+        if not isinstance(item, Mapping):
+            resolved.append(item)
+            continue
+        updated = dict(item)
+        unit_id = updated.get("source_unit_id") or updated.get("unit_id")
+        source_ref = updated.get("source_ref")
+        path = paths.get(unit_id) if isinstance(unit_id, str) else None
+        if path is not None and (not isinstance(source_ref, str) or source_ref == unit_id):
+            updated["source_ref"] = path
+        resolved.append(updated)
+    return resolved
+
+
 def _validate_packaging(value: Any, errors: list[dict[str, Any]]) -> None:
     packaging = _mapping(value, "packaging", errors)
     if packaging is None:
@@ -215,7 +270,7 @@ def _validate_packaging(value: Any, errors: list[dict[str, Any]]) -> None:
     cover = packaging.get("cover")
     if cover is not None:
         cover_config = _mapping(cover, "packaging.cover", errors)
-        if cover_config is not None and cover_config.get("enabled") is not False:
+        if cover_config is not None and packaging_section_enabled(cover_config):
             _non_empty_string(cover_config.get("source_ref"), "packaging.cover.source_ref", errors)
             _positive_number(cover_config.get("duration_seconds"), "packaging.cover.duration_seconds", errors)
             fit = cover_config.get("fit", "cover")
@@ -227,7 +282,7 @@ def _validate_packaging(value: Any, errors: list[dict[str, Any]]) -> None:
         if section is None:
             continue
         config = _mapping(section, f"packaging.{name}", errors)
-        if config is None or config.get("enabled") is False:
+        if config is None or not packaging_section_enabled(config):
             continue
         _non_empty_string(config.get("text"), f"packaging.{name}.text", errors)
         _positive_number(config.get("duration_seconds"), f"packaging.{name}.duration_seconds", errors)
@@ -299,6 +354,8 @@ __all__ = [
     "PLAN_STATUSES",
     "assert_transition",
     "is_running_status",
+    "packaging_section_enabled",
+    "resolve_timeline_sources",
     "source_fingerprint",
     "validate_plan_document",
 ]

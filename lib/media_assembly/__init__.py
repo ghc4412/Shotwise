@@ -6,6 +6,8 @@ from lib.media_assembly.plan import (
     AssemblyPlanValidationError,
     assert_transition,
     is_running_status,
+    packaging_section_enabled,
+    resolve_timeline_sources,
     source_fingerprint,
     validate_plan_document,
 )
@@ -16,6 +18,8 @@ __all__ = [
     "PLAN_STATUSES",
     "assert_transition",
     "is_running_status",
+    "packaging_section_enabled",
+    "resolve_timeline_sources",
     "source_fingerprint",
     "validate_plan_document",
 ]

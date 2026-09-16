@@ -418,8 +418,12 @@ def _service_timeline(items: list[dict[str, Any]], manifest: dict[str, Any]) -> 
     result: list[dict[str, Any]] = []
     for index, item in enumerate(items):
         source = _as_dict(item.get("source"))
-        source_ref = source.get("path") or item.get("unit_id")
         source_item = _as_dict(manifest_by_id.get(item.get("unit_id")))
+        manifest_source = _as_dict(source_item.get("source"))
+        # The compact Agent contract may identify a clip with only ``unit_id``;
+        # fall back to the manifest's media path before the bare unit id so the
+        # stored timeline references a real file rather than the unit name.
+        source_ref = source.get("path") or manifest_source.get("path") or item.get("unit_id")
         probe = _as_dict(source_item.get("media_probe"))
         duration = item.get("duration_seconds")
         if not isinstance(duration, (int, float)) or isinstance(duration, bool) or duration <= 0:

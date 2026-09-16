@@ -6,6 +6,7 @@ from lib.media_assembly.plan import (
     AssemblyPlanTransitionError,
     AssemblyPlanValidationError,
     assert_transition,
+    resolve_timeline_sources,
     source_fingerprint,
     validate_plan_document,
 )
@@ -133,3 +134,29 @@ def test_invalid_document_shape_is_rejected() -> None:
     document = _document()
     document["timeline"] = []
     _assert_invalid(document, "not_empty")
+
+
+def test_resolve_timeline_sources_fills_bare_unit_ids_from_snapshot() -> None:
+    snapshot = {
+        "items": [
+            {"unit_id": "E1U01", "source": {"kind": "generated_video", "path": "reference_videos/E1U01.mp4"}},
+            {"unit_id": "E1U02", "source": {"kind": "generated_video", "path": "reference_videos/E1U02.mp4"}},
+        ]
+    }
+    timeline = [
+        {"id": "E1U01:0", "source_unit_id": "E1U01", "source_ref": "E1U01"},
+        {"id": "E1U02:0", "source_unit_id": "E1U02", "source_ref": "custom/E1U02.mp4"},
+    ]
+
+    resolved = resolve_timeline_sources(timeline, snapshot)
+
+    assert [item["source_ref"] for item in resolved] == [
+        "reference_videos/E1U01.mp4",
+        "custom/E1U02.mp4",
+    ]
+    assert timeline[0]["source_ref"] == "E1U01"
+
+
+def test_resolve_timeline_sources_keeps_documents_without_snapshot_paths() -> None:
+    timeline = [{"id": "unit-1", "source_ref": "media/unit-1.mp4"}]
+    assert resolve_timeline_sources(timeline, {}) == timeline

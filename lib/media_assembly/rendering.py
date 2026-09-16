@@ -6,8 +6,12 @@ import asyncio
 import hashlib
 import json
 import shutil
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from lib.media_assembly.plan import packaging_section_enabled
 
 
 class RenderToolError(RuntimeError):
@@ -27,21 +31,19 @@ def resolve_tool(name: str) -> str:
     return path
 
 
-def _ffconcat_quote(path: Path) -> str:
-    """Quote a local path for the ffconcat demuxer without invoking a shell."""
-    value = path.as_posix().replace("'", "'\\''")
-    return f"file '{value}'"
+@dataclass(frozen=True)
+class TimelineClip:
+    """A validated timeline entry resolved to a project-local media file."""
+
+    path: Path
+    start_seconds: float
+    duration_seconds: float | None
 
 
-def build_concat_manifest(
-    timeline: list[dict[str, Any]],
-    *,
-    project_root: Path,
-    manifest_path: Path,
-) -> list[Path]:
-    """Resolve timeline inputs and write a deterministic concat manifest."""
-    resolved: list[Path] = []
-    lines = ["ffconcat version 1.0"]
+def resolve_timeline_clips(timeline: list[dict[str, Any]], *, project_root: Path) -> list[TimelineClip]:
+    """Resolve timeline source refs into validated clips with their play windows."""
+    root = project_root.resolve()
+    clips: list[TimelineClip] = []
     for item in timeline:
         source_ref = item.get("source_ref")
         if not isinstance(source_ref, str) or not source_ref.strip():
@@ -51,25 +53,105 @@ def build_concat_manifest(
             candidate = project_root / candidate
         try:
             path = candidate.resolve(strict=True)
-            path.relative_to(project_root.resolve())
+            path.relative_to(root)
         except (FileNotFoundError, OSError, ValueError) as exc:
             raise RenderToolError("source_file_missing", f"source file is unavailable: {source_ref}") from exc
         if not path.is_file():
             raise RenderToolError("source_file_missing", f"source file is not a file: {source_ref}")
-        resolved.append(path)
-        lines.append(_ffconcat_quote(path))
-        trim_start = item.get("trim_start_seconds", 0)
-        trim_end = item.get("trim_end_seconds", 0)
+        start = _non_negative_seconds(item.get("trim_start_seconds"))
+        end = _non_negative_seconds(item.get("trim_end_seconds"))
         duration = item.get("duration_seconds")
-        if isinstance(trim_start, (int, float)) and trim_start > 0:
-            lines.append(f"inpoint {float(trim_start):.6f}")
-        if isinstance(duration, (int, float)) and isinstance(trim_end, (int, float)):
-            outpoint = float(duration) - float(trim_end)
-            if outpoint > float(trim_start or 0):
-                lines.append(f"outpoint {outpoint:.6f}")
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return resolved
+        length: float | None = None
+        if isinstance(duration, (int, float)) and not isinstance(duration, bool):
+            remaining = float(duration) - end - start
+            if remaining > 0:
+                length = remaining
+        clips.append(TimelineClip(path=path, start_seconds=start, duration_seconds=length))
+    return clips
+
+
+def _non_negative_seconds(value: object) -> float:
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+        return float(value)
+    return 0.0
+
+
+async def _probe_clip_input(path: Path, *, ffprobe_path: str | None) -> dict[str, Any]:
+    """Describe one timeline input so the filtergraph can normalise uneven sources."""
+    ffprobe = ffprobe_path or resolve_tool("ffprobe")
+    args = [
+        ffprobe,
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration:stream=codec_type",
+        "-of",
+        "json",
+        str(path),
+    ]
+    stdout, _ = await _run_process(args)
+    try:
+        probe = json.loads(stdout.decode("utf-8"))
+        streams = probe.get("streams", [])
+        duration = float(probe["format"]["duration"])
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise RenderToolError("source_probe_invalid", "ffprobe returned an invalid clip description") from exc
+    return {
+        "audio_present": any(stream.get("codec_type") == "audio" for stream in streams),
+        "duration_seconds": duration,
+    }
+
+
+def _clip_length_seconds(clip: TimelineClip, probe: Mapping[str, Any]) -> float:
+    """Return how long a clip plays, falling back to the probed container duration."""
+    if clip.duration_seconds is not None:
+        return clip.duration_seconds
+    probed = probe.get("duration_seconds")
+    if isinstance(probed, (int, float)) and not isinstance(probed, bool):
+        return max(float(probed) - clip.start_seconds, 0.0)
+    return 0.0
+
+
+def build_concat_filter(
+    clips: Sequence[TimelineClip],
+    *,
+    probes: Sequence[Mapping[str, Any]],
+    width: int,
+    height: int,
+    fps: float,
+) -> str:
+    """Normalise every clip to one video/audio shape and concatenate them.
+
+    The ffconcat demuxer requires every input to share codec parameters, so footage
+    from different suppliers (mixed resolution, profile, and audio rate) corrupted the
+    stream at each boundary.  Normalising each segment inside one filtergraph keeps
+    heterogeneous sources renderable in a single encode.
+    """
+    chains: list[str] = []
+    segments: list[str] = []
+    for index, (clip, probe) in enumerate(zip(clips, probes, strict=True)):
+        chains.append(
+            f"[{index}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps:g},"
+            f"format=yuv420p,setpts=PTS-STARTPTS[v{index}]"
+        )
+        if probe.get("audio_present"):
+            chains.append(
+                f"[{index}:a]aresample=48000,"
+                "aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                f"asetpts=PTS-STARTPTS[a{index}]"
+            )
+        else:
+            length = _clip_length_seconds(clip, probe)
+            if length <= 0:
+                raise RenderToolError(
+                    "source_duration_invalid",
+                    f"clip duration is unknown for silent input: {clip.path.name}",
+                )
+            chains.append(f"anullsrc=channel_layout=stereo:sample_rate=48000:d={length:.6f}[a{index}]")
+        segments.append(f"[v{index}][a{index}]")
+    chains.append(f"{''.join(segments)}concat=n={len(clips)}:v=1:a=1[outv][outa]")
+    return ";".join(chains)
 
 
 async def _run_process(args: list[str], *, timeout_seconds: float = 900) -> tuple[bytes, bytes]:
@@ -158,7 +240,7 @@ def _ffmpeg_filter_path(path: Path) -> str:
 async def _create_packaging_clip(
     *,
     kind: str,
-    config: dict[str, Any],
+    config: Mapping[str, Any],
     project_root: Path,
     work_dir: Path,
     width: int,
@@ -246,7 +328,7 @@ async def _build_packaged_timeline(
     result: list[dict[str, Any]] = []
     for kind in ("cover", "intro"):
         config = packaging.get(kind)
-        if isinstance(config, dict):
+        if packaging_section_enabled(config):
             clip = await _create_packaging_clip(
                 kind=kind,
                 config=config,
@@ -260,7 +342,7 @@ async def _build_packaged_timeline(
             result.append({"source_ref": str(clip), "duration_seconds": config["duration_seconds"]})
     result.extend(timeline)
     config = packaging.get("outro")
-    if isinstance(config, dict):
+    if packaging_section_enabled(config):
         clip = await _create_packaging_clip(
             kind="outro",
             config=config,
@@ -297,8 +379,8 @@ async def render_video(
     if not 0 < crf <= 51:
         raise RenderToolError("render_quality_invalid", "CRF must be between 1 and 51")
     ffmpeg = ffmpeg_path or resolve_tool("ffmpeg")
+    frame_rate = float(fps or 24)
     work_dir = output_path.parent / f".{output_path.stem}-work"
-    manifest_path = work_dir / "concat.ffconcat"
     work_dir.mkdir(parents=True, exist_ok=True)
     try:
         packaged_timeline = await _build_packaged_timeline(
@@ -308,47 +390,46 @@ async def render_video(
             work_dir=work_dir,
             width=width,
             height=height,
-            fps=float(fps or 24),
+            fps=frame_rate,
             ffmpeg=ffmpeg,
         )
-        build_concat_manifest(packaged_timeline, project_root=project_root, manifest_path=manifest_path)
+        clips = resolve_timeline_clips(packaged_timeline, project_root=project_root)
+        if not clips:
+            raise RenderToolError("source_ref_invalid", "timeline must contain at least one clip")
+        probes = await asyncio.gather(*(_probe_clip_input(clip.path, ffprobe_path=ffprobe_path) for clip in clips))
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        video_filter = (
-            f"scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
+        args = [ffmpeg, "-y"]
+        for clip in clips:
+            if clip.start_seconds > 0:
+                args.extend(["-ss", f"{clip.start_seconds:.6f}"])
+            if clip.duration_seconds is not None:
+                args.extend(["-t", f"{clip.duration_seconds:.6f}"])
+            args.extend(["-i", str(clip.path)])
+        args.extend(
+            [
+                "-filter_complex",
+                build_concat_filter(clips, probes=probes, width=width, height=height, fps=frame_rate),
+                "-map",
+                "[outv]",
+                "-map",
+                "[outa]",
+                "-c:v",
+                "libx264",
+                "-preset",
+                preset,
+                "-crf",
+                str(crf),
+                "-pix_fmt",
+                "yuv420p",
+                "-c:a",
+                "aac",
+                "-b:a",
+                audio_bitrate,
+                "-movflags",
+                "+faststart",
+                str(output_path),
+            ]
         )
-        args = [
-            ffmpeg,
-            "-y",
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            str(manifest_path),
-            "-map",
-            "0:v:0?",
-            "-map",
-            "0:a:0?",
-            "-vf",
-            video_filter,
-            "-r",
-            str(fps or 24),
-            "-c:v",
-            "libx264",
-            "-preset",
-            preset,
-            "-crf",
-            str(crf),
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            "-b:a",
-            audio_bitrate,
-            "-movflags",
-            "+faststart",
-            str(output_path),
-        ]
         await _run_process(args)
         return {
             key: value
@@ -479,7 +560,9 @@ def file_fingerprint(path: Path) -> str:
 
 __all__ = [
     "RenderToolError",
-    "build_concat_manifest",
+    "TimelineClip",
+    "build_concat_filter",
+    "resolve_timeline_clips",
     "build_subtitle_burn_in_command",
     "burn_in_subtitles",
     "file_fingerprint",

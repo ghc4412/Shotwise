@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -48,6 +49,45 @@ async def test_successful_preview_persists_artifact_and_marks_gate(
     plan = await media_assembly.get_plan(async_session, created["id"], user_id="user-1")
     assert plan["status"] == "preview_ready"
     assert plan["preview_revision_number"] == 1
+
+
+async def test_preview_resolves_bare_unit_source_refs_from_snapshot(
+    async_session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    document = _document()
+    document["source_snapshot"] = {
+        "items": [{"unit_id": "unit-1", "source": {"kind": "generated_video", "path": "media/unit-1.mp4"}}]
+    }
+    document["timeline"] = [
+        {**document["timeline"][0], "source_unit_id": "unit-1", "source_ref": "unit-1"}  # type: ignore[index]
+    ]
+    created = await media_assembly.create_plan(
+        async_session,
+        user_id="user-1",
+        project_name="demo",
+        name="Preview",
+        scope="episode",
+        episode_number=1,
+        **document,
+    )
+    await media_assembly.transition_plan(async_session, created["id"], user_id="user-1", target_status="confirmed")
+    job = await media_rendering.create_preview_job(async_session, created["id"], user_id="user-1")
+    await async_session.commit()
+    monkeypatch.setattr(media_rendering, "_project_root", lambda _: tmp_path)
+
+    captured: dict[str, Any] = {}
+
+    async def fake_render(timeline, *, output_path: Path, **kwargs):
+        captured["timeline"] = timeline
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"preview")
+        return {"duration_seconds": 8.0, "width": 480, "height": 854}
+
+    monkeypatch.setattr(media_rendering, "render_preview_pipeline", fake_render)
+    result = await media_rendering.run_preview_job(async_session, job["id"], user_id="user-1")
+
+    assert result["status"] == "succeeded"
+    assert [item["source_ref"] for item in captured["timeline"]] == ["media/unit-1.mp4"]
 
 
 async def test_failure_is_persisted_and_retry_consumes_execution_budget(
@@ -129,7 +169,7 @@ async def _prepare_final_plan(session, monkeypatch: pytest.MonkeyPatch, tmp_path
 async def _prepare_succeeded_final(session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[dict, dict]:
     created, final_job = await _prepare_final_plan(session, monkeypatch, tmp_path)
 
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     async def fake_final(timeline, *, output_path: Path, **kwargs):
         captured.update(kwargs)
@@ -350,7 +390,7 @@ async def test_final_job_success_persists_final_artifact_and_completes_plan(
 ) -> None:
     created, final_job = await _prepare_final_plan(async_session, monkeypatch, tmp_path)
 
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     async def fake_final(timeline, *, output_path: Path, **kwargs):
         captured.update(kwargs)
