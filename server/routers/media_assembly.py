@@ -70,7 +70,7 @@ async def create_assembly_plan(
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, Any]:
     try:
-        return await service.create_plan(
+        plan = await service.create_plan(
             session,
             user_id=user.id,
             project_name=project_name,
@@ -84,6 +84,8 @@ async def create_assembly_plan(
             packaging=body.packaging,
             output_profile=body.output_profile,
         )
+        await session.commit()
+        return plan
     except AssemblyPlanValidationError as exc:
         raise _validation_error(exc) from exc
 
@@ -119,7 +121,7 @@ async def create_assembly_plan_revision(
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, Any]:
     try:
-        return await service.create_revision(
+        plan = await service.create_revision(
             session,
             plan_id,
             user_id=user.id,
@@ -130,6 +132,8 @@ async def create_assembly_plan_revision(
             packaging=body.packaging,
             output_profile=body.output_profile,
         )
+        await session.commit()
+        return plan
     except service.AssemblyPlanNotFoundError as exc:
         raise _not_found(exc) from exc
     except service.AssemblyPlanConflictError as exc:
@@ -146,7 +150,9 @@ async def transition_assembly_plan(
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, Any]:
     try:
-        return await service.transition_plan(session, plan_id, user_id=user.id, target_status=body.status)
+        plan = await service.transition_plan(session, plan_id, user_id=user.id, target_status=body.status)
+        await session.commit()
+        return plan
     except service.AssemblyPlanNotFoundError as exc:
         raise _not_found(exc) from exc
     except service.AssemblyPlanConflictError as exc:
@@ -161,12 +167,14 @@ async def confirm_assembly_preview(
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, Any]:
     try:
-        return await service.confirm_preview(
+        plan = await service.confirm_preview(
             session,
             plan_id,
             user_id=user.id,
             revision_number=body.revision_number,
         )
+        await session.commit()
+        return plan
     except service.AssemblyPlanNotFoundError as exc:
         raise _not_found(exc) from exc
     except service.AssemblyPlanConflictError as exc:
@@ -181,12 +189,14 @@ async def confirm_assembly_render(
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, Any]:
     try:
-        return await service.confirm_render(
+        plan = await service.confirm_render(
             session,
             plan_id,
             user_id=user.id,
             revision_number=body.revision_number,
         )
+        await session.commit()
+        return plan
     except service.AssemblyPlanNotFoundError as exc:
         raise _not_found(exc) from exc
     except service.AssemblyPlanConflictError as exc:
@@ -201,12 +211,14 @@ async def check_assembly_plan_stale(
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, Any]:
     try:
-        return await service.check_stale(
+        plan = await service.check_stale(
             session,
             plan_id,
             user_id=user.id,
             current_source_snapshot=body.source_snapshot,
         )
+        await session.commit()
+        return plan
     except service.AssemblyPlanNotFoundError as exc:
         raise _not_found(exc) from exc
 

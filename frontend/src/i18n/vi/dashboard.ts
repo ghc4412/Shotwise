@@ -2822,6 +2822,7 @@ export default {
   'assembly_regenerate_preview': 'Tạo lại preview',
   'assembly_preview_rendering': 'Đang tạo preview…',
   'assembly_preview_render_error': 'Render preview thất bại: {{message}}',
+  'assembly_preview_requires_confirmed_plan': 'Hãy xác nhận kế hoạch dựng phim trước khi tạo preview độ phân giải thấp.',
   'assembly_preview_retry': 'Thử lại render preview',
   'assembly_preview_confirmation_title': 'Xác nhận preview',
   'assembly_preview_confirmed': 'Đã xác nhận ({{date}})',

@@ -216,9 +216,16 @@ export interface LoginResponse {
   role?: string;
 }
 
+/** Structured domain-error detail (e.g. `{"code": "preview_requires_confirmed_plan", "status": "draft"}`). */
+export interface StructuredErrorDetail {
+  code?: string;
+  status?: string;
+  message?: string;
+}
+
 /** Standard error response body from backend (mirrors FastAPI HTTPException detail). */
 export interface ErrorResponse {
-  detail: string | { msg?: string }[] | AgentFailureDetail;
+  detail: string | { msg?: string }[] | AgentFailureDetail | StructuredErrorDetail;
 }
 
 /** Structured detail returned when the local Agent process cannot start. */
@@ -479,16 +486,44 @@ async function throwIfNotOk(response: Response, fallbackMsg: string): Promise<vo
     const error = await response
       .json()
       .catch(() => ({ detail: response.statusText })) as ErrorResponse;
-    const detail = error.detail;
-    const message = typeof detail === "string" ? detail || fallbackMsg : fallbackMsg;
-    throw new ApiHttpError(response.status, localizeWorkflowError(message));
+    throw new ApiHttpError(response.status, errorDetailMessage(error.detail, fallbackMsg));
   }
+}
+
+/**
+ * 把后端错误 detail 统一抽成可读文案。
+ *
+ * 域错误（成片计划闸门、渲染冲突等）返回的是结构化对象，例如
+ * `{"code": "preview_requires_confirmed_plan", "status": "draft"}`；
+ * 只处理字符串 detail 会把这类原因吞成兜底文案。
+ */
+function errorDetailMessage(detail: unknown, fallback: string): string {
+  if (typeof detail === "string" && detail) return localizeWorkflowError(detail);
+  if (Array.isArray(detail)) {
+    const joined = detail
+      .map((item) => (typeof item === "string" ? item : (item as { msg?: string })?.msg))
+      .filter(Boolean)
+      .join("; ");
+    return joined || fallback;
+  }
+  if (detail && typeof detail === "object") {
+    const record = detail as Record<string, unknown>;
+    for (const candidate of [record.message, record.code, record.detail]) {
+      if (typeof candidate === "string" && candidate) return localizeWorkflowError(candidate);
+    }
+  }
+  return fallback;
 }
 
 function localizeWorkflowError(message: string): string {
   const normalized = message.toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (!normalized.includes("workflowtemplatenotpublished")) return message;
-  return i18n.t("flow_template_not_published", { ns: "dashboard" });
+  if (normalized.includes("workflowtemplatenotpublished")) {
+    return i18n.t("flow_template_not_published", { ns: "dashboard" });
+  }
+  if (normalized.includes("previewrequiresconfirmedplan")) {
+    return i18n.t("assembly_preview_requires_confirmed_plan", { ns: "dashboard" });
+  }
+  return message;
 }
 
 export interface CreativeBoardVersionRecord {
@@ -648,13 +683,7 @@ class API {
       if (isAgentFailureDetail(error.detail)) {
         throw new AgentFailureError(error.detail.message, error.detail.failure);
       }
-      let message = "请求失败";
-      if (typeof error.detail === "string") {
-        message = localizeWorkflowError(error.detail);
-      } else if (Array.isArray(error.detail) && error.detail.length > 0) {
-        message = error.detail.map((e) => (typeof e === "string" ? e : e?.msg)).filter(Boolean).join("; ") || message;
-      }
-      throw new Error(message);
+      throw new Error(errorDetailMessage(error.detail, "请求失败"));
     }
 
     if (response.status === 204) {

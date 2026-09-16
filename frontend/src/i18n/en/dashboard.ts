@@ -2824,6 +2824,7 @@ export default {
   'assembly_regenerate_preview': 'Regenerate preview',
   'assembly_preview_rendering': 'Rendering preview…',
   'assembly_preview_render_error': 'Preview rendering failed: {{message}}',
+  'assembly_preview_requires_confirmed_plan': 'Confirm the assembly plan before generating a low-resolution preview.',
   'assembly_preview_retry': 'Retry preview rendering',
   'assembly_preview_confirmation_title': 'Preview confirmation',
   'assembly_preview_confirmed': 'Confirmed ({{date}})',

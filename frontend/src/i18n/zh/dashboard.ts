@@ -2823,6 +2823,7 @@ export default {
   'assembly_regenerate_preview': '重新生成预览',
   'assembly_preview_rendering': '正在生成预览…',
   'assembly_preview_render_error': '预览渲染失败：{{message}}',
+  'assembly_preview_requires_confirmed_plan': '请先确认成片计划，再生成低清预览。',
   'assembly_preview_retry': '重试预览渲染',
   'assembly_preview_confirmation_title': '预览确认',
   'assembly_preview_confirmed': '已确认（{{date}}）',
