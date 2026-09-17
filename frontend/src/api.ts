@@ -3668,6 +3668,12 @@ class API {
     return this.request(`/render-jobs/${encodeURIComponent(jobId)}`);
   }
 
+  static async cancelRenderJob(jobId: string): Promise<AssemblyRenderJob> {
+    return this.request(`/render-jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: "POST",
+    });
+  }
+
   static async retryRenderJob(jobId: string): Promise<AssemblyRenderJob> {
     return this.request(`/render-jobs/${encodeURIComponent(jobId)}/retry`, {
       method: "POST",

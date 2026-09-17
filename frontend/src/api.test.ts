@@ -610,6 +610,18 @@ describe("API", () => {
         method: "POST",
       });
     });
+
+    it("cancels an assembly render job", async () => {
+      const requestSpy = vi
+        .spyOn(API, "request")
+        .mockResolvedValue({ status: "cancelling" } as never);
+
+      await API.cancelRenderJob("job 1");
+
+      expect(requestSpy).toHaveBeenCalledWith("/render-jobs/job%201/cancel", {
+        method: "POST",
+      });
+    });
   });
 
   describe("fetch-based wrappers", () => {

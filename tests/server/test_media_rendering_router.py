@@ -19,35 +19,24 @@ pytestmark = pytest.mark.unit
 def _client(
     monkeypatch: pytest.MonkeyPatch,
     session,
-    *,
-    preview_background: AsyncMock | None = None,
-    final_background: AsyncMock | None = None,
 ) -> TestClient:
     app = FastAPI()
     app.include_router(media_rendering.router, prefix="/api/v1")
     app.dependency_overrides[get_async_session] = lambda: session
     app.dependency_overrides[get_current_user] = lambda: CurrentUserInfo(id="user-1", sub="test", role="admin")
-    if preview_background is None:
-        preview_background = AsyncMock()
-    if final_background is None:
-        final_background = AsyncMock()
-    monkeypatch.setattr(service, "run_preview_job_background", preview_background)
-    monkeypatch.setattr(service, "run_final_job_background", final_background)
     return TestClient(app)
 
 
-def test_create_preview_route_queues_background_job(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_preview_route_queues_job_for_the_render_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     session = AsyncMock()
     create_preview_job = AsyncMock(return_value={"id": "job-1", "status": "queued"})
-    preview_background = AsyncMock()
     monkeypatch.setattr(service, "create_preview_job", create_preview_job)
-    client = _client(monkeypatch, session, preview_background=preview_background)
+    client = _client(monkeypatch, session)
     response = client.post("/api/v1/assembly-plans/plan-1/preview-renders", json={})
     assert response.status_code == 202
     assert response.json()["id"] == "job-1"
     session.commit.assert_awaited_once()
     create_preview_job.assert_awaited_once()
-    preview_background.assert_awaited_once_with("job-1", user_id="user-1")
 
 
 def test_create_preview_route_maps_conflict_and_missing_plan(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -74,9 +63,8 @@ def test_create_preview_route_maps_conflict_and_missing_plan(monkeypatch: pytest
 def test_create_final_route_queues_authenticated_final_job(monkeypatch: pytest.MonkeyPatch) -> None:
     session = AsyncMock()
     create_final_job = AsyncMock(return_value={"id": "final-job-1", "kind": "final", "status": "queued"})
-    final_background = AsyncMock()
     monkeypatch.setattr(service, "create_final_job", create_final_job)
-    client = _client(monkeypatch, session, final_background=final_background)
+    client = _client(monkeypatch, session)
 
     response = client.post(
         "/api/v1/assembly-plans/plan-1/final-renders",
@@ -93,7 +81,6 @@ def test_create_final_route_queues_authenticated_final_job(monkeypatch: pytest.M
         revision_number=2,
         max_attempts=5,
     )
-    final_background.assert_awaited_once_with("final-job-1", user_id="user-1")
 
 
 def test_create_final_route_maps_confirmation_conflict(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -101,15 +88,13 @@ def test_create_final_route_maps_confirmation_conflict(monkeypatch: pytest.Monke
     create_final_job = AsyncMock(
         side_effect=service.RenderJobConflictError("render_confirmation_required", status="preview_ready")
     )
-    final_background = AsyncMock()
     monkeypatch.setattr(service, "create_final_job", create_final_job)
-    client = _client(monkeypatch, session, final_background=final_background)
+    client = _client(monkeypatch, session)
 
     response = client.post("/api/v1/assembly-plans/plan-1/final-renders", json={"revision_number": 2})
 
     assert response.status_code == 409
     assert response.json()["detail"] == {"code": "render_confirmation_required", "status": "preview_ready"}
-    final_background.assert_not_awaited()
 
 
 def test_list_final_route_scopes_service_call_to_final_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -125,12 +110,11 @@ def test_list_final_route_scopes_service_call_to_final_jobs(monkeypatch: pytest.
     fake_service.assert_awaited_once_with(session, "plan-1", user_id="user-1", kind="final")
 
 
-def test_retry_final_route_requeues_final_job_and_starts_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_retry_final_route_requeues_final_job(monkeypatch: pytest.MonkeyPatch) -> None:
     session = AsyncMock()
     retry_final_job = AsyncMock(return_value={"id": "final-job-2", "kind": "final", "status": "queued"})
-    final_background = AsyncMock()
     monkeypatch.setattr(service, "retry_final_job", retry_final_job)
-    client = _client(monkeypatch, session, final_background=final_background)
+    client = _client(monkeypatch, session)
 
     response = client.post("/api/v1/render-jobs/final-job-1/final-retry")
 
@@ -138,7 +122,6 @@ def test_retry_final_route_requeues_final_job_and_starts_worker(monkeypatch: pyt
     assert response.json()["status"] == "queued"
     retry_final_job.assert_awaited_once_with(session, "final-job-1", user_id="user-1")
     session.commit.assert_awaited_once()
-    final_background.assert_awaited_once_with("final-job-2", user_id="user-1")
 
 
 def test_retry_final_route_maps_conflict(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -146,15 +129,56 @@ def test_retry_final_route_maps_conflict(monkeypatch: pytest.MonkeyPatch) -> Non
     retry_final_job = AsyncMock(
         side_effect=service.RenderJobConflictError("final_retry_requires_failed_job", status="succeeded")
     )
-    final_background = AsyncMock()
     monkeypatch.setattr(service, "retry_final_job", retry_final_job)
-    client = _client(monkeypatch, session, final_background=final_background)
+    client = _client(monkeypatch, session)
 
     response = client.post("/api/v1/render-jobs/final-job-1/final-retry")
 
     assert response.status_code == 409
     assert response.json()["detail"] == {"code": "final_retry_requires_failed_job", "status": "succeeded"}
-    final_background.assert_not_awaited()
+
+
+def test_cancel_route_requests_cancellation_for_the_authenticated_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = AsyncMock()
+    cancel_render_job = AsyncMock(return_value={"id": "job-1", "status": "cancelling"})
+    monkeypatch.setattr(service, "cancel_render_job", cancel_render_job)
+    client = _client(monkeypatch, session)
+
+    response = client.post("/api/v1/render-jobs/job-1/cancel")
+
+    assert response.status_code == 202
+    assert response.json() == {"id": "job-1", "status": "cancelling"}
+    cancel_render_job.assert_awaited_once_with(session, "job-1", user_id="user-1")
+    session.commit.assert_awaited_once()
+
+
+def test_cancel_route_maps_terminal_job_conflict(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = AsyncMock()
+    monkeypatch.setattr(
+        service,
+        "cancel_render_job",
+        AsyncMock(side_effect=service.RenderJobConflictError("cancel_requires_active_job", status="succeeded")),
+    )
+    client = _client(monkeypatch, session)
+
+    response = client.post("/api/v1/render-jobs/job-1/cancel")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {"code": "cancel_requires_active_job", "status": "succeeded"}
+
+
+def test_cancel_route_maps_missing_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = AsyncMock()
+    monkeypatch.setattr(
+        service,
+        "cancel_render_job",
+        AsyncMock(side_effect=service.RenderJobNotFoundError("job-1")),
+    )
+    client = _client(monkeypatch, session)
+
+    response = client.post("/api/v1/render-jobs/job-1/cancel")
+
+    assert response.status_code == 404
 
 
 def test_final_review_returns_not_ready_until_final_artifact_exists(monkeypatch: pytest.MonkeyPatch) -> None:
