@@ -1442,3 +1442,100 @@ class TestAdReferenceUnitClips:
         starts = sorted(seg["target_timerange"]["start"] for seg in text_track["segments"])
         assert starts[0] == 0
         assert starts[1] == 3_000_000
+
+
+class TestReferenceVideoUnitClips:
+    """narration/drama + reference_video：成片是 video_units 单元级视频。"""
+
+    def _script(self, content_mode: str) -> dict:
+        return {
+            "content_mode": content_mode,
+            "video_units": [
+                {
+                    "unit_id": "E1U1",
+                    "shots": [{"text": "开场"}],
+                    "references": [],
+                    "duration_seconds": 5,
+                    "transition_to_next": "fade",
+                    "generated_assets": {
+                        "video_clip": "reference_videos/E1U1.mp4",
+                        "status": "completed",
+                    },
+                },
+                {
+                    "unit_id": "E1U2",
+                    "shots": [{"text": "结尾"}],
+                    "references": [],
+                    "duration_seconds": 8,
+                    "transition_to_next": "cut",
+                    "generated_assets": {"status": "pending"},
+                },
+            ],
+        }
+
+    @pytest.mark.parametrize("content_mode", ["narration", "drama"])
+    def test_collects_video_units_for_reference_route(self, tmp_path, content_mode):
+        """narration/drama 参考直出按 video_units 收集，时长与转场取 unit 自身元数据。"""
+        from server.services.jianying_draft_service import JianyingDraftService
+
+        project_dir = tmp_path / "projects" / "demo"
+        ref_dir = project_dir / "reference_videos"
+        ref_dir.mkdir(parents=True)
+        (ref_dir / "E1U1.mp4").write_bytes(b"fake")
+
+        svc = JianyingDraftService.__new__(JianyingDraftService)
+        clips = svc._collect_video_clips(self._script(content_mode), project_dir, generation_mode="reference_video")
+
+        assert len(clips) == 1
+        clip = clips[0]
+        assert clip["id"] == "E1U1"
+        assert clip["duration_seconds"] == 5
+        assert clip["transition_to_next"] == "fade"
+        # 参考直出音轨内嵌在视频里，unit 级素材不伪造 unit 内字幕
+        assert clip["subtitle_text"] == ""
+        assert "subtitle_spans" not in clip
+        assert clip["narration_audio_abs"] is None
+
+    def test_storyboard_route_ignores_residual_video_units(self, tmp_path):
+        """项目是 storyboard 时残留的 video_units 索引不参与收集。"""
+        from server.services.jianying_draft_service import JianyingDraftService
+
+        project_dir = tmp_path / "projects" / "demo"
+        videos_dir = project_dir / "videos"
+        videos_dir.mkdir(parents=True)
+        (videos_dir / "segment_S1.mp4").write_bytes(b"fake")
+        script = {
+            "content_mode": "narration",
+            "segments": [
+                {
+                    "segment_id": "S1",
+                    "duration_seconds": 8,
+                    "novel_text": "从前有座山",
+                    "generated_assets": {
+                        "video_clip": "videos/segment_S1.mp4",
+                        "status": "completed",
+                    },
+                },
+            ],
+            "video_units": self._script("narration")["video_units"],
+        }
+
+        svc = JianyingDraftService.__new__(JianyingDraftService)
+        clips = svc._collect_video_clips(script, project_dir, generation_mode="storyboard")
+
+        assert [c["id"] for c in clips] == ["S1"]
+
+    def test_reference_route_without_finished_units_returns_empty(self, tmp_path):
+        """所有 unit 都没生成视频时返回空列表，由导出层抛明确的空素材错误。"""
+        from server.services.jianying_draft_service import JianyingDraftService
+
+        project_dir = tmp_path / "projects" / "demo"
+        project_dir.mkdir(parents=True)
+        script = self._script("narration")
+        for unit in script["video_units"]:
+            unit["generated_assets"] = {"status": "pending"}
+
+        svc = JianyingDraftService.__new__(JianyingDraftService)
+        clips = svc._collect_video_clips(script, project_dir, generation_mode="reference_video")
+
+        assert clips == []

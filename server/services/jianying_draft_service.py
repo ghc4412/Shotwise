@@ -149,16 +149,17 @@ class JianyingDraftService:
         项目级覆盖优先、否则按 ``language`` 取语言默认，两者均由调用方从 project.json 解析后传入），
         整段 ``subtitle_text`` 留空。
 
-        ad + reference_video 路径成片是 unit 级视频（``reference_units`` 派生索引），
-        按 unit 收集；``generation_mode`` 须由调用方按 project.json 解析传入——
-        ad 剧本不打 generation_mode 戳，且切回 storyboard 后残留索引不应抢走收集。
+        reference_video 路径成片是 unit 级视频：ad 在 ``reference_units`` 派生索引，
+        narration/drama 在 ``video_units``。两路都按 unit 收集；``generation_mode`` 须由调用方按
+        project.json 解析传入——剧本不打 generation_mode 戳，且切回 storyboard 后残留索引不应
+        抢走收集。
         """
         content_mode = _script_content_mode(script)
-        if content_mode == "ad" and generation_mode == "reference_video":
-            return self._collect_ad_reference_unit_clips(script, project_dir)
+        if generation_mode == "reference_video":
+            kind = resolve_declared_kind(script.get("content_mode"), generation_mode)
+            return self._collect_reference_unit_clips(script, project_dir, kind=kind)
         # 内容骨架经规范解析定分镜数组：content_mode 取剧本原值（缺失/未知即 fail-loud，不静默
-        # 兜底到 drama）。generation_mode 传 None——ad+参考已在上分支按 unit 收集，本分支只按
-        # content_mode 取内容骨架，非 ad 参考路径的 video_units 收集不属本分支职责。
+        # 兜底到 drama）。
         kind = resolve_declared_kind(script.get("content_mode"), None)
         items = script.get(kind, [])
         id_field = SKELETONS[kind].id_field
@@ -199,17 +200,26 @@ class JianyingDraftService:
 
         return clips
 
-    def _collect_ad_reference_unit_clips(self, script: dict, project_dir: Path) -> list[dict[str, Any]]:
-        """ad 参考直出的 unit 级片段收集：字幕按成员镜头口播在 unit 内逐镜头对齐。
+    def _collect_reference_unit_clips(self, script: dict, project_dir: Path, *, kind: str) -> list[dict[str, Any]]:
+        """参考直出的 unit 级片段收集。
 
-        成员镜头从 shots（内容唯一真相）按 shot_ids 水合：字幕 span 的偏移/时长取
-        规划时长（与生成请求一致）；unit 间转场取末位成员镜头的 ``transition_to_next``。
-        悬空 shot_id（索引过期）按缺失成员跳过其字幕，不阻断导出。
+        ad（``kind == "shots"``）在 ``reference_units`` 派生索引，字幕按成员镜头口播在 unit 内
+        逐镜头对齐；narration/drama（``kind == "video_units"``）内容自包含在 ``video_units``，
+        按 unit 级时长与转场元数据导出，不伪造 unit 内字幕。
+
+        unit 顺序与剧本数组顺序一致。无 ``video_clip`` 或路径不可解析的 unit 跳过并 warning，
+        调用方在所有 unit 都无素材时继续抛明确的空素材错误，不导出空草稿。
         """
-        shots_by_id = ad_shots_by_id(script)
+        if kind == "shots":
+            units = script.get("reference_units")
+            shots_by_id = ad_shots_by_id(script)
+        elif kind == "video_units":
+            units = script.get("video_units")
+            shots_by_id = {}
+        else:
+            raise ValueError(f"参考生视频不支持的骨架种类: {kind!r}")
 
         clips: list[dict[str, Any]] = []
-        units = script.get("reference_units")
         for unit in units if isinstance(units, list) else []:
             if not isinstance(unit, dict):
                 continue
@@ -221,33 +231,42 @@ class JianyingDraftService:
                 logger.warning("video_clip 不可用（越界或文件不存在），已跳过: %s", video_clip)
                 continue
 
-            spans: list[dict[str, Any]] = []
-            offset = 0
-            transition = "cut"
-            member_shots = [shots_by_id.get(sid) for sid in unit.get("shot_ids") or []]
-            for shot in member_shots:
-                if shot is None:
-                    continue
-                duration = ad_shot_duration_seconds(shot)
-                text = shot.get("voiceover_text")
-                if isinstance(text, str) and text and duration > 0:
-                    spans.append({"offset_seconds": offset, "duration_seconds": duration, "text": text})
-                offset += max(duration, 0)
-                transition = shot.get("transition_to_next", "cut")
+            clip: dict[str, Any] = {
+                "id": unit.get("unit_id", ""),
+                "duration_seconds": unit.get("duration_seconds", 0),
+                "video_clip": video_clip,
+                "abs_path": abs_path,
+                "subtitle_text": "",
+                "transition_to_next": unit.get("transition_to_next", "cut"),
+                "narration_audio_abs": None,
+            }
 
-            clips.append(
-                {
-                    "id": unit.get("unit_id", ""),
-                    "duration_seconds": offset,
-                    "video_clip": video_clip,
-                    "abs_path": abs_path,
-                    "subtitle_text": "",
-                    "subtitle_spans": spans,
-                    "transition_to_next": transition,
-                    "narration_audio_abs": None,
-                }
-            )
+            if kind == "shots":
+                # ad 字幕 span 的偏移/时长取规划时长（与生成请求一致）；unit 间转场取末位成员
+                # 镜头的 transition_to_next。悬空 shot_id 按缺失成员跳过，不阻断导出。
+                spans: list[dict[str, Any]] = []
+                offset = 0
+                transition = "cut"
+                member_shots = [shots_by_id.get(sid) for sid in unit.get("shot_ids") or []]
+                for shot in member_shots:
+                    if shot is None:
+                        continue
+                    duration = ad_shot_duration_seconds(shot)
+                    text = shot.get("voiceover_text")
+                    if isinstance(text, str) and text and duration > 0:
+                        spans.append({"offset_seconds": offset, "duration_seconds": duration, "text": text})
+                    offset += max(duration, 0)
+                    transition = shot.get("transition_to_next", "cut")
+                clip["duration_seconds"] = offset
+                clip["subtitle_spans"] = spans
+                clip["transition_to_next"] = transition
+
+            clips.append(clip)
         return clips
+
+    def _collect_ad_reference_unit_clips(self, script: dict, project_dir: Path) -> list[dict[str, Any]]:
+        """兼容入口：按 ad 的 ``reference_units`` 骨架收集参考直出片段。"""
+        return self._collect_reference_unit_clips(script, project_dir, kind="shots")
 
     def _resolve_canvas_size(self, project: dict, first_video_path: Path | None = None) -> tuple[int, int]:
         """根据项目 aspect_ratio 确定画布尺寸，缺失时从首个视频自动检测"""
