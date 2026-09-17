@@ -11,7 +11,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from lib.media_assembly.plan import packaging_section_enabled
+from lib.media_assembly.plan import (
+    SUPPORTED_TIMELINE_TRANSITIONS,
+    packaging_section_enabled,
+    resolve_timeline_transitions,
+)
+
+_XFADE_TYPE_MAP: dict[str, str] = {
+    "fade": "fade",
+    "dissolve": "dissolve",
+    "wipe": "wipeleft",
+}
 
 
 class RenderToolError(RuntimeError):
@@ -38,6 +48,8 @@ class TimelineClip:
     path: Path
     start_seconds: float
     duration_seconds: float | None
+    transition_type: str | None = None
+    transition_duration_seconds: float = 0.0
 
 
 def resolve_timeline_clips(timeline: list[dict[str, Any]], *, project_root: Path) -> list[TimelineClip]:
@@ -66,7 +78,31 @@ def resolve_timeline_clips(timeline: list[dict[str, Any]], *, project_root: Path
             remaining = float(duration) - end - start
             if remaining > 0:
                 length = remaining
-        clips.append(TimelineClip(path=path, start_seconds=start, duration_seconds=length))
+        transition_type: str | None = None
+        transition_duration = 0.0
+        transition = item.get("transition")
+        if isinstance(transition, Mapping):
+            raw_type = transition.get("type")
+            if raw_type not in SUPPORTED_TIMELINE_TRANSITIONS:
+                raise RenderToolError("transition_type_invalid", f"unsupported timeline transition: {raw_type!r}")
+            if raw_type != "cut":
+                raw_duration = transition.get("duration_seconds", 0)
+                if not isinstance(raw_duration, (int, float)) or isinstance(raw_duration, bool) or raw_duration <= 0:
+                    raise RenderToolError(
+                        "transition_duration_invalid",
+                        "timeline transition duration must be a positive number",
+                    )
+                transition_type = raw_type
+                transition_duration = float(raw_duration)
+        clips.append(
+            TimelineClip(
+                path=path,
+                start_seconds=start,
+                duration_seconds=length,
+                transition_type=transition_type,
+                transition_duration_seconds=transition_duration,
+            )
+        )
     return clips
 
 
@@ -112,6 +148,31 @@ def _clip_length_seconds(clip: TimelineClip, probe: Mapping[str, Any]) -> float:
     return 0.0
 
 
+def _transition_boundaries(
+    clips: Sequence[TimelineClip],
+    durations: Sequence[float],
+) -> list[tuple[str, float] | None]:
+    """Resolve requested transitions into renderable xfade boundaries."""
+    overlaps = resolve_timeline_transitions(
+        [
+            (
+                clip.transition_type if clip.transition_type in _XFADE_TYPE_MAP else None,
+                clip.transition_duration_seconds,
+            )
+            for clip in clips
+        ],
+        durations,
+    )
+    boundaries: list[tuple[str, float] | None] = []
+    for index, overlap in enumerate(overlaps):
+        transition_type = clips[index].transition_type
+        if overlap > 0 and transition_type is not None:
+            boundaries.append((transition_type, overlap))
+        else:
+            boundaries.append(None)
+    return boundaries
+
+
 def build_concat_filter(
     clips: Sequence[TimelineClip],
     *,
@@ -128,7 +189,6 @@ def build_concat_filter(
     heterogeneous sources renderable in a single encode.
     """
     chains: list[str] = []
-    segments: list[str] = []
     for index, (clip, probe) in enumerate(zip(clips, probes, strict=True)):
         chains.append(
             f"[{index}:v]scale={width}:{height}:force_original_aspect_ratio=decrease,"
@@ -149,8 +209,62 @@ def build_concat_filter(
                     f"clip duration is unknown for silent input: {clip.path.name}",
                 )
             chains.append(f"anullsrc=channel_layout=stereo:sample_rate=48000:d={length:.6f}[a{index}]")
-        segments.append(f"[v{index}][a{index}]")
-    chains.append(f"{''.join(segments)}concat=n={len(clips)}:v=1:a=1[outv][outa]")
+
+    durations = [_clip_length_seconds(clip, probe) for clip, probe in zip(clips, probes, strict=True)]
+    boundaries = _transition_boundaries(clips, durations)
+    if not any(boundary is not None for boundary in boundaries):
+        segments = "".join(f"[v{index}][a{index}]" for index in range(len(clips)))
+        chains.append(f"{segments}concat=n={len(clips)}:v=1:a=1[outv][outa]")
+        return ";".join(chains)
+
+    groups: list[list[int]] = []
+    current = [0]
+    for index, boundary in enumerate(boundaries):
+        if boundary is None:
+            groups.append(current)
+            current = [index + 1]
+        else:
+            current.append(index + 1)
+    groups.append(current)
+
+    group_outputs: list[tuple[str, str]] = []
+    for group_index, group in enumerate(groups):
+        if len(group) == 1:
+            clip_index = group[0]
+            group_outputs.append((f"[v{clip_index}]", f"[a{clip_index}]"))
+            continue
+
+        previous_video = f"[v{group[0]}]"
+        previous_audio = f"[a{group[0]}]"
+        merged_duration = durations[group[0]]
+        for offset_index in range(1, len(group)):
+            boundary = boundaries[group[offset_index] - 1]
+            assert boundary is not None
+            transition_type, transition_duration = boundary
+            xfade_type = _XFADE_TYPE_MAP[transition_type]
+            offset = max(merged_duration - transition_duration, 0.0)
+            video_out = f"[gv{group_index}_{offset_index}]"
+            audio_out = f"[ga{group_index}_{offset_index}]"
+            chains.append(
+                f"{previous_video}[v{group[offset_index]}]xfade=transition={xfade_type}:"
+                f"duration={transition_duration:.6f}:offset={offset:.6f}{video_out}"
+            )
+            chains.append(
+                f"{previous_audio}[a{group[offset_index]}]acrossfade=d={transition_duration:.6f}:"
+                f"c1=tri:c2=tri{audio_out}"
+            )
+            previous_video = video_out
+            previous_audio = audio_out
+            merged_duration += durations[group[offset_index]] - transition_duration
+        group_outputs.append((previous_video, previous_audio))
+
+    if len(group_outputs) == 1:
+        video, audio = group_outputs[0]
+        chains.append(f"{video}null[outv]")
+        chains.append(f"{audio}anull[outa]")
+    else:
+        concat_inputs = "".join(video + audio for video, audio in group_outputs)
+        chains.append(f"{concat_inputs}concat=n={len(group_outputs)}:v=1:a=1[outv][outa]")
     return ";".join(chains)
 
 
@@ -373,7 +487,7 @@ async def render_video(
     probe_error_code: str = "render_probe_invalid",
     packaging: object | None = None,
 ) -> dict[str, Any]:
-    """Hard-cut timeline clips into a validated MP4 using explicit argv execution."""
+    """Render timeline clips with supported transitions into a validated MP4."""
     if width <= 0 or height <= 0:
         raise RenderToolError("render_dimensions_invalid", "render dimensions must be positive")
     if not 0 < crf <= 51:
@@ -454,7 +568,7 @@ async def render_low_resolution_preview(
     ffprobe_path: str | None = None,
     packaging: object | None = None,
 ) -> dict[str, Any]:
-    """Hard-cut timeline clips into a validated low-resolution MP4 preview."""
+    """Render a validated low-resolution preview with supported transitions."""
     return await render_video(
         timeline,
         project_root=project_root,
