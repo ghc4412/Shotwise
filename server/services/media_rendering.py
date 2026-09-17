@@ -6,7 +6,7 @@ import asyncio
 import json
 import re
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -15,14 +15,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.app_data_dir import app_data_dir
-from lib.db import async_session_factory
 from lib.db.base import utc_now
 from lib.db.models.assembly_plan import AssemblyPlan, AssemblyPlanRevision
 from lib.db.models.render_job import RenderArtifact, RenderJob, RenderReviewSnapshot
 from lib.db.repositories.assembly_plan_repository import AssemblyPlanRepository
+from lib.db.repositories.render_repository import RenderRepository
 from lib.media_assembly.audio import AudioMixConfig, AudioTrack, VolumePoint
 from lib.media_assembly.plan import resolve_timeline_sources
 from lib.media_assembly.rendering import (
+    RenderCancelledError,
     RenderToolError,
     burn_in_subtitles,
     file_fingerprint,
@@ -44,6 +45,9 @@ from lib.media_assembly.subtitles import SubtitleValidationError, generate_srt, 
 from lib.path_safety import PathTraversalError, safe_join
 from lib.project_manager import ProjectManager
 from server.services import media_assembly, media_audio
+
+ProgressCallback = Callable[[str, float], Awaitable[None] | None]
+CancelCheck = Callable[[], Awaitable[bool] | bool]
 
 
 class RenderJobNotFoundError(LookupError):
@@ -110,6 +114,10 @@ def _job_payload(job: RenderJob) -> dict[str, Any]:
         "attempt": job.attempt,
         "max_attempts": job.max_attempts,
         "input_fingerprint": job.input_fingerprint,
+        "progress": float(job.progress),
+        "progress_stage": job.progress_stage,
+        "heartbeat_at": job.heartbeat_at.isoformat() if job.heartbeat_at else None,
+        "cancel_requested_at": job.cancel_requested_at.isoformat() if job.cancel_requested_at else None,
         "error_code": job.error_code,
         "error_message": job.error_message,
         "created_at": job.created_at.isoformat(),
@@ -247,7 +255,7 @@ async def create_preview_job(
             RenderJob.user_id == user_id,
             RenderJob.revision_number == target_revision,
             RenderJob.kind == "preview",
-            RenderJob.status.in_(["queued", "running"]),
+            RenderJob.status.in_(["queued", "running", "cancelling"]),
         )
     )
     if active is not None:
@@ -265,8 +273,13 @@ async def create_preview_job(
         attempt=0,
         max_attempts=max_attempts,
         input_fingerprint=revision.source_fingerprint,
+        progress=0.0,
+        progress_stage="queued",
         error_code=None,
         error_message=None,
+        worker_id=None,
+        heartbeat_at=None,
+        cancel_requested_at=None,
         created_at=now,
         started_at=None,
         completed_at=None,
@@ -312,7 +325,7 @@ async def create_final_job(
             RenderJob.user_id == user_id,
             RenderJob.revision_number == target_revision,
             RenderJob.kind == "final",
-            RenderJob.status.in_(["queued", "running"]),
+            RenderJob.status.in_(["queued", "running", "cancelling"]),
         )
     )
     if active is not None:
@@ -330,8 +343,13 @@ async def create_final_job(
         attempt=0,
         max_attempts=max_attempts,
         input_fingerprint=revision.source_fingerprint,
+        progress=0.0,
+        progress_stage="queued",
         error_code=None,
         error_message=None,
+        worker_id=None,
+        heartbeat_at=None,
+        cancel_requested_at=None,
         created_at=now,
         started_at=None,
         completed_at=None,
@@ -414,23 +432,24 @@ async def list_render_jobs(
 
 async def retry_preview_job(session: AsyncSession, job_id: str, *, user_id: str) -> dict[str, Any]:
     job = await _owned_job(session, job_id, user_id)
-    if job.status != "failed":
-        raise RenderJobConflictError("retry_requires_failed_job", status=job.status)
+    if job.status not in {"failed", "cancelled"}:
+        raise RenderJobConflictError("retry_requires_terminal_job", status=job.status)
     if job.attempt >= job.max_attempts:
         raise RenderJobConflictError("retry_limit_reached", status=job.status)
     plan = await _owned_plan(session, job.plan_id, user_id)
     if plan.current_revision_number != job.revision_number:
         raise RenderRevisionConflictError(status=plan.status)
-    if plan.status not in {"preview_pending", "failed"}:
+    if plan.status not in {"preview_pending", "confirmed", "failed"}:
         raise RenderJobConflictError("preview_retry_not_allowed", status=plan.status)
-    if plan.status == "failed":
+    if plan.status in {"failed", "confirmed"}:
         try:
-            await media_assembly.transition_plan(
-                session,
-                plan.id,
-                user_id=user_id,
-                target_status="confirmed",
-            )
+            if plan.status == "failed":
+                await media_assembly.transition_plan(
+                    session,
+                    plan.id,
+                    user_id=user_id,
+                    target_status="confirmed",
+                )
             await media_assembly.transition_plan(
                 session,
                 plan.id,
@@ -440,8 +459,13 @@ async def retry_preview_job(session: AsyncSession, job_id: str, *, user_id: str)
         except media_assembly.AssemblyPlanConflictError as exc:
             raise RenderJobConflictError(exc.code, status=exc.status) from exc
     job.status = "queued"
+    job.progress = 0.0
+    job.progress_stage = "queued"
     job.error_code = None
     job.error_message = None
+    job.worker_id = None
+    job.heartbeat_at = None
+    job.cancel_requested_at = None
     job.started_at = None
     job.completed_at = None
     job.updated_at = utc_now()
@@ -454,20 +478,20 @@ async def retry_final_job(session: AsyncSession, job_id: str, *, user_id: str) -
     job = await _owned_job(session, job_id, user_id)
     if job.kind != "final":
         raise RenderJobConflictError("final_retry_requires_final_job", status=job.status)
-    if job.status != "failed":
-        raise RenderJobConflictError("retry_requires_failed_job", status=job.status)
+    if job.status not in {"failed", "cancelled"}:
+        raise RenderJobConflictError("retry_requires_terminal_job", status=job.status)
     if job.attempt >= job.max_attempts:
         raise RenderJobConflictError("retry_limit_reached", status=job.status)
     plan = await _owned_plan(session, job.plan_id, user_id)
     revision = await _current_revision(session, plan)
-    _validate_final_revision(plan, revision, job, allow_statuses={"failed"})
+    _validate_final_revision(plan, revision, job, allow_statuses={"failed", "render_pending"})
 
     result = await session.execute(
         update(AssemblyPlan)
         .where(
             AssemblyPlan.id == plan.id,
             AssemblyPlan.user_id == user_id,
-            AssemblyPlan.status == "failed",
+            AssemblyPlan.status.in_(("failed", "render_pending")),
             AssemblyPlan.current_revision_number == job.revision_number,
             AssemblyPlan.current_source_fingerprint == job.input_fingerprint,
             AssemblyPlan.preview_revision_number == job.revision_number,
@@ -482,13 +506,37 @@ async def retry_final_job(session: AsyncSession, job_id: str, *, user_id: str) -
         raise RenderJobConflictError("final_retry_confirmation_conflict", status=plan.status)
 
     job.status = "queued"
+    job.progress = 0.0
+    job.progress_stage = "queued"
     job.error_code = None
     job.error_message = None
+    job.worker_id = None
+    job.heartbeat_at = None
+    job.cancel_requested_at = None
     job.started_at = None
     job.completed_at = None
     job.updated_at = utc_now()
     plan.status = "render_pending"
     plan.updated_at = job.updated_at
+    await session.flush()
+    return _job_payload(job)
+
+
+async def cancel_render_job(session: AsyncSession, job_id: str, *, user_id: str) -> dict[str, Any]:
+    """Request cancellation of an active render job and persist the outcome."""
+    job = await _owned_job(session, job_id, user_id)
+    if job.status in {"succeeded", "failed"}:
+        raise RenderJobConflictError("cancel_requires_active_job", status=job.status)
+    repository = RenderRepository(session)
+    if job.status in {"queued", "running"}:
+        if await repository.request_cancel(job_id=job.id, user_id=user_id) is None:
+            raise RenderJobConflictError("cancel_conflict", status=job.status)
+        # Core UPDATE does not refresh the identity-mapped instance in place.
+        await session.refresh(job)
+    if job.status == "cancelling":
+        # A queued job has no owner to observe the flag, so settle it immediately.
+        await repository.finalize_unclaimed_cancellation(job_id=job.id)
+        await session.refresh(job)
     await session.flush()
     return _job_payload(job)
 
@@ -659,6 +707,8 @@ async def render_preview_pipeline(
     base_renderer: object | None = None,
     probe_error_code: str = "preview_probe_invalid",
     packaging: object | None = None,
+    on_progress: ProgressCallback | None = None,
+    cancel_check: CancelCheck | None = None,
 ) -> dict[str, Any]:
     """Render a revision through hard-cut, audio, subtitle, and probe stages."""
     work_dir = output_path.parent / f".{output_path.stem}-pipeline-work"
@@ -667,6 +717,20 @@ async def render_preview_pipeline(
     subtitled_path = work_dir / "subtitled.mp4"
     work_dir.mkdir(parents=True, exist_ok=True)
     try:
+
+        async def emit(stage: str, fraction: float) -> None:
+            if on_progress is None:
+                return
+            result = on_progress(stage, max(0.0, min(1.0, fraction)))
+            if asyncio.iscoroutine(result):
+                await result
+
+        def video_progress(fraction: float) -> Awaitable[None] | None:
+            if on_progress is None:
+                return None
+            return on_progress("rendering_video", 0.05 + max(0.0, min(1.0, fraction)) * 0.8)
+
+        await emit("rendering_video", 0.05)
         if base_renderer is None:
             base_result = await render_low_resolution_preview(
                 timeline,
@@ -676,6 +740,8 @@ async def render_preview_pipeline(
                 height=height,
                 fps=fps,
                 packaging=packaging,
+                on_progress=video_progress,
+                cancel_check=cancel_check,
             )
         else:
             base_result = await render_video(
@@ -689,7 +755,10 @@ async def render_preview_pipeline(
                 crf=18,
                 audio_bitrate="192k",
                 packaging=packaging,
+                on_progress=video_progress,
+                cancel_check=cancel_check,
             )
+        await emit("mixing_audio", 0.85)
         audio_config, tracks, should_mix = _audio_pipeline_config(
             audio, duration_seconds=float(base_result["duration_seconds"]), timeline=timeline
         )
@@ -708,6 +777,8 @@ async def render_preview_pipeline(
 
         subtitle_mode, subtitle_text = _subtitle_payload(subtitle)
         if subtitle_mode is not None and subtitle_text is not None:
+            if subtitle_mode in {"burn_in", "burn_in_srt", "burn_in_vtt"}:
+                await emit("burning_subtitles", 0.9)
             subtitle_path = work_dir / ("captions.vtt" if subtitle_mode in {"vtt", "burn_in_vtt"} else "captions.srt")
             subtitle_path.write_text(subtitle_text, encoding="utf-8")
             if subtitle_mode in {"burn_in", "burn_in_srt", "burn_in_vtt"}:
@@ -716,9 +787,11 @@ async def render_preview_pipeline(
                     video_path=current_path,
                     subtitle_path=subtitle_path,
                     output_path=subtitled_path,
+                    cancel_check=cancel_check,
                 )
                 current_path = subtitled_path
 
+        await emit("finalizing", 0.98)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.unlink(missing_ok=True)
         if current_path == base_path:
@@ -744,6 +817,8 @@ async def render_final_pipeline(
     height: int,
     fps: float | None = None,
     packaging: object | None = None,
+    on_progress: ProgressCallback | None = None,
+    cancel_check: CancelCheck | None = None,
 ) -> dict[str, Any]:
     """Render a final revision at its requested output dimensions and quality."""
     return await render_preview_pipeline(
@@ -758,10 +833,20 @@ async def render_final_pipeline(
         base_renderer=render_video,
         probe_error_code="final_probe_invalid",
         packaging=packaging,
+        on_progress=on_progress,
+        cancel_check=cancel_check,
     )
 
 
-async def run_final_job(session: AsyncSession, job_id: str, *, user_id: str) -> dict[str, Any]:
+async def run_final_job(
+    session: AsyncSession,
+    job_id: str,
+    *,
+    user_id: str,
+    worker_id: str | None = None,
+    on_progress: ProgressCallback | None = None,
+    cancel_check: CancelCheck | None = None,
+) -> dict[str, Any]:
     """Execute one confirmed final job with an atomic worker claim."""
     job = await _owned_job(session, job_id, user_id)
     if job.kind != "final":
@@ -772,18 +857,34 @@ async def run_final_job(session: AsyncSession, job_id: str, *, user_id: str) -> 
     revision = await _current_revision(session, plan)
     _validate_final_revision(plan, revision, job, allow_statuses={"render_pending"})
 
+    job_id_value = job.id
+    plan_id_value = plan.id
+    revision_number_value = job.revision_number
+    input_fingerprint_value = job.input_fingerprint
+    plan_status_value = plan.status
     started_at = utc_now()
     claim_job = await session.execute(
         update(RenderJob)
         .where(
-            RenderJob.id == job.id,
+            RenderJob.id == job_id_value,
             RenderJob.user_id == user_id,
             RenderJob.kind == "final",
             RenderJob.status == "queued",
-            RenderJob.revision_number == job.revision_number,
-            RenderJob.input_fingerprint == job.input_fingerprint,
+            RenderJob.revision_number == revision_number_value,
+            RenderJob.input_fingerprint == input_fingerprint_value,
         )
-        .values(status="running", attempt=RenderJob.attempt + 1, started_at=started_at, updated_at=started_at)
+        .values(
+            status="running",
+            attempt=RenderJob.attempt + 1,
+            started_at=started_at,
+            updated_at=started_at,
+            worker_id=worker_id,
+            heartbeat_at=started_at,
+            progress=0.0,
+            progress_stage="preparing",
+            error_code=None,
+            error_message=None,
+        )
     )
     if int(getattr(claim_job, "rowcount", 0)) != 1:
         await session.rollback()
@@ -792,12 +893,12 @@ async def run_final_job(session: AsyncSession, job_id: str, *, user_id: str) -> 
     claim_plan = await session.execute(
         update(AssemblyPlan)
         .where(
-            AssemblyPlan.id == plan.id,
+            AssemblyPlan.id == plan_id_value,
             AssemblyPlan.user_id == user_id,
             AssemblyPlan.status == "render_pending",
-            AssemblyPlan.current_revision_number == job.revision_number,
-            AssemblyPlan.current_source_fingerprint == job.input_fingerprint,
-            AssemblyPlan.preview_revision_number == job.revision_number,
+            AssemblyPlan.current_revision_number == revision_number_value,
+            AssemblyPlan.current_source_fingerprint == input_fingerprint_value,
+            AssemblyPlan.preview_revision_number == revision_number_value,
             AssemblyPlan.preview_confirmed_by.is_not(None),
             AssemblyPlan.preview_confirmed_at.is_not(None),
             AssemblyPlan.render_confirmed_by.is_not(None),
@@ -807,11 +908,11 @@ async def run_final_job(session: AsyncSession, job_id: str, *, user_id: str) -> 
     )
     if int(getattr(claim_plan, "rowcount", 0)) != 1:
         await session.rollback()
-        raise RenderJobConflictError("final_render_claim_conflict", status=plan.status)
+        raise RenderJobConflictError("final_render_claim_conflict", status=plan_status_value)
     await session.commit()
 
-    job = await _owned_job(session, job.id, user_id)
-    plan = await _owned_plan(session, plan.id, user_id)
+    job = await _owned_job(session, job_id_value, user_id)
+    plan = await _owned_plan(session, plan_id_value, user_id)
     revision = await _current_revision(session, plan)
     _validate_final_revision(plan, revision, job, allow_statuses={"rendering"})
 
@@ -849,6 +950,8 @@ async def run_final_job(session: AsyncSession, job_id: str, *, user_id: str) -> 
             width=width,
             height=height,
             fps=fps,
+            on_progress=on_progress,
+            cancel_check=cancel_check,
         )
         if not output_path.is_file() or output_path.stat().st_size <= 0:
             raise RenderToolError("final_output_missing", "final output is missing")
@@ -875,8 +978,12 @@ async def run_final_job(session: AsyncSession, job_id: str, *, user_id: str) -> 
         session.add(artifact)
         completed_at = utc_now()
         job.status = "succeeded"
+        job.progress = 1.0
+        job.progress_stage = "succeeded"
         job.error_code = None
         job.error_message = None
+        job.worker_id = None
+        job.heartbeat_at = None
         job.completed_at = completed_at
         job.updated_at = completed_at
         completed_plan = await session.execute(
@@ -894,24 +1001,51 @@ async def run_final_job(session: AsyncSession, job_id: str, *, user_id: str) -> 
             raise RenderJobConflictError("final_completion_conflict", status=plan.status)
         await session.commit()
         return await get_render_job(session, job.id, user_id=user_id)
+    except RenderCancelledError:
+        if output_path is not None:
+            try:
+                output_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        await session.rollback()
+        cancelled = await _owned_job(session, job_id_value, user_id)
+        cancelled_at = utc_now()
+        cancelled.status = "cancelled"
+        cancelled.progress_stage = "cancelled"
+        cancelled.error_code = None
+        cancelled.error_message = None
+        cancelled.worker_id = None
+        cancelled.heartbeat_at = None
+        cancelled.completed_at = cancelled_at
+        cancelled.updated_at = cancelled_at
+        await session.execute(
+            update(AssemblyPlan)
+            .where(
+                AssemblyPlan.id == plan_id_value,
+                AssemblyPlan.user_id == user_id,
+                AssemblyPlan.status == "rendering",
+                AssemblyPlan.current_revision_number == revision_number_value,
+                AssemblyPlan.current_source_fingerprint == input_fingerprint_value,
+            )
+            .values(status="render_pending", updated_at=cancelled_at)
+        )
+        await session.commit()
+        raise
     except Exception as exc:
         if output_path is not None:
             try:
                 output_path.unlink(missing_ok=True)
             except OSError:
                 pass
-        # Rollback expires ORM instances. Capture immutable identifiers before it
-        # so failure persistence never performs implicit async attribute loading.
-        job_id_value = job.id
-        plan_id_value = job.plan_id
-        revision_number_value = job.revision_number
-        input_fingerprint_value = job.input_fingerprint
         code, message = _safe_error(exc, kind="final")
         await session.rollback()
         failed = await _owned_job(session, job_id_value, user_id)
         failed.status = "failed"
+        failed.progress_stage = "failed"
         failed.error_code = code
         failed.error_message = message
+        failed.worker_id = None
+        failed.heartbeat_at = None
         completed_at = utc_now()
         failed.completed_at = completed_at
         failed.updated_at = completed_at
@@ -930,16 +1064,15 @@ async def run_final_job(session: AsyncSession, job_id: str, *, user_id: str) -> 
         raise
 
 
-async def run_final_job_background(job_id: str, *, user_id: str) -> None:
-    """Run a final job from a fresh session without surfacing worker errors to HTTP."""
-    async with async_session_factory() as session:
-        try:
-            await run_final_job(session, job_id, user_id=user_id)
-        except Exception:
-            return
-
-
-async def run_preview_job(session: AsyncSession, job_id: str, *, user_id: str) -> dict[str, Any]:
+async def run_preview_job(
+    session: AsyncSession,
+    job_id: str,
+    *,
+    user_id: str,
+    worker_id: str | None = None,
+    on_progress: ProgressCallback | None = None,
+    cancel_check: CancelCheck | None = None,
+) -> dict[str, Any]:
     """Execute one queued preview job and persist the controlled preview gate."""
     job = await _owned_job(session, job_id, user_id)
     if job.status != "queued":
@@ -953,12 +1086,42 @@ async def run_preview_job(session: AsyncSession, job_id: str, *, user_id: str) -
     if plan.status != "preview_pending":
         raise RenderJobConflictError("preview_pending_required", status=plan.status)
 
-    job.status = "running"
-    job.attempt += 1
+    job_id_value = job.id
+    plan_id_value = plan.id
+    revision_number_value = job.revision_number
+    input_fingerprint_value = job.input_fingerprint
     started_at = utc_now()
-    job.started_at = started_at
-    job.updated_at = started_at
+    claim = await session.execute(
+        update(RenderJob)
+        .where(
+            RenderJob.id == job_id_value,
+            RenderJob.user_id == user_id,
+            RenderJob.kind == "preview",
+            RenderJob.status == "queued",
+            RenderJob.revision_number == revision_number_value,
+            RenderJob.input_fingerprint == input_fingerprint_value,
+        )
+        .values(
+            status="running",
+            attempt=RenderJob.attempt + 1,
+            started_at=started_at,
+            updated_at=started_at,
+            worker_id=worker_id,
+            heartbeat_at=started_at,
+            progress=0.0,
+            progress_stage="preparing",
+            error_code=None,
+            error_message=None,
+        )
+    )
+    if int(getattr(claim, "rowcount", 0)) != 1:
+        await session.rollback()
+        raise RenderJobConflictError("job_claim_conflict", status="running")
     await session.commit()
+
+    job = await _owned_job(session, job_id_value, user_id)
+    plan = await _owned_plan(session, plan_id_value, user_id)
+    revision = await _current_revision(session, plan)
 
     output_path: Path | None = None
     try:
@@ -985,6 +1148,8 @@ async def run_preview_job(session: AsyncSession, job_id: str, *, user_id: str) -
             width=width,
             height=height,
             fps=float(profile["fps"]) if isinstance(profile.get("fps"), (int, float)) else None,
+            on_progress=on_progress,
+            cancel_check=cancel_check,
         )
         if not output_path.is_file():
             raise RenderToolError("preview_output_missing", "preview output is missing")
@@ -1007,8 +1172,12 @@ async def run_preview_job(session: AsyncSession, job_id: str, *, user_id: str) -
         )
         session.add(artifact)
         job.status = "succeeded"
+        job.progress = 1.0
+        job.progress_stage = "succeeded"
         job.error_code = None
         job.error_message = None
+        job.worker_id = None
+        job.heartbeat_at = None
         completed_at = utc_now()
         job.completed_at = completed_at
         job.updated_at = completed_at
@@ -1020,6 +1189,36 @@ async def run_preview_job(session: AsyncSession, job_id: str, *, user_id: str) -
         )
         await session.commit()
         return await get_render_job(session, job.id, user_id=user_id)
+    except RenderCancelledError:
+        if output_path is not None:
+            try:
+                output_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        await session.rollback()
+        cancelled = await _owned_job(session, job_id_value, user_id)
+        cancelled_at = utc_now()
+        cancelled.status = "cancelled"
+        cancelled.progress_stage = "cancelled"
+        cancelled.error_code = None
+        cancelled.error_message = None
+        cancelled.worker_id = None
+        cancelled.heartbeat_at = None
+        cancelled.completed_at = cancelled_at
+        cancelled.updated_at = cancelled_at
+        await session.execute(
+            update(AssemblyPlan)
+            .where(
+                AssemblyPlan.id == plan_id_value,
+                AssemblyPlan.user_id == user_id,
+                AssemblyPlan.status == "preview_pending",
+                AssemblyPlan.current_revision_number == revision_number_value,
+                AssemblyPlan.current_source_fingerprint == input_fingerprint_value,
+            )
+            .values(status="confirmed", updated_at=cancelled_at)
+        )
+        await session.commit()
+        raise
     except Exception as exc:
         if output_path is not None:
             try:
@@ -1028,26 +1227,18 @@ async def run_preview_job(session: AsyncSession, job_id: str, *, user_id: str) -
                 pass
         code, message = _safe_error(exc)
         await session.rollback()
-        failed = await _owned_job(session, job.id, user_id)
+        failed = await _owned_job(session, job_id_value, user_id)
         failed.status = "failed"
+        failed.progress_stage = "failed"
         failed.error_code = code
         failed.error_message = message
+        failed.worker_id = None
+        failed.heartbeat_at = None
         failed_completed_at = utc_now()
         failed.completed_at = failed_completed_at
         failed.updated_at = failed_completed_at
         await session.commit()
         raise
-
-
-async def run_preview_job_background(job_id: str, *, user_id: str) -> None:
-    """Run a job from a fresh session, suitable for FastAPI BackgroundTasks."""
-    async with async_session_factory() as session:
-        try:
-            await run_preview_job(session, job_id, user_id=user_id)
-        except Exception:
-            # The failure is already persisted on the job; background tasks must not
-            # turn a completed HTTP response into an unhandled application error.
-            return
 
 
 async def get_render_artifact(session: AsyncSession, artifact_id: str, *, user_id: str) -> dict[str, Any]:
@@ -1553,7 +1744,5 @@ __all__ = [
     "retry_final_job",
     "retry_preview_job",
     "run_final_job",
-    "run_final_job_background",
     "run_preview_job",
-    "run_preview_job_background",
 ]

@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _REVIEW_REVISION = "20260914_render_review_snapshots"
 _PUBLISH_REVISION = "20260914_publish_jobs"
 _ACCOUNTS_REVISION = "20260914_publishing_accounts"
-_HEAD_REVISION = "20260914_publish_job_leases"
+_HEAD_REVISION = "20260915_render_job_leases"
 _PARENT_REVISION = "20260913_render_job_active_unique"
 
 

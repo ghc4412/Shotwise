@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,7 +60,6 @@ def _subtitle_error(exc: service.SubtitleExportError) -> HTTPException:
 async def create_preview_render(
     plan_id: str,
     body: PreviewRenderRequest,
-    background_tasks: BackgroundTasks,
     user: CurrentUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, Any]:
@@ -77,7 +76,6 @@ async def create_preview_render(
         raise _conflict(exc) from exc
     except (service.RenderJobNotFoundError, media_assembly.AssemblyPlanNotFoundError) as exc:
         raise _not_found(exc) from exc
-    background_tasks.add_task(service.run_preview_job_background, result["id"], user_id=user.id)
     return result
 
 
@@ -85,7 +83,6 @@ async def create_preview_render(
 async def create_final_render(
     plan_id: str,
     body: PreviewRenderRequest,
-    background_tasks: BackgroundTasks,
     user: CurrentUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, Any]:
@@ -102,7 +99,6 @@ async def create_final_render(
         raise _conflict(exc) from exc
     except (service.RenderJobNotFoundError, media_assembly.AssemblyPlanNotFoundError) as exc:
         raise _not_found(exc) from exc
-    background_tasks.add_task(service.run_final_job_background, result["id"], user_id=user.id)
     return result
 
 
@@ -121,7 +117,6 @@ async def list_final_renders(
 @router.post("/render-jobs/{job_id}/final-retry", status_code=202)
 async def retry_final_render(
     job_id: str,
-    background_tasks: BackgroundTasks,
     user: CurrentUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, Any]:
@@ -132,7 +127,6 @@ async def retry_final_render(
         raise _not_found(exc) from exc
     except (service.RenderRevisionConflictError, service.RenderJobConflictError) as exc:
         raise _conflict(exc) from exc
-    background_tasks.add_task(service.run_final_job_background, result["id"], user_id=user.id)
     return result
 
 
@@ -167,7 +161,6 @@ async def list_preview_renders(
 @router.post("/render-jobs/{job_id}/retry", status_code=202)
 async def retry_preview_render(
     job_id: str,
-    background_tasks: BackgroundTasks,
     user: CurrentUser,
     session: AsyncSession = Depends(get_async_session),
 ) -> dict[str, Any]:
@@ -178,7 +171,22 @@ async def retry_preview_render(
         raise _not_found(exc) from exc
     except (service.RenderRevisionConflictError, service.RenderJobConflictError) as exc:
         raise _conflict(exc) from exc
-    background_tasks.add_task(service.run_preview_job_background, result["id"], user_id=user.id)
+    return result
+
+
+@router.post("/render-jobs/{job_id}/cancel", status_code=202)
+async def cancel_render_job(
+    job_id: str,
+    user: CurrentUser,
+    session: AsyncSession = Depends(get_async_session),
+) -> dict[str, Any]:
+    try:
+        result = await service.cancel_render_job(session, job_id, user_id=user.id)
+        await session.commit()
+    except service.RenderJobNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except (service.RenderRevisionConflictError, service.RenderJobConflictError) as exc:
+        raise _conflict(exc) from exc
     return result
 
 

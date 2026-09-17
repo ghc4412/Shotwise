@@ -5,7 +5,10 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy import update
 
+from lib.db.base import utc_now
+from lib.db.models.render_job import RenderJob
 from lib.media_assembly import rendering
 from server.services import media_assembly, media_rendering
 from tests.lib.test_media_assembly_plan import _document
@@ -455,3 +458,94 @@ async def test_final_job_requires_both_confirmations(async_session) -> None:
     with pytest.raises(media_rendering.RenderJobConflictError):
         await media_rendering.create_final_job(async_session, created["id"], user_id="user-1")
     assert preview_job["kind"] == "preview"
+
+
+async def test_cancelling_a_queued_job_settles_it_without_a_worker(async_session) -> None:
+    created = await _create_confirmed_plan(async_session)
+    job = await media_rendering.create_preview_job(async_session, created["id"], user_id="user-1")
+    await async_session.commit()
+
+    result = await media_rendering.cancel_render_job(async_session, job["id"], user_id="user-1")
+    await async_session.commit()
+
+    assert result["status"] == "cancelled"
+    assert result["progress_stage"] == "cancelled"
+    assert result["cancel_requested_at"] is not None
+    assert result["completed_at"] is not None
+    stored = await media_rendering.get_render_job(async_session, job["id"], user_id="user-1")
+    assert stored["status"] == "cancelled"
+
+
+async def test_cancelling_a_running_job_keeps_the_worker_lease(async_session) -> None:
+    created = await _create_confirmed_plan(async_session)
+    job = await media_rendering.create_preview_job(async_session, created["id"], user_id="user-1")
+    await async_session.commit()
+    now = utc_now()
+    await async_session.execute(
+        update(RenderJob)
+        .where(RenderJob.id == job["id"])
+        .values(status="running", worker_id="worker-1", attempt=1, started_at=now, heartbeat_at=now)
+    )
+    await async_session.commit()
+    async_session.expire_all()
+
+    result = await media_rendering.cancel_render_job(async_session, job["id"], user_id="user-1")
+    await async_session.commit()
+
+    assert result["status"] == "cancelling"
+    assert result["cancel_requested_at"] is not None
+    assert result["completed_at"] is None
+    stored = await media_rendering.get_render_job(async_session, job["id"], user_id="user-1")
+    assert stored["status"] == "cancelling"
+
+
+async def test_cancelled_job_can_be_requeued(async_session) -> None:
+    created = await _create_confirmed_plan(async_session)
+    job = await media_rendering.create_preview_job(async_session, created["id"], user_id="user-1")
+    await async_session.commit()
+    await media_rendering.cancel_render_job(async_session, job["id"], user_id="user-1")
+    await async_session.commit()
+
+    retried = await media_rendering.retry_preview_job(async_session, job["id"], user_id="user-1")
+    await async_session.commit()
+
+    assert retried["status"] == "queued"
+    assert retried["progress"] == 0.0
+    assert retried["progress_stage"] == "queued"
+    assert retried["cancel_requested_at"] is None
+    assert retried["completed_at"] is None
+
+
+async def test_cancel_rejects_terminal_jobs(async_session, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    created = await _create_confirmed_plan(async_session)
+    job = await media_rendering.create_preview_job(async_session, created["id"], user_id="user-1")
+    await async_session.commit()
+    monkeypatch.setattr(media_rendering, "_project_root", lambda _: tmp_path)
+
+    async def fail_render(*args, **kwargs):
+        raise rendering.RenderToolError("ffmpeg_unavailable", "ffmpeg is unavailable")
+
+    monkeypatch.setattr(media_rendering, "render_preview_pipeline", fail_render)
+    with pytest.raises(rendering.RenderToolError):
+        await media_rendering.run_preview_job(async_session, job["id"], user_id="user-1")
+
+    with pytest.raises(media_rendering.RenderJobConflictError) as exc_info:
+        await media_rendering.cancel_render_job(async_session, job["id"], user_id="user-1")
+    assert exc_info.value.code == "cancel_requires_active_job"
+
+    retried = await media_rendering.retry_preview_job(async_session, job["id"], user_id="user-1")
+    await async_session.commit()
+    assert retried["status"] == "queued"
+
+    async def succeed_render(timeline, *, output_path: Path, **kwargs):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"preview")
+        return {"duration_seconds": 8.0, "width": 480, "height": 854}
+
+    monkeypatch.setattr(media_rendering, "render_preview_pipeline", succeed_render)
+    succeeded = await media_rendering.run_preview_job(async_session, job["id"], user_id="user-1")
+    assert succeeded["status"] == "succeeded"
+
+    with pytest.raises(media_rendering.RenderJobConflictError) as exc_info:
+        await media_rendering.cancel_render_job(async_session, job["id"], user_id="user-1")
+    assert exc_info.value.code == "cancel_requires_active_job"

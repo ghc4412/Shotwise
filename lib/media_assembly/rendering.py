@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
+import re
 import shutil
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from lib.media_assembly.plan import packaging_section_enabled
+
+ProgressCallback = Callable[[float], Awaitable[None] | None]
+CancelCheck = Callable[[], Awaitable[bool] | bool]
 
 
 class RenderToolError(RuntimeError):
@@ -21,6 +26,13 @@ class RenderToolError(RuntimeError):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class RenderCancelledError(RenderToolError):
+    """Raised when a caller requests that a running media process stop."""
+
+    def __init__(self, message: str = "media process cancelled") -> None:
+        super().__init__("media_process_cancelled", message)
 
 
 def resolve_tool(name: str) -> str:
@@ -154,8 +166,66 @@ def build_concat_filter(
     return ";".join(chains)
 
 
-async def _run_process(args: list[str], *, timeout_seconds: float = 900) -> tuple[bytes, bytes]:
-    """Run a media process directly with an argv list and bounded output."""
+_FFMPEG_TIME_RE = re.compile(rb"time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)")
+
+
+def _parse_ffmpeg_seconds(stderr: bytes) -> float | None:
+    """Return the most recent ffmpeg ``time=`` position in captured output."""
+    matches = _FFMPEG_TIME_RE.findall(stderr)
+    if not matches:
+        return None
+    hours, minutes, seconds = matches[-1]
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+
+async def _drain_stream(stream: asyncio.StreamReader, sink: bytearray) -> None:
+    """Drain a subprocess stream into ``sink`` as chunks arrive.
+
+    Reading incrementally instead of a single read-to-EOF keeps the run loop
+    able to observe ffmpeg progress while the subprocess is still alive.
+    """
+    try:
+        while True:
+            chunk = await stream.read(4096)
+            if not chunk:
+                return
+            sink.extend(chunk)
+    except (asyncio.CancelledError, ValueError):
+        return
+
+
+async def _invoke_cancel_check(cancel_check: CancelCheck | None) -> bool:
+    if cancel_check is None:
+        return False
+    result = cancel_check()
+    if inspect.isawaitable(result):
+        return bool(await result)
+    return bool(result)
+
+
+async def _invoke_progress(progress_callback: ProgressCallback | None, fraction: float) -> None:
+    if progress_callback is None:
+        return
+    result = progress_callback(max(0.0, min(1.0, fraction)))
+    if inspect.isawaitable(result):
+        await result
+
+
+async def _run_process(
+    args: list[str],
+    *,
+    timeout_seconds: float = 900,
+    on_progress: ProgressCallback | None = None,
+    cancel_check: CancelCheck | None = None,
+    total_duration_seconds: float | None = None,
+    poll_interval_seconds: float = 0.5,
+) -> tuple[bytes, bytes]:
+    """Run a media process with an argv list, progress parsing, and cancellation.
+
+    stdout and stderr are drained continuously so a long ffmpeg run cannot
+    deadlock on a full pipe, and the most recent ``time=`` position on stderr
+    is translated into a progress fraction when a total duration is known.
+    """
     try:
         process = await asyncio.create_subprocess_exec(
             *args,
@@ -164,12 +234,50 @@ async def _run_process(args: list[str], *, timeout_seconds: float = 900) -> tupl
         )
     except (FileNotFoundError, OSError) as exc:
         raise RenderToolError("media_process_unavailable", str(exc)) from exc
+    assert process.stdout is not None and process.stderr is not None
+    stdout_buffer = bytearray()
+    stderr_buffer = bytearray()
+    stdout_task = asyncio.create_task(_drain_stream(process.stdout, stdout_buffer))
+    stderr_task = asyncio.create_task(_drain_stream(process.stderr, stderr_buffer))
+    wait_task = asyncio.create_task(process.wait())
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + timeout_seconds
+    last_seconds: float | None = None
     try:
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
-    except TimeoutError as exc:
+        while True:
+            done, _ = await asyncio.wait({wait_task}, timeout=poll_interval_seconds)
+            if wait_task in done:
+                break
+            if await _invoke_cancel_check(cancel_check):
+                process.kill()
+                await process.wait()
+                raise RenderCancelledError()
+            if loop.time() >= deadline:
+                process.kill()
+                await process.wait()
+                raise RenderToolError("media_process_timeout", "media process timed out")
+            position = _parse_ffmpeg_seconds(bytes(stderr_buffer))
+            if position is not None and position != last_seconds:
+                last_seconds = position
+                if total_duration_seconds and total_duration_seconds > 0:
+                    await _invoke_progress(on_progress, position / total_duration_seconds)
+        await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+        stdout = bytes(stdout_buffer)
+        stderr = bytes(stderr_buffer)
+        final_position = _parse_ffmpeg_seconds(stderr)
+        if final_position is not None and final_position != last_seconds:
+            last_seconds = final_position
+            if total_duration_seconds and total_duration_seconds > 0:
+                await _invoke_progress(on_progress, final_position / total_duration_seconds)
+    except asyncio.CancelledError:
         process.kill()
         await process.wait()
-        raise RenderToolError("media_process_timeout", "media process timed out") from exc
+        raise
+    finally:
+        for task in (stdout_task, stderr_task, wait_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(wait_task, stdout_task, stderr_task, return_exceptions=True)
     if process.returncode != 0:
         detail = stderr.decode("utf-8", errors="replace")[-4000:]
         raise RenderToolError("media_process_failed", detail or "media process failed")
@@ -372,6 +480,8 @@ async def render_video(
     ffprobe_path: str | None = None,
     probe_error_code: str = "render_probe_invalid",
     packaging: object | None = None,
+    on_progress: ProgressCallback | None = None,
+    cancel_check: CancelCheck | None = None,
 ) -> dict[str, Any]:
     """Hard-cut timeline clips into a validated MP4 using explicit argv execution."""
     if width <= 0 or height <= 0:
@@ -397,6 +507,7 @@ async def render_video(
         if not clips:
             raise RenderToolError("source_ref_invalid", "timeline must contain at least one clip")
         probes = await asyncio.gather(*(_probe_clip_input(clip.path, ffprobe_path=ffprobe_path) for clip in clips))
+        total_duration = sum(_clip_length_seconds(clip, probe) for clip, probe in zip(clips, probes, strict=True))
         output_path.parent.mkdir(parents=True, exist_ok=True)
         args = [ffmpeg, "-y"]
         for clip in clips:
@@ -430,7 +541,12 @@ async def render_video(
                 str(output_path),
             ]
         )
-        await _run_process(args)
+        await _run_process(
+            args,
+            on_progress=on_progress,
+            cancel_check=cancel_check,
+            total_duration_seconds=total_duration or None,
+        )
         return {
             key: value
             for key, value in (
@@ -453,6 +569,8 @@ async def render_low_resolution_preview(
     ffmpeg_path: str | None = None,
     ffprobe_path: str | None = None,
     packaging: object | None = None,
+    on_progress: ProgressCallback | None = None,
+    cancel_check: CancelCheck | None = None,
 ) -> dict[str, Any]:
     """Hard-cut timeline clips into a validated low-resolution MP4 preview."""
     return await render_video(
@@ -469,6 +587,8 @@ async def render_low_resolution_preview(
         ffprobe_path=ffprobe_path,
         probe_error_code="preview_probe_invalid",
         packaging=packaging,
+        on_progress=on_progress,
+        cancel_check=cancel_check,
     )
 
 
@@ -528,6 +648,8 @@ async def burn_in_subtitles(
     subtitle_path: Path,
     output_path: Path,
     ffmpeg_path: str | None = None,
+    on_progress: ProgressCallback | None = None,
+    cancel_check: CancelCheck | None = None,
 ) -> dict[str, Any]:
     """Burn a project-local subtitle file into a video using direct argv execution."""
     source = _resolve_project_file(project_root, video_path)
@@ -542,7 +664,9 @@ async def burn_in_subtitles(
     destination.parent.mkdir(parents=True, exist_ok=True)
     ffmpeg = ffmpeg_path or resolve_tool("ffmpeg")
     await _run_process(
-        build_subtitle_burn_in_command(ffmpeg, video_path=source, subtitle_path=subtitles, output_path=destination)
+        build_subtitle_burn_in_command(ffmpeg, video_path=source, subtitle_path=subtitles, output_path=destination),
+        on_progress=on_progress,
+        cancel_check=cancel_check,
     )
     if not destination.is_file() or destination.stat().st_size <= 0:
         raise RenderToolError("subtitle_output_missing", "ffmpeg did not produce a subtitled video")

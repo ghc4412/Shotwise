@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { API } from "@/api";
@@ -23,6 +23,7 @@ vi.mock("@/api", () => ({
     createAssemblyPreviewRender: vi.fn(),
     transitionAssemblyPlan: vi.fn(),
     retryRenderJob: vi.fn(),
+    cancelRenderJob: vi.fn(),
     getRenderJob: vi.fn(),
     retryFinalRenderJob: vi.fn(),
     downloadRenderJobArtifact: vi.fn(),
@@ -93,6 +94,9 @@ function makeFinalJob(overrides: Partial<AssemblyRenderJob> = {}): AssemblyRende
     revision_number: 2,
     kind: "final",
     status: "queued",
+    progress: 0,
+    progress_stage: null,
+    cancel_requested_at: null,
     attempt: 1,
     max_attempts: 3,
     ...overrides,
@@ -106,6 +110,9 @@ function makePreviewJob(overrides: Partial<AssemblyRenderJob> = {}): AssemblyRen
     revision_number: 2,
     kind: "preview",
     status: "queued",
+    progress: 0,
+    progress_stage: null,
+    cancel_requested_at: null,
     attempt: 1,
     max_attempts: 3,
     ...overrides,
@@ -370,6 +377,93 @@ describe("AssemblyPlanPage", () => {
     expect(await screen.findByText("渲染错误：ffmpeg failed")).toBeInTheDocument();
     await user.click(screen.getByTestId("assembly-final-retry"));
     await waitFor(() => expect(API.retryFinalRenderJob).toHaveBeenCalledWith("final-job-1"));
+  });
+
+  it("shows live progress and stage for a running final render", async () => {
+    const user = userEvent.setup();
+    const readyPlan = makeReadyPlan();
+    vi.mocked(API.listAssemblyPlans).mockResolvedValue({ items: [readyPlan] });
+    vi.mocked(API.getAssemblyPlan).mockResolvedValue(readyPlan);
+    vi.mocked(API.createAssemblyFinalRender).mockResolvedValue(makeFinalJob({
+      status: "running",
+      progress: 0.42,
+      progress_stage: "rendering_video",
+    }));
+    vi.mocked(API.getRenderJob).mockReturnValue(new Promise<AssemblyRenderJob>(() => {}));
+    renderPage();
+    await user.click(await screen.findByTestId("assembly-final-render"));
+    const progress = await screen.findByTestId("assembly-final-render-progress");
+    expect(within(progress).getByRole("progressbar")).toHaveAttribute("aria-valuenow", "42");
+    expect(screen.getByTestId("assembly-final-render-progress-stage")).toHaveTextContent("正在渲染视频");
+    expect(screen.getByTestId("assembly-final-render-progress-percent")).toHaveTextContent("进度 42%");
+  });
+
+  it("surfaces an unknown render stage verbatim instead of crashing", async () => {
+    const user = userEvent.setup();
+    const readyPlan = makeReadyPlan();
+    vi.mocked(API.listAssemblyPlans).mockResolvedValue({ items: [readyPlan] });
+    vi.mocked(API.getAssemblyPlan).mockResolvedValue(readyPlan);
+    vi.mocked(API.createAssemblyFinalRender).mockResolvedValue(makeFinalJob({
+      status: "running",
+      progress: 0.1,
+      progress_stage: "custom_stage",
+    }));
+    vi.mocked(API.getRenderJob).mockReturnValue(new Promise<AssemblyRenderJob>(() => {}));
+    renderPage();
+    await user.click(await screen.findByTestId("assembly-final-render"));
+    const stage = await screen.findByTestId("assembly-final-render-progress-stage");
+    expect(stage).toHaveTextContent("处理中");
+    expect(stage).toHaveTextContent("custom_stage");
+  });
+
+  it("cancels a running final render after confirmation and exposes retry", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const readyPlan = makeReadyPlan();
+    vi.mocked(API.listAssemblyPlans).mockResolvedValue({ items: [readyPlan] });
+    vi.mocked(API.getAssemblyPlan).mockResolvedValue(readyPlan);
+    vi.mocked(API.createAssemblyFinalRender).mockResolvedValue(makeFinalJob({
+      status: "running",
+      progress: 0.3,
+      progress_stage: "preparing",
+    }));
+    vi.mocked(API.getRenderJob).mockReturnValue(new Promise<AssemblyRenderJob>(() => {}));
+    vi.mocked(API.cancelRenderJob).mockResolvedValue(makeFinalJob({
+      status: "cancelled",
+      cancel_requested_at: "2026-09-13T00:03:00Z",
+    }));
+    renderPage();
+    await user.click(await screen.findByTestId("assembly-final-render"));
+    await user.click(await screen.findByTestId("assembly-final-cancel"));
+    await waitFor(() => expect(API.cancelRenderJob).toHaveBeenCalledWith("final-job-1"));
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(await screen.findByTestId("assembly-final-cancelled")).toBeInTheDocument();
+    expect(screen.queryByTestId("assembly-final-cancel")).not.toBeInTheDocument();
+    expect(screen.getByTestId("assembly-final-retry")).toBeInTheDocument();
+  });
+
+  it("disables the cancel control and blocks duplicate submits while cancelling", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const readyPlan = makeReadyPlan();
+    vi.mocked(API.listAssemblyPlans).mockResolvedValue({ items: [readyPlan] });
+    vi.mocked(API.getAssemblyPlan).mockResolvedValue(readyPlan);
+    vi.mocked(API.createAssemblyFinalRender).mockResolvedValue(makeFinalJob({ status: "running", progress: 0.2 }));
+    vi.mocked(API.getRenderJob).mockReturnValue(new Promise<AssemblyRenderJob>(() => {}));
+    vi.mocked(API.cancelRenderJob).mockResolvedValue(makeFinalJob({
+      status: "cancelling",
+      cancel_requested_at: "2026-09-13T00:03:00Z",
+    }));
+    renderPage();
+    await user.click(await screen.findByTestId("assembly-final-render"));
+    await user.click(await screen.findByTestId("assembly-final-cancel"));
+    await waitFor(() => expect(API.cancelRenderJob).toHaveBeenCalledTimes(1));
+    const button = await screen.findByTestId("assembly-final-cancel");
+    await waitFor(() => expect(button).toBeDisabled());
+    expect(button).toHaveTextContent("正在取消");
+    await user.click(button);
+    expect(API.cancelRenderJob).toHaveBeenCalledTimes(1);
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
   });
 
   it("confirms a draft plan and enables the preview render control", async () => {
