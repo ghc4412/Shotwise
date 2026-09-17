@@ -16,7 +16,7 @@ from claude_agent_sdk import tool
 
 import server.agent_runtime.sdk_tools.director_review as director_review
 from lib.db import async_session_factory
-from lib.media_assembly.plan import AssemblyPlanValidationError
+from lib.media_assembly.plan import SUPPORTED_TIMELINE_TRANSITIONS, AssemblyPlanValidationError
 from lib.script_models import resolve_content_mode
 from server.agent_runtime.sdk_tools._context import ToolContext, tool_error
 from server.services import media_assembly as assembly_service
@@ -433,7 +433,21 @@ def _service_timeline(items: list[dict[str, Any]], manifest: dict[str, Any]) -> 
         end = trim.get("end_seconds")
         end_trim = 0.0 if end is None else max(0.0, float(duration) - float(end))
         transition_name = item.get("transition_to_next", "cut")
-        transition = None if transition_name == "cut" else {"type": transition_name, "duration_seconds": 0.0}
+        if transition_name not in SUPPORTED_TIMELINE_TRANSITIONS:
+            raise ValueError(f"timeline_items[{index}].transition_to_next must be cut, fade, dissolve, or wipe")
+        transition = None
+        if transition_name != "cut":
+            transition_duration = item.get("transition_duration_seconds")
+            raw_transition = item.get("transition")
+            if isinstance(raw_transition, dict):
+                transition_duration = raw_transition.get("duration_seconds", transition_duration)
+            if (
+                not isinstance(transition_duration, (int, float))
+                or isinstance(transition_duration, bool)
+                or transition_duration <= 0
+            ):
+                transition_duration = 0.5
+            transition = {"type": transition_name, "duration_seconds": float(transition_duration)}
         result.append(
             {
                 # The domain schema requires unique ids even when the director

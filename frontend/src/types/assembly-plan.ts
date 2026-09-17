@@ -42,6 +42,11 @@ export interface AssemblyValidation {
 /** A timeline item in an immutable assembly-plan revision. */
 export type AssemblyItemStatus = "ready" | "missing" | "stale" | "failed";
 
+export interface AssemblyTimelineTransition {
+  type: "cut" | "fade" | "dissolve" | "wipe";
+  duration_seconds: number;
+}
+
 export interface AssemblyTimelineItem {
   id: string;
   order: number;
@@ -50,7 +55,7 @@ export interface AssemblyTimelineItem {
   duration_seconds: number;
   trim_start_seconds?: number;
   trim_end_seconds?: number;
-  transition?: string | null;
+  transition?: AssemblyTimelineTransition | null;
   label?: string | null;
   media_ref?: string | null;
   thumbnail_url?: string | null;

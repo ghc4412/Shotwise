@@ -7,7 +7,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from lib.media_assembly.plan import packaging_section_enabled
+from lib.media_assembly.plan import packaging_section_enabled, resolve_timeline_transitions
 
 _NUMBER = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)"
 _SILENCE_START = re.compile(rf"silence_start:\s*(?P<start>{_NUMBER})", re.IGNORECASE)
@@ -283,8 +283,14 @@ def expected_timeline_duration(
     timeline: Sequence[Mapping[str, object]],
     packaging: object | None = None,
 ) -> float:
-    """Calculate the expected duration of timeline content plus packaging clips."""
-    total = 0.0
+    """Calculate the expected duration of timeline content plus packaging clips.
+
+    Renderable transitions overlap neighbouring clips, so every effective boundary
+    shortens the rendered runtime by its overlap; boundaries that degrade to a hard
+    cut contribute nothing.
+    """
+    durations: list[float] = []
+    transitions: list[tuple[object, object]] = []
     for index, item in enumerate(timeline):
         duration = _duration(item.get("duration_seconds"), name=f"timeline[{index}].duration_seconds")
         trim_start = _duration(item.get("trim_start_seconds", 0), name=f"timeline[{index}].trim_start_seconds")
@@ -292,7 +298,14 @@ def expected_timeline_duration(
         effective = duration - trim_start - trim_end
         if effective < 0:
             raise ValueError(f"timeline[{index}] has negative effective duration")
-        total += effective
+        durations.append(effective)
+        transition = item.get("transition")
+        if isinstance(transition, Mapping):
+            transitions.append((transition.get("type"), transition.get("duration_seconds", 0)))
+        else:
+            transitions.append((None, 0))
+
+    total = sum(durations) - sum(resolve_timeline_transitions(transitions, durations))
 
     if isinstance(packaging, Mapping):
         for name in ("cover", "intro", "outro"):
