@@ -64,7 +64,13 @@ export interface AssemblyTimelineItem {
 export type AssemblyAudioStrategy = "keep" | "duck" | "mute";
 export type AssemblySubtitleMode = "srt" | "vtt" | "burn-in";
 
-export type AssemblyRenderJobStatus = "queued" | "running" | "succeeded" | "failed";
+export type AssemblyRenderJobStatus =
+  | "queued"
+  | "running"
+  | "cancelling"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
 
 export interface AssemblyRenderJob {
   id: string;
@@ -73,6 +79,10 @@ export interface AssemblyRenderJob {
   revision_number: number;
   kind: "preview" | "final";
   status: AssemblyRenderJobStatus;
+  /** Render progress in the 0..1 range. */
+  progress: number;
+  progress_stage: string | null;
+  cancel_requested_at: string | null;
   attempt?: number | null;
   max_attempts?: number | null;
   input_fingerprint?: string | null;
