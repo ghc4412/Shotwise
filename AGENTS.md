@@ -151,7 +151,7 @@ API Key、后端选择、模型配置等通过 WebUI 配置页（`/settings`）�
 
 ### Issue tracker
 
-议题（issue/Spec）追踪在 `ghc4412/Shotwise` 的 GitHub Issues，统一用 `gh` CLI 操作。Spec 用 `Spec` 标签 + `Spec:` 标题前缀；细分 issue 标题尾缀 `[Spec #N]` 并挂原生 sub-issue。详见 `docs/agents/issue-tracker.md`。
+议题（issue/Spec）追踪在 `ghc4412/Shotwise` 的 GitHub Issues，统一用 `gh` CLI 操作。Spec 用 `Spec` 标签 + `Spec:` 标题前缀；ticket 标题尾缀 `[Spec #N]` 并挂原生 sub-issue。详见 `docs/agents/issue-tracker.md`。
 
 ### Triage labels
 
