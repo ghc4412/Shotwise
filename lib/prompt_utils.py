@@ -6,6 +6,7 @@ Prompt 工具函数
 
 import logging
 import re
+from collections.abc import Mapping
 from typing import Any, get_args
 
 import yaml
@@ -14,6 +15,29 @@ from lib.asset_types import normalize_asset_bucket, normalize_asset_name
 from lib.script_models import CameraMotion, ShotType
 
 logger = logging.getLogger(__name__)
+
+# 提示词 YAML 的行宽上限。PyYAML 默认 80 列，超宽的纯量会在空格处折成多行——英文 / 越南语
+# 提示词几乎每个值都超 80 列，折行会把换行与缩进一并喂给供应商模型。取一个任何提示词都达不到
+# 的值，使值内容与作者所写逐字一致。
+_PROMPT_YAML_WIDTH = 1_000_000
+
+
+def _dump_prompt_yaml(ordered: Mapping[str, Any]) -> str:
+    """提示词各段共用的 YAML 序列化：键序保持插入序、Unicode 原样、块式布局、不折行。"""
+    return yaml.dump(
+        dict(ordered),
+        allow_unicode=True,
+        default_flow_style=False,
+        sort_keys=False,
+        width=_PROMPT_YAML_WIDTH,
+    )
+
+
+# 反向约束的 YAML 键：分镜图置于 ``Composition`` 之后，视频置于 ``Dialogue`` 之后。
+AVOID_KEY = "Avoid"
+# 分镜图与视频的反向条目各自定义，内容相同也不合并（同 ``lib.prompt_builders`` 的资产图反向提示词）。
+STORYBOARD_AVOID_ITEMS = "水印、多余文字、Logo"
+VIDEO_AVOID_ITEMS = "BGM、文字字幕、水印"
 
 # 风格值开头的「画风：」前缀（全角/半角冒号）。新版风格模版已去前缀，此处兼容存量 project.json。
 _STYLE_PREFIX_RE = re.compile(r"^画风[：:]\s*")
@@ -50,18 +74,17 @@ def image_prompt_to_yaml(image_prompt: dict, project_style: str) -> str:
         project_style: 项目级风格设置（从 project.json 读取）
 
     Returns:
-        YAML 格式字符串，用于 Gemini API 调用
+        YAML 格式字符串，键序 Style / Scene / Composition / Avoid
     """
-    ordered = {
-        "Style": normalize_style(project_style),
-        "Scene": image_prompt["scene"],
-        "Composition": {
-            "shot_type": image_prompt["composition"]["shot_type"],
-            "lighting": image_prompt["composition"]["lighting"],
-            "ambiance": image_prompt["composition"]["ambiance"],
-        },
+    ordered: dict[str, Any] = {"Style": normalize_style(project_style)}
+    ordered["Scene"] = image_prompt["scene"]
+    ordered["Composition"] = {
+        "shot_type": image_prompt["composition"]["shot_type"],
+        "lighting": image_prompt["composition"]["lighting"],
+        "ambiance": image_prompt["composition"]["ambiance"],
     }
-    return yaml.dump(ordered, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    ordered[AVOID_KEY] = STORYBOARD_AVOID_ITEMS
+    return _dump_prompt_yaml(ordered)
 
 
 def video_prompt_to_yaml(video_prompt: dict) -> str:
@@ -79,7 +102,7 @@ def video_prompt_to_yaml(video_prompt: dict) -> str:
             }
 
     Returns:
-        YAML 格式字符串，用于 Veo API 调用
+        YAML 格式字符串，以 ``Avoid`` 反向约束键收尾
     """
     dialogue = [{"Speaker": d["speaker"], "Line": d["line"]} for d in video_prompt.get("dialogue", [])]
     voice_profiles = video_prompt.get("voice_profiles") or []
@@ -96,8 +119,9 @@ def video_prompt_to_yaml(video_prompt: dict) -> str:
     # 仅在有对话时添加 Dialogue 字段
     if dialogue:
         ordered["Dialogue"] = dialogue
+    ordered[AVOID_KEY] = VIDEO_AVOID_ITEMS
 
-    return yaml.dump(ordered, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    return _dump_prompt_yaml(ordered)
 
 
 def strip_voice_profiles(video_prompt: dict[str, Any]) -> dict[str, Any]:

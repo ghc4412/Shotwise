@@ -5,8 +5,8 @@ WebUI（server/services/generation_tasks.py）和 Skill（agent_runtime_profile/
 
 设计要点：
 - 无 backend 锁定：纯文本拼接，由调用方决定走哪个 image/video provider。
-- 反向提示词统一以「画面避免：xxx」追加到 prompt 末尾，不再使用各 backend 的 negative_prompt 参数通道
-  （image backends 大多 silent 丢弃，参数化反而增加分叉）。
+- 反向提示词写在 prompt 末尾（资产图为「画面避免：xxx」句，分镜图与视频为 YAML 键 ``Avoid``），
+  不使用各 backend 的 negative_prompt 参数通道（image backends 大多 silent 丢弃，参数化反而增加分叉）。
 - 防崩与反向短语精简：只保关键项，避免 CFG 权重稀释。
 - 反向提示词按图种各自定义，内容相同也不合并：合并后若要单独调整其中一类仍需先拆分常量，
   且合并的常量无法表达各图种之间是必须一致还是恰好相同。
@@ -15,6 +15,8 @@ WebUI（server/services/generation_tasks.py）和 Skill（agent_runtime_profile/
 from __future__ import annotations
 
 from collections.abc import Sequence
+
+from lib.prompt_utils import AVOID_KEY, STORYBOARD_AVOID_ITEMS, VIDEO_AVOID_ITEMS
 
 # ---------------------------------------------------------------------------
 # 内部常量：防崩 / 反向 / 布局 / 风格前缀
@@ -61,8 +63,8 @@ _NEGATIVE_TAIL_CHARACTER = "画面避免：水印、多余文字、Logo。"
 _NEGATIVE_TAIL_SCENE = "画面避免：出镜人物、水印、多余文字、Logo。"
 _NEGATIVE_TAIL_PROP = "画面避免：出镜人物、水印、多余文字、Logo。"
 _NEGATIVE_TAIL_PRODUCT = "画面避免：出镜人物、水印、多余文字、Logo。"
-_NEGATIVE_TAIL_STORYBOARD = "画面避免：水印、多余文字、Logo。"
-_NEGATIVE_TAIL_VIDEO = "禁止出现：BGM、文字字幕、水印。"
+_NEGATIVE_TAIL_STORYBOARD = f"{AVOID_KEY}: {STORYBOARD_AVOID_ITEMS}"
+_NEGATIVE_TAIL_VIDEO = f"{AVOID_KEY}: {VIDEO_AVOID_ITEMS}"
 
 
 def _style_prefix(style: str = "", style_description: str = "") -> str:

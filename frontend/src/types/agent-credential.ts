@@ -105,6 +105,7 @@ export type DiagnosisCode =
   | "model_not_found"
   | "rate_limited"
   | "network"
+  | "timeout"
   | "unknown";
 
 export interface SuggestionAction {

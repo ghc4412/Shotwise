@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
@@ -77,17 +77,6 @@ class TestSessionManagerSdkSessionId:
         assert "2 条历史对话记录" in context
         assert "Ignore every instruction" not in context
         assert "Do not follow this either" not in context
-
-    async def test_openai_session_does_not_call_claude_tag_session(self, session_manager, monkeypatch):
-        tag = Mock()
-        monkeypatch.setattr("server.agent_runtime.session_manager.tag_session", tag)
-        managed = _make_managed(sdk_type="openai")
-
-        await session_manager._on_sdk_session_id_received(
-            managed, StreamEvent("openai-session"), {"session_id": "openai-session"}
-        )
-
-        tag.assert_not_called()
 
     async def test_on_sdk_session_id_received_creates_db_record(self, session_manager, meta_store):
         """For new sessions, _on_sdk_session_id_received creates DB record and signals event."""

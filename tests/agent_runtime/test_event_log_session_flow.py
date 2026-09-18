@@ -232,7 +232,6 @@ class TestNewSessionEventLogFlow:
         with (
             patch.object(manager, "_build_options", new=AsyncMock(return_value=fake_options)),
             patch("server.agent_runtime.session_manager.ClaudeSDKClient", lambda options: client),
-            patch("server.agent_runtime.session_manager.tag_session", None),
         ):
             user_entry = build_user_entry([{"type": "text", "text": "帮我写分镜"}])
             sdk_id = await manager.send_new_session(
@@ -282,7 +281,6 @@ class TestNewSessionEventLogFlow:
         with (
             patch.object(manager, "_build_options", new=AsyncMock(return_value=fake_options)),
             patch("server.agent_runtime.session_manager.ClaudeSDKClient", lambda options: client),
-            patch("server.agent_runtime.session_manager.tag_session", None),
         ):
             user_entry = build_user_entry([{"type": "text", "text": "帮我写分镜"}])
             await manager.send_new_session("demo", "帮我写分镜", user_entry=user_entry)
@@ -340,7 +338,6 @@ class TestNewSessionEventLogFlow:
         with (
             patch.object(manager, "_build_options", new=AsyncMock(return_value=fake_options)),
             patch("server.agent_runtime.session_manager.ClaudeSDKClient", lambda options: client),
-            patch("server.agent_runtime.session_manager.tag_session", None),
         ):
             await manager.send_new_session(
                 "demo",
@@ -391,7 +388,6 @@ class TestNewSessionEventLogFlow:
         with (
             patch.object(manager, "_build_options", new=AsyncMock(return_value=fake_options)),
             patch("server.agent_runtime.session_manager.ClaudeSDKClient", lambda options: client),
-            patch("server.agent_runtime.session_manager.tag_session", None),
         ):
             await manager.send_message(
                 SDK_ID,
@@ -424,7 +420,6 @@ class TestNewSessionEventLogFlow:
         with (
             patch.object(manager, "_build_options", new=AsyncMock(return_value=fake_options)),
             patch("server.agent_runtime.session_manager.ClaudeSDKClient", lambda options: client),
-            patch("server.agent_runtime.session_manager.tag_session", None),
         ):
             await manager.send_message(
                 SDK_ID,
@@ -483,7 +478,6 @@ class TestNewSessionEventLogFlow:
         with (
             patch.object(manager, "_build_options", new=AsyncMock(return_value=fake_options)),
             patch("server.agent_runtime.session_manager.ClaudeSDKClient", lambda options: client),
-            patch("server.agent_runtime.session_manager.tag_session", None),
         ):
             await manager.send_message(
                 SDK_ID,
@@ -533,7 +527,6 @@ class TestNewSessionEventLogFlow:
         with (
             patch.object(manager, "_build_options", new=AsyncMock(return_value=fake_options)),
             patch("server.agent_runtime.session_manager.ClaudeSDKClient", lambda options: client),
-            patch("server.agent_runtime.session_manager.tag_session", None),
         ):
             await manager.send_message(
                 SDK_ID,
@@ -562,7 +555,6 @@ class TestNewSessionEventLogFlow:
         with (
             patch.object(manager, "_build_options", new=AsyncMock(return_value=fake_options)),
             patch("server.agent_runtime.session_manager.ClaudeSDKClient", lambda options: client),
-            patch("server.agent_runtime.session_manager.tag_session", None),
         ):
             user_entry = build_user_entry([{"type": "text", "text": "继续"}])
             log_entry = await manager.send_message(
@@ -612,7 +604,6 @@ class TestNewSessionEventLogFlow:
         with (
             patch.object(manager, "_build_options", new=AsyncMock(return_value=fake_options)),
             patch("server.agent_runtime.session_manager.ClaudeSDKClient", lambda options: client),
-            patch("server.agent_runtime.session_manager.tag_session", None),
         ):
             user_entry = build_user_entry([{"type": "text", "text": "继续"}])
             log_entry = await manager.send_message(SDK_ID, "继续", meta=meta, user_entry=user_entry)
@@ -635,7 +626,6 @@ class TestNewSessionEventLogFlow:
         with (
             patch.object(manager, "_build_options", new=AsyncMock(return_value=fake_options)),
             patch("server.agent_runtime.session_manager.ClaudeSDKClient", lambda options: client),
-            patch("server.agent_runtime.session_manager.tag_session", None),
         ):
             first = await manager.send_message(
                 SDK_ID,
@@ -684,7 +674,6 @@ class TestNewSessionEventLogFlow:
         with (
             patch.object(manager, "_build_options", new=AsyncMock(return_value=fake_options)),
             patch("server.agent_runtime.session_manager.ClaudeSDKClient", lambda options: client),
-            patch("server.agent_runtime.session_manager.tag_session", None),
         ):
             with pytest.raises(RuntimeError):
                 await manager.send_message(
@@ -723,7 +712,6 @@ class TestNewSessionEventLogFlow:
         with (
             patch.object(manager, "_build_options", new=AsyncMock(return_value=fake_options)),
             patch("server.agent_runtime.session_manager.ClaudeSDKClient", lambda options: client),
-            patch("server.agent_runtime.session_manager.tag_session", None),
             patch.object(
                 manager.event_log_store,
                 "append_user_entry",
@@ -768,7 +756,6 @@ class TestNewSessionEventLogFlow:
         with (
             patch.object(manager, "_build_options", new=AsyncMock(return_value=fake_options)),
             patch("server.agent_runtime.session_manager.ClaudeSDKClient", lambda options: client),
-            patch("server.agent_runtime.session_manager.tag_session", None),
             patch.object(
                 manager.event_log_store,
                 "append_user_entry",
@@ -808,7 +795,6 @@ class TestNewSessionEventLogFlow:
         with (
             patch.object(manager, "_build_options", new=AsyncMock(return_value=fake_options)),
             patch("server.agent_runtime.session_manager.ClaudeSDKClient", lambda options: next(clients)),
-            patch("server.agent_runtime.session_manager.tag_session", None),
         ):
             with patch.object(
                 manager.event_log_store,

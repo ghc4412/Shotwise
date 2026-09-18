@@ -4,6 +4,9 @@ import pytest
 import yaml
 
 from lib.prompt_utils import (
+    AVOID_KEY,
+    STORYBOARD_AVOID_ITEMS,
+    VIDEO_AVOID_ITEMS,
     build_drama_video_prompt,
     image_prompt_to_yaml,
     is_structured_image_prompt,
@@ -50,6 +53,8 @@ class TestPromptUtils:
         assert parsed["Style"] == "Anime"
         assert parsed["Scene"] == "夜雨中的街道"
         assert parsed["Composition"]["shot_type"] == "Medium Shot"
+        assert parsed[AVOID_KEY] == STORYBOARD_AVOID_ITEMS
+        assert list(parsed) == ["Style", "Scene", "Composition", AVOID_KEY]
 
     def test_image_prompt_to_yaml_strips_legacy_huafeng_style(self):
         # 存量 project.json 的 style 带「画风：」前缀，注入 YAML 前兜底清理，避免 Style: 画风：叠加
@@ -77,6 +82,9 @@ class TestPromptUtils:
         assert parsed_a["Action"] == "抬头观察"
         assert parsed_a["Dialogue"][0]["Speaker"] == "姜月茴"
         assert "Dialogue" not in parsed_b
+        assert parsed_a[AVOID_KEY] == VIDEO_AVOID_ITEMS
+        assert parsed_b[AVOID_KEY] == VIDEO_AVOID_ITEMS
+        assert list(parsed_a)[-1] == AVOID_KEY
 
     def test_structured_checks(self):
         assert is_structured_image_prompt({"scene": "x"})
@@ -100,6 +108,30 @@ class TestPromptUtils:
 
         without_profiles = {"action": "快步前进", "camera_motion": "Pan Left", "ambiance_audio": "脚步声"}
         assert "Voice_Profiles" not in yaml.safe_load(video_prompt_to_yaml(without_profiles))
+
+
+class TestPromptYamlNoFolding:
+    """提示词 YAML 不按 80 列折行：折行会把换行与缩进一并喂给供应商模型。"""
+
+    _LONG = (
+        "Extremely detailed production design of a rain-soaked neon alley at midnight, "
+        "with reflective puddles, drifting fog layers, distant traffic bokeh and warm "
+        "street-lamp rim light across the wet asphalt surface"
+    )
+
+    def test_image_prompt_long_value_stays_on_one_line(self):
+        data = {
+            "scene": self._LONG,
+            "composition": {"shot_type": "Medium Shot", "lighting": "暖光", "ambiance": ""},
+        }
+        text = image_prompt_to_yaml(data, "Anime")
+        assert [line for line in text.splitlines() if line.startswith("Scene:")] == [f"Scene: {self._LONG}"]
+        assert yaml.safe_load(text)["Scene"] == self._LONG
+
+    def test_video_prompt_long_value_stays_on_one_line(self):
+        text = video_prompt_to_yaml({"action": self._LONG, "camera_motion": "Static", "ambiance_audio": "小雨"})
+        assert [line for line in text.splitlines() if line.startswith("Action:")] == [f"Action: {self._LONG}"]
+        assert yaml.safe_load(text)["Action"] == self._LONG
 
 
 def _utterance(speaker: str | None, text: str) -> dict[str, object]:

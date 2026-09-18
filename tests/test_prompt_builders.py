@@ -102,6 +102,25 @@ class TestImageNegativeTail:
             assert append_image_negative_tail(blank) == expected
 
 
+class TestAvoidKeyTails:
+    """分镜图与视频的反向约束改用 ``Avoid`` YAML 键，资产图保持「画面避免：」散文句。"""
+
+    @pytest.mark.unit
+    def test_image_tail_is_avoid_key(self):
+        assert append_image_negative_tail("") == "Avoid: 水印、多余文字、Logo"
+
+    @pytest.mark.unit
+    def test_video_tail_is_avoid_key(self):
+        assert append_video_negative_tail("") == "Avoid: BGM、文字字幕、水印"
+
+    @pytest.mark.unit
+    def test_asset_sheets_do_not_use_avoid_key(self):
+        assert "Avoid:" not in build_character_prompt("张三", "短发青年")
+        assert "Avoid:" not in build_scene_prompt("祠堂", "昏暗古朴")
+        assert "Avoid:" not in build_prop_prompt("玉佩", "古朴温润")
+        assert "Avoid:" not in build_product_prompt("护手霜", "白色管装，哑光质感")
+
+
 class TestProductFidelityTail:
     @pytest.mark.unit
     def test_appends_instruction_with_product_names(self):
