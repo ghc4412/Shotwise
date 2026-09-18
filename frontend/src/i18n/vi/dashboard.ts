@@ -1243,6 +1243,7 @@ export default {
   'output_token_label': 'Đầu ra',
   'tokens_suffix': 'token',
   'records_count': '{{count}} bản ghi',
+  'interrupted_call_message': 'Bị ngắt do dịch vụ khởi động lại',
 
   // WorkspaceNotificationsDrawer
   'notifications_count': '{{count}} thông báo',

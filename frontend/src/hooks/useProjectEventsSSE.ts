@@ -52,6 +52,11 @@ function isTaskChange(change: ProjectChange): boolean {
   return change.entity_type === "task";
 }
 
+/** 记账结算变更（刷新信号，非项目实体变更）。 */
+function isUsageRecordChange(change: ProjectChange): boolean {
+  return change.entity_type === "usage_record";
+}
+
 function getChangePriority(change: ProjectChange): number {
   if (COMPLETION_ACTIONS.has(change.action)) {
     return CHANGE_PRIORITY[change.action] ?? Number.MAX_SAFE_INTEGER;
@@ -254,8 +259,13 @@ export function useProjectEventsSSE(projectName?: string | null): void {
           // 会把前一批实体变更排队等待 refreshProject 的 `queuedFocusRef` 清成 null，用户
           // 因此丢失本该发生的自动导航与高亮。
           const taskChanges = payload.changes.filter(isTaskChange);
+          // 记账结算与任务终态同为刷新信号：混进实体变更会在 entityRevisions 里留下永不
+          // 被消费的 `usage_record:<id>` 键，并把前一批实体变更排队的聚焦目标清空。
           const entityChanges = payload.changes.filter(
-            (change) => !isTaskChange(change) && change.entity_type !== "publish_job",
+            (change) =>
+              !isTaskChange(change) &&
+              !isUsageRecordChange(change) &&
+              change.entity_type !== "publish_job",
           );
 
           // 提取并更新 asset fingerprints（零延迟，立即写入 store）
@@ -366,7 +376,13 @@ export function useProjectEventsSSE(projectName?: string | null): void {
           // 一直显示切分前的分配；grid_split_done 不进 GENERATION_ACTIONS（那是完成通知
           // 类别，切分不是一次生成），故在这里单列。
           const hasGridSplit = entityChanges.some((c) => c.action === "grid_split_done");
-          if ((hasGenerationEvent || hasBilledVoiceSampleTerminal || hasGridSplit) && projectName) {
+          // 一次供应商调用结算落库（成功/失败/取消）就是一笔费用变动；无任务的文本调用与
+          // 助手会话只有这一个信号，没有对应的任务终态或完成通知可依赖。
+          const hasUsageRecord = payload.changes.some(isUsageRecordChange);
+          if (
+            (hasGenerationEvent || hasBilledVoiceSampleTerminal || hasGridSplit || hasUsageRecord) &&
+            projectName
+          ) {
             useCostStore.getState().debouncedFetch(projectName);
           }
 

@@ -14,8 +14,8 @@ import { useUsageStore, type UsageStats, type UsageCall } from "@/stores/usage-s
 import { API } from "@/api";
 import { GlassPopover } from "@/components/ui/GlassPopover";
 import { ModalCloseButton } from "@/components/ui/ModalCloseButton";
-import { formatShortDateTime } from "@/utils/date-format";
 import { costEntries, formatCostOrZero, formatCurrencyAmount } from "@/utils/cost-format";
+import { formatCompactDateTime, formatCount, formatDurationMs } from "@/utils/number-format";
 import type { CallType } from "@/types/provider";
 
 // ---------------------------------------------------------------------------
@@ -28,6 +28,9 @@ interface UsageDrawerProps {
   projectName?: string | null;
   anchorRef: RefObject<HTMLElement | null>;
 }
+
+/** 后端启动收口写入的 error_message 哨兵，与 lib/db/repositories/usage_repo.py 保持一致。 */
+const INTERRUPTED_CALL_MESSAGE = "interrupted_by_restart";
 
 const TYPE_TONE: Record<CallType, { color: string; label: string }> = {
   video: { color: "oklch(0.78 0.13 305)", label: "video_type_label" },
@@ -44,7 +47,7 @@ const TYPE_ICON: Record<CallType, typeof Image> = {
 };
 
 export function UsageDrawer({ open, onClose, projectName, anchorRef }: UsageDrawerProps) {
-  const { t } = useTranslation("dashboard");
+  const { t, i18n } = useTranslation("dashboard");
   const {
     stats,
     calls,
@@ -106,11 +109,17 @@ export function UsageDrawer({ open, onClose, projectName, anchorRef }: UsageDraw
     return () => controller.abort();
   }, [open, loadCalls]);
 
+  // 后端把启动收口的中断行写成稳定哨兵，避免把中文/英文硬编码进 DB；展示时统一走 i18n。
+  const errorMessageOf = (message: string) =>
+    message === INTERRUPTED_CALL_MESSAGE ? t("interrupted_call_message") : message;
+
   const totalPages = Math.ceil(total / pageSize);
   const costParts = costEntries(stats?.cost_by_currency).map(([currency, amount]) =>
     formatCurrencyAmount(currency, amount),
   );
   const costSummary = costParts.length > 0 ? costParts : [formatCostOrZero(undefined)];
+  // 计数随界面语言分组（zh `1,234` / vi `1.234`），与设置页用量区同口径
+  const countOf = (value: number | undefined) => formatCount(value ?? 0, i18n.language);
 
   return (
     <GlassPopover
@@ -183,27 +192,27 @@ export function UsageDrawer({ open, onClose, projectName, anchorRef }: UsageDraw
         />
         <StatBlock
           label={t("image_type_label")}
-          value={String(stats?.image_count ?? 0)}
+          value={countOf(stats?.image_count)}
           icon={<Image className="h-3 w-3" style={{ color: TYPE_TONE.image.color }} />}
         />
         <StatBlock
           label={t("video_type_label")}
-          value={String(stats?.video_count ?? 0)}
+          value={countOf(stats?.video_count)}
           icon={<Video className="h-3 w-3" style={{ color: TYPE_TONE.video.color }} />}
         />
         <StatBlock
           label={t("text_type_label")}
-          value={String(stats?.text_count ?? 0)}
+          value={countOf(stats?.text_count)}
           icon={<FileText className="h-3 w-3" style={{ color: TYPE_TONE.text.color }} />}
         />
         <StatBlock
           label={t("audio_type_label")}
-          value={String(stats?.audio_count ?? 0)}
+          value={countOf(stats?.audio_count)}
           icon={<AudioLines className="h-3 w-3" style={{ color: TYPE_TONE.audio.color }} />}
         />
         <StatBlock
           label={t("failed_type_label")}
-          value={String(stats?.failed_count ?? 0)}
+          value={countOf(stats?.failed_count)}
           icon={
             <AlertCircle
               className="h-3 w-3"
@@ -235,9 +244,8 @@ export function UsageDrawer({ open, onClose, projectName, anchorRef }: UsageDraw
               const filename = extractFilename(call.output_path);
               const tone = TYPE_TONE[call.call_type] ?? TYPE_TONE.image;
               const TypeIcon = TYPE_ICON[call.call_type] ?? Image;
-              const durationInfo = call.duration_ms
-                ? `${(call.duration_ms / 1000).toFixed(1)}s`
-                : null;
+              const durationInfo = formatDurationMs(call.duration_ms, i18n.language);
+              const startedAt = call.started_at || call.created_at;
 
               return (
                 <li
@@ -292,18 +300,20 @@ export function UsageDrawer({ open, onClose, projectName, anchorRef }: UsageDraw
                       <>
                         {call.usage_tokens != null ? (
                           <span className="num">
-                            {call.usage_tokens.toLocaleString()} {t("tokens_suffix")}
+                            {formatCount(call.usage_tokens, i18n.language)} {t("tokens_suffix")}
                           </span>
                         ) : (
                           <>
                             {call.input_tokens != null && (
                               <span className="num">
-                                {t("input_token_label")} {call.input_tokens.toLocaleString()} {t("tokens_suffix")}
+                                {t("input_token_label")} {formatCount(call.input_tokens, i18n.language)}{" "}
+                                {t("tokens_suffix")}
                               </span>
                             )}
                             {call.output_tokens != null && (
                               <span className="num">
-                                {t("output_token_label")} {call.output_tokens.toLocaleString()} {t("tokens_suffix")}
+                                {t("output_token_label")} {formatCount(call.output_tokens, i18n.language)}{" "}
+                                {t("tokens_suffix")}
                               </span>
                             )}
                           </>
@@ -318,7 +328,7 @@ export function UsageDrawer({ open, onClose, projectName, anchorRef }: UsageDraw
                       </>
                     )}
                     <span className="num ml-auto shrink-0">
-                      {formatShortDateTime(call.started_at || call.created_at) ?? (call.started_at || call.created_at)}
+                      {formatCompactDateTime(startedAt, i18n.language) ?? startedAt}
                     </span>
                   </div>
                   {call.status === "failed" && call.error_message && (
@@ -329,9 +339,9 @@ export function UsageDrawer({ open, onClose, projectName, anchorRef }: UsageDraw
                         color: "oklch(0.85 0.10 25)",
                         border: "1px solid oklch(0.45 0.18 25 / 0.30)",
                       }}
-                      title={call.error_message}
+                      title={errorMessageOf(call.error_message)}
                     >
-                      {call.error_message}
+                      {errorMessageOf(call.error_message)}
                     </div>
                   )}
                 </li>
@@ -351,7 +361,7 @@ export function UsageDrawer({ open, onClose, projectName, anchorRef }: UsageDraw
             className="num text-[10px]"
             style={{ color: "var(--color-text-4)" }}
           >
-            {t("records_count", { count: total })}
+            {t("records_count", { count: countOf(total) })}
           </span>
           <div className="flex items-center gap-1">
             <button

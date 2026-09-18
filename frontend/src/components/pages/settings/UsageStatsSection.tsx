@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { API } from "@/api";
 import { CARD_STYLE } from "@/components/ui/darkroom-tokens";
 import { formatCostOrZero } from "@/utils/cost-format";
+import { formatCount, formatSeconds, localeOf } from "@/utils/number-format";
 import type { UsageStat } from "@/types";
 
 const EDITORIAL_KPI_STYLE: CSSProperties = {
@@ -41,12 +42,10 @@ export function UsageStatsSection() {
   const [timeRange, setTimeRange] = useState(7);
   const [providerFilter, setProviderFilter] = useState<string>("");
 
-  const percentFmt = useMemo(() => {
-    const lang = i18n.language.split("-")[0];
-    const localeMap: Record<string, string> = { zh: "zh-CN", en: "en-US", vi: "vi-VN" };
-    const locale = localeMap[lang] ?? "en-US";
-    return new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 0 });
-  }, [i18n.language]);
+  const percentFmt = useMemo(
+    () => new Intl.NumberFormat(localeOf(i18n.language), { style: "percent", maximumFractionDigits: 0 }),
+    [i18n.language],
+  );
 
   const TIME_RANGES = useMemo(
     () => [
@@ -135,7 +134,7 @@ export function UsageStatsSection() {
       >
         {[
           { label: t("total_cost"), value: formatCostOrZero(totals.costByCurrency) },
-          { label: t("total_calls"), value: totals.calls.toLocaleString() },
+          { label: t("total_calls"), value: formatCount(totals.calls, i18n.language) },
           {
             label: t("success_rate"),
             value:
@@ -237,11 +236,11 @@ export function UsageStatsSection() {
                 <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 font-mono text-[11px] tabular-nums text-text-3">
                   <span>
                     <span className="text-text-4">CALLS </span>
-                    {s.total_calls}
+                    {formatCount(s.total_calls, i18n.language)}
                   </span>
                   <span>
                     <span className="text-text-4">OK </span>
-                    {s.success_calls}
+                    {formatCount(s.success_calls, i18n.language)}
                   </span>
                   <span>
                     <span className="text-text-4">RATE </span>
@@ -259,7 +258,7 @@ export function UsageStatsSection() {
                     : s.total_duration_seconds !== undefined && (
                         <span>
                           <span className="text-text-4">DUR </span>
-                          {s.total_duration_seconds}s
+                          {formatSeconds(s.total_duration_seconds, i18n.language, 0)}
                         </span>
                       )}
                 </div>

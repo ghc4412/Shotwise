@@ -33,6 +33,8 @@ const ENTITY_LABELS: Record<ProjectChange["entity_type"], string> = {
   task: "任务",
   // 发布任务由发布工作台独立消费，但仍属于项目变更类型。
   publish_job: "发布任务",
+  // 记账结算由成本面板消费，不进通知文案；此项只为满足映射完整性。
+  usage_record: "用量记录",
 };
 
 export interface GroupedProjectChange {

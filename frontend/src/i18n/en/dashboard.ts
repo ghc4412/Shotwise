@@ -1320,6 +1320,7 @@ export default {
   'output_token_label': 'Output',
   'tokens_suffix': 'tokens',
   'records_count': '{{count}} records',
+  'interrupted_call_message': 'Interrupted by a service restart',
 
   // WorkspaceNotificationsDrawer
   'notifications_count': '{{count}} notifications',

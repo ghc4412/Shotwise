@@ -1319,6 +1319,7 @@ export default {
   'output_token_label': '输出',
   'tokens_suffix': 'tokens',
   'records_count': '{{count}} 条记录',
+  'interrupted_call_message': '服务重启中断',
 
   // WorkspaceNotificationsDrawer
   'notifications_count': '{{count}} 条通知',

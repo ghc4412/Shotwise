@@ -20,7 +20,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-from datetime import UTC
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+
+#: 启动收口的注入点：``(started_before) -> 翻掉的行数``，生产默认走
+#: ``Ledger.settle_interrupted_calls``，测试注入替身。
+type SettleInterruptedCalls = Callable[[datetime | None], Awaitable[int]]
 
 # Lease 丢失超过 ``lease_ttl * _ORPHAN_RESCAN_LEASE_LOST_MULT`` 才认为是真切换 owner
 # （另一个 worker 进程曾持过 lease 且写入了新 orphan），需要重扫；短 flap（续约抖动）
@@ -557,7 +562,16 @@ class GenerationWorker:
         lease_name: str = "default",
         capacity: CapacityTable | None = None,
         slots: SlotTable | None = None,
+        settle_interrupted_calls: SettleInterruptedCalls | None = None,
     ):
+        # 构造时刻：启动收口孤儿记账行的时间下界。本进程构造之前发起的 pending 调用不可能由
+        # 本进程接续（单进程 server+worker 捆绑，见 docs/adr/0007），据此断定它们已中断。
+        self._constructed_at = datetime.now(UTC)
+        self._startup_settled = False
+        # 启动收口注入点：生产默认走 Ledger，测试注入替身以免依赖 DB。
+        self._settle_interrupted_calls: SettleInterruptedCalls = (
+            settle_interrupted_calls or self._settle_interrupted_calls_via_ledger
+        )
         self.queue = queue or get_generation_queue()
         self.lease_name = lease_name
         self.owner_id = f"worker-{uuid.uuid4().hex[:10]}"
@@ -660,6 +674,12 @@ class GenerationWorker:
                 # 单 lease 互斥保证不会与另一个 worker 同时扫；跨进程接管由上述阈值兜底。
                 if self._owns_lease and not self._orphan_handled_once:
                     await self._handle_orphan_tasks_on_start()
+                    if not self._startup_settled:
+                        # 启动收口只在进程首次持 lease 时做：此刻本进程还没有任何在途调用，
+                        # 所有 pending 记账行都是上个进程遗留的。lease 长时间丢失触发的重扫
+                        # 发生在进程存活期间，那时可能有本进程的调用仍在 pending，不能收口。
+                        await self._settle_interrupted_calls_on_start(started_before=self._constructed_at)
+                        self._startup_settled = True
                     self._orphan_handled_once = True
 
                 if not self._owns_lease:
@@ -1035,6 +1055,26 @@ class GenerationWorker:
             return True
         logger.info("request_cancel: task %s 不在 inflight (worker finally 兜底)", task_id)
         return False
+
+    # ------------------------------------------------------------------
+    # Interrupted accounting rows
+    # ------------------------------------------------------------------
+
+    async def _settle_interrupted_calls_via_ledger(self, started_before: datetime | None) -> int:
+        """默认收口实现：交给 Ledger。局部导入避免模块级依赖环。"""
+        from lib.ledger import Ledger
+
+        return await Ledger().settle_interrupted_calls(started_before=started_before)
+
+    async def _settle_interrupted_calls_on_start(self, *, started_before: datetime | None) -> None:
+        """启动收口孤儿记账行：失败只记日志，绝不打断任务处理主循环。"""
+        try:
+            settled = await self._settle_interrupted_calls(started_before)
+        except Exception:
+            logger.exception("启动收口孤儿记账行失败（不影响任务处理）")
+            return
+        if settled:
+            logger.info("启动收口孤儿记账行 %d 条", settled)
 
     async def _handle_orphan_tasks_on_start(self) -> None:
         """重启自愈：扫 running + cancelling 孤儿，按"是否可安全 resume"分流。

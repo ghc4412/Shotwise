@@ -30,7 +30,10 @@ export interface ProjectChange {
     // 只用来重拉任务列表与受影响画布，不进通知与聚焦跳转。
     | "task"
     // publish_job 是发布页专用刷新信号，不进入工作区实体失效、通知或聚焦跳转。
-    | "publish_job";
+    | "publish_job"
+    // usage_record 是记账刷新信号：一次供应商调用结算落库（成功/失败/取消），
+    // 用来重拉成本，不进通知与聚焦跳转。
+    | "usage_record";
   action:
     | "created"
     | "updated"
@@ -45,13 +48,16 @@ export interface ProjectChange {
     | "task_succeeded"
     | "task_failed"
     | "task_cancelled"
-    | "publish_job_updated";
+    | "publish_job_updated"
+    | "recorded";
   entity_id: string;
   label: string;
   script_file?: string;
   episode?: number;
   /** 仅 entity_type === "task" 携带：终态任务的任务类型，用于判定哪类画布需重拉。 */
   task_type?: string;
+  /** 仅 entity_type === "usage_record" 携带：这次调用结算成的终态。 */
+  status?: string;
   focus?: ProjectChangeFocus | null;
   important: boolean;
   asset_fingerprints?: Record<string, number>;

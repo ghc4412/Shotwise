@@ -291,3 +291,127 @@ class TestResumeAndBackfill:
         assert row.status == "success"
         assert row.cost_amount == pytest.approx(0.123)  # SDK 直报费用优先
         assert row.usage_tokens == 1_200_000
+
+
+# ---------------------------------------------------------------------------
+# 结算事件：落库后推一条 usage_record / recorded（界面按它刷新用量）
+# ---------------------------------------------------------------------------
+
+
+class TestRecordedEvents:
+    async def test_success_emits_usage_record_change(self, factory: async_sessionmaker) -> None:
+        published: list[tuple[str, list[dict[str, Any]]]] = []
+        ledger = Ledger(
+            session_factory=factory,
+            publish_change=lambda project, changes: published.append((project, list(changes))),
+        )
+        async with ledger.record(project_name="demo", call_type="text", model="m", provider="anthropic") as call:
+            call.success(_TextResult(input_tokens=1, output_tokens=1))
+
+        assert len(published) == 1
+        project, changes = published[0]
+        assert project == "demo"
+        assert changes == [
+            {
+                "entity_type": "usage_record",
+                "action": "recorded",
+                "entity_id": str(call.call_id),
+                "label": str(call.call_id),
+                "focus": None,
+                "important": False,
+                "status": "success",
+            }
+        ]
+
+    async def test_failure_branch_emits_failed_change(self, factory: async_sessionmaker) -> None:
+        published: list[tuple[str, list[dict[str, Any]]]] = []
+        ledger = Ledger(
+            session_factory=factory,
+            publish_change=lambda project, changes: published.append((project, list(changes))),
+        )
+        with pytest.raises(ValueError, match="boom"):
+            async with ledger.record(project_name="demo", call_type="text", model="m", provider="anthropic"):
+                raise ValueError("boom")
+
+        assert [change["status"] for _, changes in published for change in changes] == ["failed"]
+
+    async def test_publish_failure_does_not_break_accounting(self, factory: async_sessionmaker) -> None:
+        """事件只是实时性优化：发布口抛异常不得影响账已落库的事实。"""
+
+        def _boom(_project: str, _changes: Any) -> None:
+            raise RuntimeError("sse down")
+
+        ledger = Ledger(session_factory=factory, publish_change=_boom)
+        async with ledger.record(project_name="demo", call_type="text", model="m", provider="anthropic") as call:
+            call.success(_TextResult(input_tokens=1, output_tokens=1))
+
+        row = await _only_row(factory)
+        assert row.status == "success"
+
+
+# ---------------------------------------------------------------------------
+# 启动收口：崩溃留下的 pending 记账行翻终态（零费用、幂等、按时间下界过滤）
+# ---------------------------------------------------------------------------
+
+
+class TestSettleInterruptedCalls:
+    async def _seed_pending(self, factory: async_sessionmaker, *, project_name: str = "demo") -> int:
+        from lib.db.repositories.usage_repo import UsageRepository
+
+        async with factory() as session:
+            return await UsageRepository(session).start_call(
+                project_name=project_name, call_type="text", model="m", provider="anthropic"
+            )
+
+    async def test_flips_pending_rows_zero_cost_and_emits_grouped_changes(self, factory: async_sessionmaker) -> None:
+        from lib.db.repositories.usage_repo import INTERRUPTED_CALL_MESSAGE
+
+        await self._seed_pending(factory, project_name="demo")
+        await self._seed_pending(factory, project_name="other")
+        published: list[tuple[str, list[dict[str, Any]]]] = []
+        ledger = Ledger(
+            session_factory=factory,
+            publish_change=lambda project, changes: published.append((project, list(changes))),
+        )
+
+        settled = await ledger.settle_interrupted_calls(started_before=None)
+
+        assert settled == 2
+        assert sorted(project for project, _ in published) == ["demo", "other"]
+        assert all(change["status"] == "failed" for _, changes in published for change in changes)
+
+        async with factory() as session:
+            rows = (await session.execute(select(ApiCall))).scalars().all()
+        assert [row.status for row in rows] == ["failed", "failed"]
+        assert all(row.cost_amount == 0.0 for row in rows)
+        assert all(row.error_message == INTERRUPTED_CALL_MESSAGE for row in rows)
+
+    async def test_started_before_in_the_future_sweeps_existing_rows(self, factory: async_sessionmaker) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        await self._seed_pending(factory)
+        ledger = Ledger(session_factory=factory, publish_change=lambda *_: None)
+
+        bound = datetime.now(UTC) + timedelta(hours=1)
+        assert await ledger.settle_interrupted_calls(started_before=bound) == 1
+
+    async def test_rows_started_after_the_bound_are_left_pending(self, factory: async_sessionmaker) -> None:
+        """下界在过去 → 该行可能是本进程仍在跑的调用，不收口。"""
+        from datetime import UTC, datetime, timedelta
+
+        await self._seed_pending(factory)
+        ledger = Ledger(session_factory=factory, publish_change=lambda *_: None)
+
+        bound = datetime.now(UTC) - timedelta(hours=1)
+        assert await ledger.settle_interrupted_calls(started_before=bound) == 0
+
+        row = await _only_row(factory)
+        assert row.status == "pending"
+
+    async def test_second_sweep_is_idempotent(self, factory: async_sessionmaker) -> None:
+        await self._seed_pending(factory)
+        ledger = Ledger(session_factory=factory, publish_change=lambda *_: None)
+
+        assert await ledger.settle_interrupted_calls(started_before=None) == 1
+        # 已终结的行不再被第二次收口触及（WHERE status='pending' 守卫）
+        assert await ledger.settle_interrupted_calls(started_before=None) == 0

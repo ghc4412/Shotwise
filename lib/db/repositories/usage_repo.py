@@ -72,6 +72,29 @@ class _SettledCall:
     currency: str
 
 
+@dataclass(frozen=True)
+class InterruptedCall:
+    """启动收口翻掉的 pending 调用行：项目名供结算事件分组，状态供界面判断。"""
+
+    call_id: int
+    project_name: str
+    status: str
+
+
+# 启动收口写入的 error_message 哨兵：这类中断没有异常对象可分类，只留一个稳定标识符。
+# 面向用户的文案由前端按这个标识符查 i18n（禁止硬编码中文，见 AGENTS.md 国际化规范）。
+INTERRUPTED_CALL_MESSAGE = "interrupted_by_restart"
+
+
+def _as_utc(value: datetime) -> datetime:
+    """SQLite 回读的时间戳是 naive datetime，比较前按 UTC 补齐 tzinfo。
+
+    与 ``_settle`` 内 ``duration_ms`` 的 tz 对齐口径同源：aware 与 naive 直接比较会抛
+    ``TypeError``，时间下界过滤因此不能裸比。
+    """
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
 def _classify_asset_output_path(output_path: str | None) -> str:
     """从 api_call.output_path 推断资产类型（characters/scenes/props/products/other）。
 
@@ -324,6 +347,11 @@ class UsageRepository(BaseRepository):
             await self.session.commit()
         return affected
 
+    async def get_call_project_name(self, call_id: int) -> str:
+        """取该调用所属项目名；行不存在时返回空串（调用方据此不发事件）。"""
+        result = await self.session.execute(select(ApiCall.project_name).where(ApiCall.id == call_id))
+        return result.scalar_one_or_none() or ""
+
     async def finish_call(
         self,
         call_id: int,
@@ -373,6 +401,54 @@ class UsageRepository(BaseRepository):
             )
         )
         await self.session.commit()
+
+    async def settle_interrupted_pending_calls(self, *, started_before: datetime | None) -> list[InterruptedCall]:
+        """启动收口：把残留 pending 调用行翻 failed（零费用），返回翻掉的行。
+
+        进程崩溃会把「已落 pending、未结算」的调用永远留在 pending——它既不是成功也不是失败，
+        只是一直悬着，并污染成功率与趋势聚合。收口范围由 ``started_before`` 界定：给定时只翻在
+        该时刻之前发起的行，``None`` 表示不设时间下界。调用方按「本进程构造时刻」传参，因为构造
+        时刻之前发起的调用不可能由本进程接续。
+
+        零费用：中断的调用没有可用计费维度，不猜价、不写自动估算。幂等：UPDATE 的 WHERE 含
+        ``status='pending'``，重复收口不会覆写已终结的行。时间下界比较在 Python 侧完成——SQLite
+        回读的 ``started_at`` 是 naive datetime，直接在 SQL 里比会与 aware 参数错位。
+        """
+        rows = (
+            (await self.session.execute(self._scope_query(select(ApiCall).where(ApiCall.status == "pending"), ApiCall)))
+            .scalars()
+            .all()
+        )
+        targets = [row for row in rows if started_before is None or _as_utc(row.started_at) < _as_utc(started_before)]
+        if not targets:
+            return []
+
+        finished_at = utc_now()
+        # RETURNING 回读真实翻掉的行：SELECT 与 UPDATE 之间若有并发收口抢先终结某行，它不会被算进来，
+        # 返回值与事件因此只覆盖本次真正改写的行。
+        settled_ids = set(
+            (
+                await self.session.execute(
+                    update(ApiCall)
+                    .where(ApiCall.id.in_([row.id for row in targets]), ApiCall.status == "pending")
+                    .values(
+                        status="failed",
+                        finished_at=finished_at,
+                        cost_amount=0.0,
+                        error_message=INTERRUPTED_CALL_MESSAGE,
+                    )
+                    .returning(ApiCall.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await self.session.commit()
+        return [
+            InterruptedCall(call_id=row.id, project_name=row.project_name, status="failed")
+            for row in targets
+            if row.id in settled_ids
+        ]
 
     @staticmethod
     def _build_filters(
