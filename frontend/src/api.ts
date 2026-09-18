@@ -515,15 +515,36 @@ function errorDetailMessage(detail: unknown, fallback: string): string {
   return fallback;
 }
 
+/**
+ * 域错误码 → 翻译 key。后端在 409/422 的 detail 里回的是机器可读 code（预览闸门、渲染冲突等），
+ * 直接透出会把内部英文串展示给用户；这里统一映射到 zh/en/vi 文案。未登记的 code 原样返回，
+ * 方便排查未覆盖的分支。
+ */
+const WORKFLOW_ERROR_KEYS: Record<string, string> = {
+  workflowtemplatenotpublished: "flow_template_not_published",
+  previewrequiresconfirmedplan: "assembly_preview_requires_confirmed_plan",
+  previewjobalreadyrunning: "assembly_preview_job_already_running",
+  previewrevisionrequired: "assembly_preview_revision_required",
+  currentrevisionmissing: "assembly_preview_revision_required",
+  previewconfirmationrequired: "assembly_preview_confirmation_required_for_render",
+  renderconfirmationrequired: "assembly_render_confirmation_required_for_render",
+  finalrenderpendingrequired: "assembly_render_pending_required",
+  finaljobalreadyrunning: "assembly_final_job_already_running",
+  revisionconflict: "assembly_revision_conflict",
+  sourcefingerprintconflict: "assembly_source_changed",
+  finalrenderstatusconflict: "assembly_revision_conflict",
+  retryrequiresfailedjob: "assembly_revision_conflict",
+  retrylimitreached: "assembly_revision_conflict",
+  previewretrynotallowed: "assembly_preview_revision_required",
+  finalretryrequiresfinaljob: "assembly_revision_conflict",
+  artifactpathinvalid: "assembly_source_changed",
+  sourcefingerprintmissing: "assembly_source_changed",
+};
+
 function localizeWorkflowError(message: string): string {
   const normalized = message.toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (normalized.includes("workflowtemplatenotpublished")) {
-    return i18n.t("flow_template_not_published", { ns: "dashboard" });
-  }
-  if (normalized.includes("previewrequiresconfirmedplan")) {
-    return i18n.t("assembly_preview_requires_confirmed_plan", { ns: "dashboard" });
-  }
-  return message;
+  const key = WORKFLOW_ERROR_KEYS[normalized];
+  return key ? i18n.t(key, { ns: "dashboard" }) : message;
 }
 
 export interface CreativeBoardVersionRecord {

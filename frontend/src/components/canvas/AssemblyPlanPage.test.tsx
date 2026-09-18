@@ -414,21 +414,31 @@ describe("AssemblyPlanPage", () => {
     });
     await waitFor(() => expect(API.getAssemblyPlan).toHaveBeenCalledTimes(2), { timeout: 3000 });
     expect(await screen.findByTestId("assembly-preview-player")).toBeInTheDocument();
-    // The plan lands in preview_ready; the backend rejects new preview jobs until a fresh
-    // confirmed revision exists, so the control must stay disabled instead of failing.
+    // The plan lands in preview_ready, so the control offers another render of the same revision.
     const previewButtonAfterRender = screen.getByTestId("assembly-generate-preview");
-    expect(previewButtonAfterRender).toBeDisabled();
-    expect(previewButtonAfterRender).toHaveTextContent("生成低清预览");
+    expect(previewButtonAfterRender).toBeEnabled();
+    expect(previewButtonAfterRender).toHaveTextContent("重新生成预览");
   });
 
-  it("keeps the preview render control disabled for a ready but unconfirmed preview", async () => {
+  it("returns a ready plan to confirmed before queueing another preview render", async () => {
+    const user = userEvent.setup();
     vi.mocked(API.listAssemblyPlans).mockResolvedValue({ items: [makeReadyPlan()] });
     vi.mocked(API.getAssemblyPlan).mockResolvedValue(makeReadyPlan());
+    vi.mocked(API.transitionAssemblyPlan).mockResolvedValue(makePlan({ status: "confirmed" }));
+    vi.mocked(API.createAssemblyPreviewRender).mockResolvedValue(makePreviewJob());
 
     renderPage();
     const previewButton = await screen.findByTestId("assembly-generate-preview");
-    expect(previewButton).toBeDisabled();
-    expect(previewButton).toHaveTextContent("生成低清预览");
+    expect(previewButton).toBeEnabled();
+    expect(previewButton).toHaveTextContent("重新生成预览");
+
+    await user.click(previewButton);
+
+    await waitFor(() => expect(API.transitionAssemblyPlan).toHaveBeenCalledWith("plan-1", { status: "confirmed" }));
+    await waitFor(() => expect(API.createAssemblyPreviewRender).toHaveBeenCalledWith("plan-1", {
+      revision_number: 2,
+      max_attempts: 3,
+    }));
   });
 
   it("shows a backend error instead of fabricating a plan", async () => {

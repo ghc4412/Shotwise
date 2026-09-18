@@ -297,14 +297,13 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
   const finalRenderFailed = finalJob?.status === "failed";
   const previewRenderRunning = previewJob?.status === "queued" || previewJob?.status === "running";
   const previewRenderFailed = previewJob?.status === "failed";
-  const previewRenderConfirmed = plan?.status === "confirmed";
   const previewRenderHasArtifact = Boolean(
     revision && previewRevisionMatches && plan?.preview_artifact && previewUrl && !isStale,
   );
-  // POST /preview-renders only starts a job for a confirmed plan, so a ready-but-unconfirmed
-  // preview has to be superseded by a new revision before it can be rendered again.
+  // POST /preview-renders only queues a job for a confirmed plan, so re-rendering a plan that is
+  // already preview_ready returns it to the confirmed state before starting the new job.
   const previewRenderAvailable = Boolean(
-    previewRenderConfirmed &&
+    (plan?.status === "confirmed" || plan?.status === "preview_ready") &&
       revision &&
       validation.valid &&
       !isStale &&
@@ -660,7 +659,12 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
     setCreatingPreviewRender(true);
     setPreviewRenderError(null);
     try {
-      const job = await API.createAssemblyPreviewRender(plan.id, {
+      let confirmedPlan = plan;
+      if (confirmedPlan.status !== "confirmed") {
+        confirmedPlan = await API.transitionAssemblyPlan(plan.id, { status: "confirmed" });
+        setPlan(confirmedPlan);
+      }
+      const job = await API.createAssemblyPreviewRender(confirmedPlan.id, {
         revision_number: revision.version_number,
         max_attempts: 3,
       });
@@ -814,7 +818,7 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
                     data-testid="assembly-generate-preview"
                   >
                     {creatingPreviewRender || previewRenderRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <PlayCircle className="h-3.5 w-3.5" aria-hidden />}
-                    {previewRenderRunning ? t("assembly_preview_rendering") : previewRenderConfirmed && previewRenderHasArtifact ? t("assembly_regenerate_preview") : t("assembly_generate_preview")}
+                    {previewRenderRunning ? t("assembly_preview_rendering") : previewRenderHasArtifact ? t("assembly_regenerate_preview") : t("assembly_generate_preview")}
                   </button>
                 </div>
               </div>
