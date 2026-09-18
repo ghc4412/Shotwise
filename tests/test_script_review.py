@@ -1030,6 +1030,20 @@ class TestErrors:
             await svc.confirm("demo", 1)
         assert exc.value.code == "invalid_content"
 
+    @pytest.mark.unit
+    @pytest.mark.parametrize("payload", [None, [], "not an object", {}])
+    async def test_confirm_non_object_step1_rejected(self, tmp_path, payload):
+        """step1 顶层不是对象（null/list/string/缺字段对象）→ 结构校验拒绝。"""
+        pm = _make_project(tmp_path, "drama")
+        svc = ScriptReviewService(pm)
+        path = _write_step1(pm, "drama", _drama_step1())
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        with pytest.raises(ScriptReviewError) as exc:
+            await svc.confirm("demo", 1)
+
+        assert exc.value.code == "invalid_content"
+
 
 # ---------------------------------------------------------------------------
 # 单一写盘出口（lib.script_review.write_step1_locked）
