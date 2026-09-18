@@ -1803,7 +1803,7 @@ async def test_execute_reference_video_task_prompt_matches_clipped_refs(
 
     monkeypatch.setattr(rvt, "extract_video_thumbnail", _fake_extract)
 
-    await rvt.execute_reference_video_task(
+    result = await rvt.execute_reference_video_task(
         "demo",
         "E1U1",
         {"script_file": "scripts/episode_1.json"},
@@ -1812,6 +1812,7 @@ async def test_execute_reference_video_task_prompt_matches_clipped_refs(
 
     # 3 张裁到 1 张，第一段只能绑出 @图片1，不能出现 @图片2/@图片3
     assert len(captured["reference_images"]) == 1
+    assert any(w["key"] == "ref_sora_single_ref" for w in result["warnings"])
     prompt = captured["prompt"]
     assert "@图片1" in prompt
     assert "@图片2" not in prompt
