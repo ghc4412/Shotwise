@@ -1182,3 +1182,127 @@ class TestAgentBackfillChannel:
         await manager._record_assistant_usage(_managed_session(), {"model": "claude-sonnet-4"}, "completed")
 
         assert await acct.fetch_rows() == []
+
+
+# ---------------------------------------------------------------------------
+# image 取消/pending 收口：task.payload["api_call_id"] 锚点 + worker 取消分支精准翻账
+# ---------------------------------------------------------------------------
+
+
+class _FakeQueue:
+    """极小队列替身：只记录 persist_api_call_id 的写入，可选注入失败。"""
+
+    def __init__(self, *, error: BaseException | None = None) -> None:
+        self.calls: list[tuple[str, int]] = []
+        self._error = error
+
+    async def persist_api_call_id(self, task_id: str, call_id: int) -> None:
+        self.calls.append((task_id, call_id))
+        if self._error is not None:
+            raise self._error
+
+
+def _install_fake_queue(monkeypatch: pytest.MonkeyPatch, queue: _FakeQueue) -> _FakeQueue:
+    # persist_api_call_id 在 _persist_api_call_id_with_retry 内按调用时导入 get_generation_queue，
+    # 故替换模块属性即可全程生效。
+    monkeypatch.setattr("lib.generation_queue.get_generation_queue", lambda: queue)
+    return queue
+
+
+async def _pending_image_call(acct: _AccountingDb) -> int:
+    """绕过记账括号直接落一条 image pending 行（取消收口的锚点）。"""
+    async with acct.factory() as session:
+        return await UsageRepository(session).start_call(
+            project_name="demo",
+            call_type="image",
+            model="gemini-3-pro-image-preview",
+            prompt="p",
+            resolution="2K",
+            aspect_ratio="9:16",
+            provider="gemini",
+            segment_id="婉儿",
+        )
+
+
+class TestImageCancellationSettlement:
+    async def test_persists_api_call_id_when_task_id_present(
+        self, tmp_path: Path, acct: _AccountingDb, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        queue = _install_fake_queue(monkeypatch, _FakeQueue())
+        gen = _media_generator(
+            tmp_path,
+            acct,
+            image_backend=_FakeImageBackend(provider="gemini", model="gemini-3-pro-image-preview"),
+        )
+
+        await gen.generate_image_async(prompt="p", resource_type="characters", resource_id="婉儿", task_id="task-1")
+
+        row = await acct.fetch_only_row()
+        assert queue.calls == [("task-1", row["id"])]
+
+    async def test_skips_persist_without_task_id(
+        self, tmp_path: Path, acct: _AccountingDb, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        queue = _install_fake_queue(monkeypatch, _FakeQueue())
+        gen = _media_generator(
+            tmp_path,
+            acct,
+            image_backend=_FakeImageBackend(provider="gemini", model="gemini-3-pro-image-preview"),
+        )
+
+        await gen.generate_image_async(prompt="p", resource_type="characters", resource_id="婉儿")
+
+        assert queue.calls == []
+
+    async def test_persist_failure_flips_pending_to_failed(
+        self, tmp_path: Path, acct: _AccountingDb, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _install_fake_queue(monkeypatch, _FakeQueue(error=RuntimeError("queue down")))
+        gen = _media_generator(
+            tmp_path,
+            acct,
+            image_backend=_FakeImageBackend(provider="gemini", model="gemini-3-pro-image-preview"),
+        )
+
+        # fail-fast：锚点写不进 payload 就整笔失败，pending 行当场翻 failed 而非挂到 resume
+        with pytest.raises(RuntimeError):
+            await gen.generate_image_async(prompt="p", resource_type="characters", resource_id="婉儿", task_id="task-1")
+
+        assert (await acct.fetch_only_row())["status"] == "failed"
+
+    async def test_worker_settles_cancelled_pending_call(
+        self, acct: _AccountingDb, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        call_id = await _pending_image_call(acct)
+        # worker 取消分支新建 Ledger() 走默认 session_factory，指到测试内存库
+        monkeypatch.setattr("lib.ledger.safe_session_factory", acct.factory)
+
+        from lib.generation_worker import GenerationWorker
+
+        await GenerationWorker()._settle_cancelled_ledger_call(
+            {"task_id": "task-1", "payload": {"api_call_id": call_id}}
+        )
+
+        row = await acct.fetch_only_row()
+        assert row["status"] == "failed"
+        assert row["cost_amount"] == 0
+
+    async def test_worker_skips_settlement_without_usable_anchor(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        seen: list[int] = []
+
+        class _RecordingLedger:
+            async def resume_failed(self, *, call_id: int) -> int:
+                seen.append(call_id)
+                return 0
+
+        monkeypatch.setattr("lib.ledger.Ledger", _RecordingLedger)
+
+        from lib.generation_worker import GenerationWorker
+
+        worker = GenerationWorker()
+        await worker._settle_cancelled_ledger_call({"task_id": "t"})
+        await worker._settle_cancelled_ledger_call({"task_id": "t", "payload": {}})
+        await worker._settle_cancelled_ledger_call({"task_id": "t", "payload": {"api_call_id": None}})
+        await worker._settle_cancelled_ledger_call({"task_id": "t", "payload": {"api_call_id": "not-an-int"}})
+
+        assert seen == []

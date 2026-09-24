@@ -35,7 +35,7 @@ class _FakeGenerator:
         self._backend = backend
 
     async def generate_image_output_async(
-        self, *, prompt, output_path, reference_images, aspect_ratio, image_size, resource_id
+        self, *, prompt, output_path, reference_images, aspect_ratio, image_size, resource_id, task_id=None
     ):
         await self._backend.generate(
             ImageGenerationRequest(

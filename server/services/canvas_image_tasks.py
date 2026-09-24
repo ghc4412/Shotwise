@@ -386,6 +386,7 @@ async def _generate_ai_outputs(
             aspect_ratio=aspect_ratio,
             image_size=image_size,
             resource_id=f"{source_id}-{operation}-{index}",
+            task_id=task_id,
         )
         if operation in _REGION_COMPOSITE_OPERATIONS and region_box is not None:
 

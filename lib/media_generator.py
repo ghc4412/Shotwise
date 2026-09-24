@@ -281,6 +281,7 @@ class MediaGenerator:
         reference_images=None,
         aspect_ratio: str = "9:16",
         image_size: str | None = None,
+        task_id: str | None = None,
         **version_metadata,
     ) -> tuple[Path, int]:
         """
@@ -293,6 +294,8 @@ class MediaGenerator:
             reference_images: 参考图片列表
             aspect_ratio: 宽高比，默认 9:16（竖屏）
             image_size: 图片尺寸，默认不传（由 backend/SDK 决定）
+            task_id: worker 任务 ID；非 None 时把本次记账 call_id 写入 task.payload，
+                供取消/崩溃时收口（worker 路径传入，非 worker 调用留 None）
             **version_metadata: 额外元数据
 
         Returns:
@@ -364,6 +367,15 @@ class MediaGenerator:
             segment_id=segment_id_for("image", resource_type, resource_id),
             output_path=str(output_path),
         ) as call:
+            # 拿到 call_id 后立即写入 task.payload["api_call_id"]：image 无 resume 路径
+            # （ADR 0007），取消或崩溃只能靠 worker 侧用这个锚点精准翻 pending -> failed，
+            # 而非按 segment_id 模糊匹配（会误伤同场景的其它调用）。fail-fast 抛异常会被
+            # 记账括号翻 pending -> failed 后重抛；放在 backend 调用前是必须的。
+            if task_id is not None:
+                from lib.video_backends.base import persist_api_call_id
+
+                await persist_api_call_id(task_id, call.call_id)
+
             from lib.reference_compression import ReferenceSpec, RefRole
 
             image_backend = self._image_backend
@@ -410,6 +422,7 @@ class MediaGenerator:
         aspect_ratio: str = "1:1",
         image_size: str | None = None,
         resource_id: str = "canvas-output",
+        task_id: str | None = None,
     ) -> Path:
         """生成一张图片到显式 ``output_path``（Creative Board 独立图像操作输出用）。
 
@@ -468,6 +481,15 @@ class MediaGenerator:
             segment_id=segment_id_for("image", "canvas_output", resource_id),
             output_path=str(output_path),
         ) as call:
+            # 拿到 call_id 后立即写入 task.payload["api_call_id"]：image 无 resume 路径
+            # （ADR 0007），取消或崩溃只能靠 worker 侧用这个锚点精准翻 pending -> failed，
+            # 而非按 segment_id 模糊匹配（会误伤同场景的其它调用）。fail-fast 抛异常会被
+            # 记账括号翻 pending -> failed 后重抛；放在 backend 调用前是必须的。
+            if task_id is not None:
+                from lib.video_backends.base import persist_api_call_id
+
+                await persist_api_call_id(task_id, call.call_id)
+
             from lib.reference_compression import ReferenceSpec, RefRole
 
             image_backend = self._image_backend

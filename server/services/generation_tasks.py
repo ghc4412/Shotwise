@@ -698,6 +698,7 @@ async def execute_storyboard_task(
         reference_images=reference_images,
         aspect_ratio=aspect_ratio,
         image_size=image_size,
+        task_id=task_id,
     )
 
     def _finalize():
@@ -1238,6 +1239,7 @@ async def _execute_character_task_locked(
         reference_images=reference_images,
         aspect_ratio=aspect_ratio,
         image_size=image_size,
+        task_id=task_id,
     )
     # 头像优先从设计图检测头部，检测不到时由裁剪模块使用安全的左侧范围兜底。
     try:
@@ -1331,6 +1333,7 @@ async def execute_design_task(
     payload: dict[str, Any],
     *,
     user_id: str = DEFAULT_USER_ID,
+    task_id: str | None = None,
 ) -> dict[str, Any]:
     """合并 execute_scene_task / execute_prop_task / execute_product_task：按 kind 查表派发。"""
     spec = ASSET_SPECS[kind]
@@ -1374,6 +1377,7 @@ async def execute_design_task(
         reference_images=reference_images,
         aspect_ratio=aspect_ratio,
         image_size=image_size,
+        task_id=task_id,
     )
 
     sheet_path = f"{bucket_key}/{resource_id}.png"
@@ -1401,7 +1405,7 @@ async def execute_scene_task(
     user_id: str = DEFAULT_USER_ID,
     task_id: str | None = None,
 ) -> dict[str, Any]:
-    return await execute_design_task("scene", project_name, resource_id, payload, user_id=user_id)
+    return await execute_design_task("scene", project_name, resource_id, payload, user_id=user_id, task_id=task_id)
 
 
 async def execute_prop_task(
@@ -1412,7 +1416,7 @@ async def execute_prop_task(
     user_id: str = DEFAULT_USER_ID,
     task_id: str | None = None,
 ) -> dict[str, Any]:
-    return await execute_design_task("prop", project_name, resource_id, payload, user_id=user_id)
+    return await execute_design_task("prop", project_name, resource_id, payload, user_id=user_id, task_id=task_id)
 
 
 async def execute_product_task(
@@ -1423,7 +1427,7 @@ async def execute_product_task(
     user_id: str = DEFAULT_USER_ID,
     task_id: str | None = None,
 ) -> dict[str, Any]:
-    return await execute_design_task("product", project_name, resource_id, payload, user_id=user_id)
+    return await execute_design_task("product", project_name, resource_id, payload, user_id=user_id, task_id=task_id)
 
 
 def _group_scenes_by_segment_break(items: list[dict], id_field: str) -> list[list[dict]]:
@@ -1596,6 +1600,7 @@ async def execute_grid_task(
             reference_images=reference_images,
             aspect_ratio=aspect_ratio,
             image_size=image_size,
+            task_id=task_id,
         )
 
         # e) Mark joint image ready；联合图内容已更新，旧的落格结果不再对应当前图，

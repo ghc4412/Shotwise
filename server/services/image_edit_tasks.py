@@ -181,6 +181,7 @@ async def execute_image_edit_task(
         aspect_ratio=aspect_ratio,
         image_size=image_size,
         source=IMAGE_EDIT_VERSION_SOURCE,
+        task_id=task_id,
     )
 
     canonical_rel = resource_relative_path(version_resource_type, resource_key)

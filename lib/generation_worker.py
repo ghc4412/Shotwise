@@ -960,6 +960,7 @@ class GenerationWorker:
         except asyncio.CancelledError:
             # 用户/级联取消：worker.request_cancel 触发 asyncio.Task.cancel()。
             # 取消不是上游不健康的信号，健康账不动。
+            await asyncio.shield(self._settle_cancelled_ledger_call(task))
             await asyncio.shield(self.queue.mark_task_cancelled(task_id, cancelled_by="user"))
             raise
         except Exception as exc:
@@ -1043,6 +1044,7 @@ class GenerationWorker:
         try:
             result = await execute_resume_video_task(task, job_id=job_id)
         except asyncio.CancelledError:
+            await asyncio.shield(self._settle_cancelled_ledger_call(task))
             await asyncio.shield(self.queue.mark_task_cancelled(task_id, cancelled_by="user"))
             raise
         except NotImplementedError as exc:
@@ -1083,6 +1085,7 @@ class GenerationWorker:
             result = await self._index_successful_media(task, result)
             rows = await asyncio.shield(self.queue.mark_task_succeeded(task_id, result))
         except asyncio.CancelledError:
+            await asyncio.shield(self._settle_cancelled_ledger_call(task))
             await asyncio.shield(self.queue.mark_task_cancelled(task_id, cancelled_by="user"))
             raise
         if rows == 0:
@@ -1114,6 +1117,32 @@ class GenerationWorker:
     # ------------------------------------------------------------------
     # Interrupted accounting rows
     # ------------------------------------------------------------------
+
+    async def _settle_cancelled_ledger_call(self, task: dict[str, Any]) -> None:
+        """取消收尾：翻掉该 task 已持久化的 pending ApiCall 行，避免永久挂账。
+
+        ``ledger.record`` 的取消契约是「穿透留 pending 交 resume 补账」，但取消是终态——
+        任务不会再被 resume（ADR 0007：孤儿扫描只认 running/cancelling，image 无 resume 路径），
+        pending 行因而永远不会被补。收口落在 worker 取消分支：读 ``task.payload["api_call_id"]``
+        （submit 前已 fail-fast 持久化）精准翻 pending -> failed（``cost_amount=0`` 不重扣），
+        仓储 ``WHERE status='pending'`` 保证幂等 0/1。缺锚点或结算失败只记日志，绝不阻断
+        mark_task_cancelled（与启动收口同样「不打断主循环」）。
+        """
+        raw_call_id = (task.get("payload") or {}).get("api_call_id")
+        if raw_call_id is None:
+            return
+        try:
+            call_id = int(raw_call_id)
+        except (TypeError, ValueError):
+            logger.warning("取消收尾跳过非法 api_call_id task_id=%s value=%r", task.get("task_id"), raw_call_id)
+            return
+
+        from lib.ledger import Ledger
+
+        try:
+            await Ledger().resume_failed(call_id=call_id)
+        except Exception:
+            logger.exception("取消收口 pending ApiCall 失败 task_id=%s call_id=%s", task.get("task_id"), call_id)
 
     async def _settle_interrupted_calls_via_ledger(self, started_before: datetime | None) -> int:
         """默认收口实现：交给 Ledger。局部导入避免模块级依赖环。"""
