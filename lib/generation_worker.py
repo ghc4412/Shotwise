@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 import uuid
 from dataclasses import dataclass
@@ -50,7 +49,9 @@ from lib.generation_queue import (
     video_bucket_for_queued_task,
 )
 from lib.image_backends.base import ImageCapabilityError
+from lib.provider_health import HealthSettings, ProviderHealthTable, _read_int_env
 from lib.reference_compression import ReferencePayloadFloorError
+from lib.retry import is_transient_upstream_error
 from lib.script_editor import ScriptEditError
 from lib.task_failure import encode_failure, sanitize_failure_reason
 from lib.video_backends.base import VideoCapabilityError
@@ -73,17 +74,6 @@ def _non_resumable_video_providers() -> frozenset[str]:
 
 
 NON_RESUMABLE_VIDEO_PROVIDERS = _non_resumable_video_providers()
-
-
-def _read_int_env(name: str, default: int, minimum: int = 1) -> int:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        return default
-    return max(minimum, value)
 
 
 def _encode_task_failure_message(exc: Exception) -> str:
@@ -500,6 +490,22 @@ class SlotTable:
         self._slots.clear()
 
 
+def _media_lane(task: dict[str, Any]) -> str:
+    """任务所属媒体泳道：``image`` / ``video`` / ``audio``。
+
+    单一映射点——``_extract_provider`` 的解析分流与健康账的泳道键共用它：两条路径对
+    「同一任务属于哪条 lane」必须给出同一个答案，否则熔断记在一条泳道上、限流却按另一条走。
+    ``reference_video`` 等 task_type 与 ``media_type="video"`` 同属 video lane，``tts`` 归 audio。
+    """
+    media_type = task.get("media_type")
+    task_type = task.get("task_type")
+    if media_type == "video" or task_type in ("video", "reference_video"):
+        return "video"
+    if media_type == "audio" or task_type == "tts":
+        return "audio"
+    return "image"
+
+
 async def _extract_provider(task: dict[str, Any]) -> str:
     """Extract a provider_id from a claimed task, used **only** for rate-limit slot routing.
 
@@ -517,8 +523,7 @@ async def _extract_provider(task: dict[str, Any]) -> str:
     project_name = task.get("project_name")
     payload = task.get("payload") or {}
     # 以 media lane 区分 video / audio / image：reference_video 等 task_type 同属 video lane。
-    is_video = task.get("media_type") == "video" or task.get("task_type") in ("video", "reference_video")
-    is_audio = task.get("media_type") == "audio" or task.get("task_type") == "tts"
+    lane = _media_lane(task)
 
     # 整体兜底：含项目加载（队列里可能残留指向已删除/不可读项目的任务，load_project 会抛
     # FileNotFoundError）在内的任何失败都回退 DEFAULT_PROVIDER，绝不冒泡阻断认领循环（见 docstring）。
@@ -533,7 +538,7 @@ async def _extract_provider(task: dict[str, Any]) -> str:
         from lib.db import async_session_factory
 
         resolver = ConfigResolver(async_session_factory)
-        if is_video:
+        if lane == "video":
             capability = await video_bucket_for_queued_task(
                 project=project,
                 project_name=project_name,
@@ -542,7 +547,7 @@ async def _extract_provider(task: dict[str, Any]) -> str:
                 resource_id=task.get("resource_id"),
             )
             resolved = await resolver.resolve_video_backend(project, payload, capability=capability)
-        elif is_audio:
+        elif lane == "audio":
             resolved = await resolver.resolve_audio_backend(project, payload)
         else:
             capability = "i2i" if task.get("task_type") == "image_edit" else "t2i"
@@ -563,6 +568,7 @@ class GenerationWorker:
         capacity: CapacityTable | None = None,
         slots: SlotTable | None = None,
         settle_interrupted_calls: SettleInterruptedCalls | None = None,
+        health: ProviderHealthTable | None = None,
     ):
         # 构造时刻：启动收口孤儿记账行的时间下界。本进程构造之前发起的 pending 调用不可能由
         # 本进程接续（单进程 server+worker 捆绑，见 docs/adr/0007），据此断定它们已中断。
@@ -580,6 +586,8 @@ class GenerationWorker:
         # reload 只换它的数字；后者承载 inflight/pending，占用容器引用恒定不被重建。
         self._capacity: CapacityTable = capacity or CapacityTable.from_env()
         self._slots: SlotTable = slots or SlotTable()
+        # 健康账（进程内运行时记账）：在容量表上限之上做折减，熔断打开的泳道不进 claim。
+        self._health: ProviderHealthTable = health or ProviderHealthTable(HealthSettings.from_env())
         logger.info("Worker 初始容量表: %s", self._capacity._limits)
         self.lease_ttl = max(1.0, float(TASK_WORKER_LEASE_TTL_SEC))
         self.heartbeat_interval = max(0.5, float(TASK_WORKER_HEARTBEAT_SEC))
@@ -699,23 +707,42 @@ class GenerationWorker:
                 await self.queue.release_worker_lease(name=self.lease_name, owner_id=self.owner_id)
             self._owns_lease = False
 
-    def _pool_full_providers(self, media_type: str) -> frozenset[str]:
-        """返回当前 cycle ``media_type`` 已满的 provider_id 集合（黑名单，用于 claim SQL）。
+    def _effective_capacity(self, provider_id: str, media_type: str) -> int:
+        """容量表上限经健康折减后的有效并发；熔断打开时为 0。
 
-        黑名单源是**有占用的 provider**（``SlotTable.occupied_providers``），而非容量表
-        已知 provider 全集：只有占着槽的 provider 才可能"满"。空 provider 本就 has_room、
-        不该进黑名单；"未知但有占用"的 provider（首次 reload 前的启动窗口 / 运行中途被删的
-        custom provider）照旧能进黑名单，避免其池满任务每 cycle 被 claim→requeue 刷屏。
-
-        守卫 ``cap > 0`` 保留：``has_room`` 在 ``cap == 0`` 时也返回 False，若不加守卫
-        会把"不支持该 lane 的 provider"也归入黑名单，让 SQL 把这些 task 静默 drop，
-        而不是走 worker 二次校验的 ``cap == 0`` fail-fast mark_failed 路径。
+        与容量表的 0（不支持该 lane）语义不同：调用方必须分开处理——不支持是 fail-fast
+        终态，熔断是回队等探针。
         """
-        return frozenset(
-            pid
-            for pid in self._slots.occupied_providers(media_type)
-            if (cap := self._capacity.get(pid, media_type)) > 0 and not self._slots.has_room(pid, media_type, cap)
-        )
+        base = self._capacity.get(provider_id, media_type)
+        if base <= 0:
+            return base
+        return self._health.capacity(provider_id, media_type, base)
+
+    def _pool_full_providers(self, media_type: str) -> frozenset[str]:
+        """返回当前 cycle ``media_type`` 不该 claim 的 provider_id 集合（黑名单，用于 claim SQL）。
+
+        两类来源：
+        - **熔断打开**（``ProviderHealthTable.blocked_providers``）：与占用无关——泳道被熔断时
+          哪怕槽位空着也不该再放任务进去，否则持续故障的供应商会一路把队列打满。
+        - **池满**（占用已达健康折减后的有效上限）：黑名单源是**有占用的 provider**
+          （``SlotTable.occupied_providers``），而非容量表已知 provider 全集：只有占着槽的
+          provider 才可能"满"，空 provider 本就 has_room、不该进黑名单；"未知但有占用"的
+          provider（首次 reload 前的启动窗口 / 运行中途被删的 custom provider）照旧能进黑名单，
+          避免其池满任务每 cycle 被 claim→requeue 刷屏。
+
+        守卫 ``base > 0`` 保留：``has_room`` 在 ``cap == 0`` 时也返回 False，若不加守卫
+        会把"不支持该 lane 的 provider"也归入黑名单，让 SQL 把这些 task 静默 drop，
+        而不是走 worker 二次校验的 ``cap == 0`` fail-fast mark_failed 路径。健康折减到 0
+        （熔断）不属于这一类，它走上面的熔断分支，语义正是"回队等探针"。
+        """
+        blocked = {pid for pid in self._health.blocked_providers(media_type) if self._capacity.get(pid, media_type) > 0}
+        for pid in self._slots.occupied_providers(media_type):
+            if self._capacity.get(pid, media_type) <= 0:
+                continue
+            cap = self._effective_capacity(pid, media_type)
+            if cap <= 0 or not self._slots.has_room(pid, media_type, cap):
+                blocked.add(pid)
+        return frozenset(blocked)
 
     async def _claim_tasks(self) -> bool:
         """Claim tasks from queue and route to per-provider slots.
@@ -739,9 +766,9 @@ class GenerationWorker:
                     break
 
                 provider_id = await _extract_provider(task)
-                cap = self._capacity.get(provider_id, media_type)
+                lane_cap = self._capacity.get(provider_id, media_type)
 
-                if cap <= 0:
+                if lane_cap <= 0:
                     # 供应商不支持此媒体类型（容量 ≤ 0），直接失败（与 has_room 守卫一致）
                     logger.warning(
                         "供应商 %s 不支持 %s 生成，任务 %s 标记失败",
@@ -760,6 +787,21 @@ class GenerationWorker:
                     claimed_any = True
                     continue
 
+                cap = self._effective_capacity(provider_id, media_type)
+                if cap <= 0:
+                    # 健康熔断：任务回队等半开探针，绝不能 mark_failed——上游抖动是暂时的，
+                    # 判失败会把可重试的生成任务变成用户可见的失败。
+                    logger.info(
+                        "供应商 %s 的 %s 泳道熔断中，task %s 回队等待半开探针",
+                        provider_id,
+                        media_type,
+                        task["task_id"],
+                    )
+                    await self._defer_claimed_task(task, provider_id)
+                    # break 当前 media_type 循环：下一轮 SQL 会按重算的 pool_full
+                    # 过滤掉这个 provider，避免反复 claim 同一 task
+                    break
+
                 if not self._slots.has_room(provider_id, media_type, cap):
                     # NULL 老数据 / 未知 provider 通过 SQL 兜底走到这里：二次校验仍满
                     # → 回队让下次 cycle 再试（FIFO 顺序由 queued_at 维持）。绝不能
@@ -771,18 +813,7 @@ class GenerationWorker:
                         media_type,
                         task["task_id"],
                     )
-                    # 回队前把重派生的 provider 刷回投影列：走到这里说明存量投影与现值
-                    # 分裂（NULL 兜底，或入队后剧本参考集 / 供应商配置被改），不刷新的话
-                    # 存量值躲过 pool_full 的 SQL 过滤，之后每个 cycle 都重复
-                    # claim → requeue → break，满池期间同 lane 其他可跑任务被持续排头阻塞。
-                    # best-effort：刷新失败只损失过滤精度，回队重试本身不受影响。
-                    try:
-                        await self.queue.persist_execution_provider_id(task["task_id"], provider_id)
-                    except Exception:
-                        logger.warning(
-                            "回队前投影刷新失败 task_id=%s provider=%s", task["task_id"], provider_id, exc_info=True
-                        )
-                    await self._requeue_single_task(task["task_id"])
+                    await self._defer_claimed_task(task, provider_id)
                     # break 当前 media_type 循环：下一轮 SQL 会按重算的 pool_full
                     # 过滤掉这个 provider，避免反复 claim 同一 task
                     break
@@ -835,6 +866,20 @@ class GenerationWorker:
     # ------------------------------------------------------------------
     # Task lifecycle
     # ------------------------------------------------------------------
+
+    async def _defer_claimed_task(self, task: dict[str, Any], provider_id: str) -> None:
+        """把已 claim 但当前不能跑的任务放回 queued，等下次 cycle 重试。
+
+        回队前把重派生的 provider 刷回投影列：走到这里说明存量投影与现值分裂（NULL 兜底，
+        或入队后剧本参考集 / 供应商配置被改），不刷新的话，存量值躲过 ``pool_full_providers``
+        的 SQL 过滤，之后每个 cycle 都重复 claim → requeue → break，同 lane 其他可跑任务被
+        持续排头阻塞。best-effort：刷新失败只损失过滤精度，回队重试本身不受影响。
+        """
+        try:
+            await self.queue.persist_execution_provider_id(task["task_id"], provider_id)
+        except Exception:
+            logger.warning("回队前投影刷新失败 task_id=%s provider=%s", task["task_id"], provider_id, exc_info=True)
+        await self._requeue_single_task(task["task_id"])
 
     async def _drain_finished_tasks(self) -> None:
         for task_id, finished_task in self._slots.drain_finished():
@@ -902,6 +947,7 @@ class GenerationWorker:
         """
         task_id = task["task_id"]
         task_type = task.get("task_type", "unknown")
+        media_type = _media_lane(task)
         provider_id = await _extract_provider(task)
         logger.info("开始处理任务 %s (type=%s, provider=%s)", task_id, task_type, provider_id)
 
@@ -912,16 +958,21 @@ class GenerationWorker:
             result = await execute_generation_task(task)
             result = await self._index_successful_media(task, result)
         except asyncio.CancelledError:
-            # 用户/级联取消：worker.request_cancel 触发 asyncio.Task.cancel()
+            # 用户/级联取消：worker.request_cancel 触发 asyncio.Task.cancel()。
+            # 取消不是上游不健康的信号，健康账不动。
             await asyncio.shield(self.queue.mark_task_cancelled(task_id, cancelled_by="user"))
             raise
         except Exception as exc:
             logger.exception("任务失败 %s (type=%s, provider=%s)", task_id, task_type, provider_id)
+            # 只有上游瞬态失败计健康账；连续到阈值会让这条泳道熔断（见 lib/provider_health）。
+            self._health.record_failure(provider_id, media_type, transient=is_transient_upstream_error(exc))
             rows = await asyncio.shield(self.queue.mark_task_failed(task_id, _encode_task_failure_message(exc)))
             if rows == 0:
                 # 外部已抢先翻 cancelling → 落地 cancelled 终态
                 await asyncio.shield(self.queue.mark_task_cancelled(task_id, cancelled_by="user"))
             return
+        else:
+            self._health.record_success(provider_id, media_type)
 
         try:
             rows = await asyncio.shield(self.queue.mark_task_succeeded(task_id, result))
@@ -1020,6 +1071,9 @@ class GenerationWorker:
             return
         except Exception as exc:
             logger.exception("resume 失败 %s (type=%s, provider=%s)", task_id, task_type, provider_id)
+            # 泳道固定 video：这条路径只服务视频孤儿（见 ``_dispatch_provider_bucket``），
+            # 脏数据行也照 video 记账，避免健康账的键与占用台账分裂。
+            self._health.record_failure(provider_id, "video", transient=is_transient_upstream_error(exc))
             rows = await asyncio.shield(self.queue.mark_task_failed(task_id, _encode_task_failure_message(exc)))
             if rows == 0:
                 await asyncio.shield(self.queue.mark_task_cancelled(task_id, cancelled_by="user"))
@@ -1034,6 +1088,7 @@ class GenerationWorker:
         if rows == 0:
             await asyncio.shield(self.queue.mark_task_cancelled(task_id, cancelled_by="user"))
         else:
+            self._health.record_success(provider_id, "video")
             logger.info("重启自愈完成 %s", task_id)
 
     # ------------------------------------------------------------------

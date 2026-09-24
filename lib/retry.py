@@ -70,6 +70,17 @@ def _should_retry(exc: Exception, retryable_errors: tuple[type[Exception], ...])
     return any(pattern in error_lower for pattern in RETRYABLE_STATUS_PATTERNS)
 
 
+def is_transient_upstream_error(exc: BaseException) -> bool:
+    """判断异常是否代表「上游暂时不健康」——与 ``with_retry_async`` 的重试判定同源。
+
+    供应商泳道健康度直接复用这份词汇表：「值得重试」与「算上游不健康」是同一个判断，
+    分两份实现迟早漂移。``NonRetryableError`` 子类（能力不支持、参数非法等）恒为
+    False；``CancelledError`` 继承 ``BaseException``，同样不在此列——用户取消不是上游
+    不健康信号。
+    """
+    return isinstance(exc, Exception) and _should_retry(exc, BASE_RETRYABLE_ERRORS)
+
+
 def with_retry_async(
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     backoff_seconds: tuple[int, ...] = DEFAULT_BACKOFF_SECONDS,

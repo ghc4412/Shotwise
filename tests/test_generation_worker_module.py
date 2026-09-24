@@ -14,6 +14,7 @@ from lib.generation_worker import (
     _extract_provider,
     _read_int_env,
 )
+from lib.provider_health import HealthSettings, ProviderHealthTable
 from lib.script_editor import ScriptEditError
 
 
@@ -1374,6 +1375,93 @@ class TestGenerationWorker:
         # video lane 无任何占用 → 黑名单为空（无占用就不可能"满"）
         assert worker._pool_full_providers("video") == frozenset()
         loop.close()
+
+    # ------------------------------------------------------------------
+    # 供应商健康熔断 + 动态降并发
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _trippable_health() -> ProviderHealthTable:
+        """阈值 1 的健康账：记一次瞬态失败即熔断，冷却足够长不会在测试中途自动半开。"""
+        return ProviderHealthTable(HealthSettings(failure_threshold=1, open_seconds=60.0, max_open_seconds=600.0))
+
+    @pytest.mark.unit
+    def test_effective_capacity_applies_health_reduction_only_to_supported_lanes(self):
+        """健康折减只作用在容量表 > 0 的泳道：上限 0 是"不支持"，不因熔断被抬成探针槽。"""
+        worker = GenerationWorker(
+            queue=_FakeQueue(),
+            capacity=_cap({"ark": {"image": 0, "video": 4}, "dead": {"image": 0, "video": 0}}),
+            health=self._trippable_health(),
+        )
+        assert worker._effective_capacity("ark", "video") == 4
+
+        worker._health.record_failure("ark", "video", transient=True)
+        assert worker._effective_capacity("ark", "video") == 0
+        assert worker._effective_capacity("dead", "video") == 0
+
+    @pytest.mark.unit
+    def test_pool_full_providers_includes_tripped_lane(self):
+        """熔断打开是与占用无关的黑名单源；容量表 0 的 lane 仍靠 fail-fast，不进黑名单。"""
+        worker = GenerationWorker(
+            queue=_FakeQueue(),
+            capacity=_cap({"tripped": {"image": 2, "video": 0}, "unsupported": {"image": 0, "video": 0}}),
+            health=self._trippable_health(),
+        )
+        worker._health.record_failure("tripped", "image", transient=True)
+        worker._health.record_failure("unsupported", "image", transient=True)
+
+        blocked = worker._pool_full_providers("image")
+        assert "tripped" in blocked, "熔断的泳道即使空着也必须进黑名单"
+        assert "unsupported" not in blocked, "不支持该 lane 的 provider 走 fail-fast，不能被 SQL 静默 drop"
+        # 熔断是 per-lane 的：没熔断的 media 泳道不受影响
+        assert worker._pool_full_providers("video") == frozenset()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_claim_requeues_tripped_lane_without_failing(self, monkeypatch):
+        """熔断是暂时的：claim 到熔断泳道的任务回队等半开探针，绝不 mark_failed。"""
+
+        class _SingleTaskQueue(_FakeQueue):
+            def __init__(self):
+                super().__init__()
+                self._tasks = [
+                    {
+                        "task_id": "vid-tripped",
+                        "task_type": "video",
+                        "media_type": "video",
+                        "provider_id": "ark",
+                        "payload": {},
+                    }
+                ]
+
+            async def claim_next_task(self, media_type, **_kwargs):  # type: ignore[override]
+                if media_type == "video" and self._tasks:
+                    return self._tasks.pop()
+                return None
+
+        queue = _SingleTaskQueue()
+        worker = GenerationWorker(
+            queue=queue,
+            capacity=_cap({"ark": {"image": 0, "video": 2}}),
+            health=self._trippable_health(),
+        )
+        worker._health.record_failure("ark", "video", transient=True)
+
+        async def _provider(_task):
+            return "ark"
+
+        monkeypatch.setattr("lib.generation_worker._extract_provider", _provider)
+        requeued: list[str] = []
+
+        async def _capture_requeue(self, task_id):
+            requeued.append(task_id)
+
+        monkeypatch.setattr(GenerationWorker, "_requeue_single_task", _capture_requeue)
+
+        await worker._claim_tasks()
+
+        assert requeued == ["vid-tripped"]
+        assert queue.failed == [], "熔断回队不该落失败终态——上游抖动是可恢复的"
+        assert worker._slots.find_by_task("vid-tripped") is None, "回队任务不得留在占用表"
 
     # ------------------------------------------------------------------
     # _handle_orphan_tasks_on_start：分流补全

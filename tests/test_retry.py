@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -13,6 +14,7 @@ from lib.retry import (
     RETRYABLE_STATUS_PATTERNS,
     NonRetryableError,
     _should_retry,
+    is_transient_upstream_error,
     with_retry_async,
 )
 
@@ -301,6 +303,29 @@ class TestWithRetryAsync:
         with pytest.raises(_Truncated):
             await fn()
         assert mock_fn.call_count == 1
+
+
+class TestIsTransientUpstreamError:
+    """is_transient_upstream_error 与 _should_retry 同源——供应商健康度直接复用这份词汇表。"""
+
+    def test_transport_errors_are_transient(self):
+        assert is_transient_upstream_error(ConnectionError("reset")) is True
+        assert is_transient_upstream_error(TimeoutError("deadline")) is True
+
+    def test_gateway_status_in_message_is_transient(self):
+        assert is_transient_upstream_error(RuntimeError("502 Bad Gateway")) is True
+        assert is_transient_upstream_error(RuntimeError("Error code: 429 - rate limited")) is True
+
+    def test_non_retryable_error_is_not_transient(self):
+        assert is_transient_upstream_error(NonRetryableError("capability unsupported")) is False
+
+    def test_plain_value_error_is_not_transient(self):
+        assert is_transient_upstream_error(ValueError("bad payload")) is False
+
+    def test_cancellation_is_not_transient(self):
+        """取消是用户意图，不是上游不健康信号；CancelledError 继承 BaseException。"""
+        assert is_transient_upstream_error(asyncio.CancelledError()) is False
+        assert is_transient_upstream_error(KeyboardInterrupt()) is False
 
 
 class TestDownloadConstants:
