@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from lib.db import get_async_session
 from lib.db.base import Base
-from lib.db.models.task import Task
+from lib.db.models.task import Task, WorkerLease
 from server.auth import CurrentUserInfo, get_current_user
 from server.error_handlers import register_error_handlers
 from server.routers import queue_observability
@@ -86,7 +86,7 @@ async def queue_api() -> AsyncIterator[tuple[httpx.AsyncClient, FastAPI, async_s
     await engine.dispose()
 
 
-async def _seed(factory: async_sessionmaker, *rows: Task) -> None:
+async def _seed(factory: async_sessionmaker, *rows: Any) -> None:
     async with factory() as session:
         session.add_all(list(rows))
         await session.commit()
@@ -103,6 +103,12 @@ class TestQueueObservabilityEndpoint:
         assert body["health"] == {}
         assert body["eta"] == {}
         assert body["counts"]["total"] == 0
+        assert body["worker"] == {
+            "name": "default",
+            "online": False,
+            "lease_remaining_seconds": None,
+            "in_process": False,
+        }
         assert body["alerts"] == []
 
     async def test_snapshot_reports_backlog_lanes_eta_and_alerts(self, queue_api):
@@ -155,6 +161,42 @@ class TestQueueObservabilityEndpoint:
         assert body["eta"]["image"]["effective_capacity"] == 2
         assert body["eta"]["image"]["avg_service_seconds"] == 30.0
         assert body["eta"]["image"]["eta_seconds"] == 30.0
+
+    async def test_snapshot_reports_worker_lease_and_stall_code(self, queue_api):
+        """选主行在线 + worker 已注入 + 有排队却无 running：报 queue_stalled（不是 worker_offline）。"""
+        client, app, factory = queue_api
+        await _seed(
+            factory,
+            # 选主行是 epoch 秒、按真实时间判定，所以这里取「现在 + TTL」而不是固定基准时间。
+            WorkerLease(
+                name="default",
+                owner_id="pid-1",
+                lease_until=datetime.now(UTC).timestamp() + 60,
+                updated_at=_BASE,
+            ),
+            _task_row("q1", queued_at=_BASE),
+        )
+        app.state.generation_worker = _StubWorker(
+            lanes={
+                "ark:image": {
+                    "capacity": 2,
+                    "effective_capacity": 0,
+                    "occupied": 0,
+                    "inflight": 0,
+                    "pending": 0,
+                    "utilization": 0.0,
+                    "health": "open",
+                }
+            }
+        )
+
+        resp = await client.get("/api/v1/queue/observability")
+        assert resp.status_code == 200
+        body = resp.json()
+
+        assert body["worker"]["online"] is True
+        assert body["worker"]["in_process"] is True
+        assert {alert["code"] for alert in body["alerts"]} == {"queue_stalled", "provider_tripped"}
 
     async def test_snapshot_filters_by_project(self, queue_api):
         client, _app, factory = queue_api

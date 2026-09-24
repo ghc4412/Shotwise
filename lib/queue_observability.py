@@ -1,10 +1,11 @@
 """队列可观测性只读读层。
 
-把三个数据源拼成一份诊断快照：
+把四个数据源拼成一份诊断快照：
 
 - ``Task`` 表 —— 积压（按状态 / 媒体类型 / 供应商）、最老排队时长、任务排队名次；
 - ``ApiCall`` 表 —— 按 ``(provider, call_type)`` 的完成耗时 p50 / p95；
-- ``GenerationWorker`` 的内存泳道快照 —— 容量 / 有效并发 / 占用 / 健康态（可选注入）。
+- ``GenerationWorker`` 的内存泳道快照 —— 容量 / 有效并发 / 占用 / 健康态（可选注入）；
+- ``WorkerLease`` 行 —— 进程级 worker 在线态，用来区分「泳道空闲」与「根本没有 worker」。
 
 只读约束：不写库、不改调度决策、不 requeue（ADR 0007：孤儿任务不自动重排，image 不
 resume）。查询自带在本模块内，不复用 ``TaskRepository`` / ``GenerationQueue`` 的写路径，
@@ -20,6 +21,7 @@ from __future__ import annotations
 import logging
 import math
 import statistics
+import time
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -29,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from lib.db.base import utc_now
 from lib.db.models.api_call import ApiCall
-from lib.db.models.task import Task
+from lib.db.models.task import Task, WorkerLease
 from lib.provider_health import _read_float_env, _read_int_env
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,8 @@ DEFAULT_LATENCY_WINDOW_SECONDS = 3600.0
 DEFAULT_LATENCY_SAMPLE_LIMIT = 5000
 DEFAULT_BACKLOG_ALERT_THRESHOLD = 50
 DEFAULT_PENDING_ALERT_THRESHOLD = 10
+# 进程级选主行的 name（GenerationWorker._run_loop 每轮续约的就是这一行）。
+DEFAULT_WORKER_LEASE_NAME = "default"
 
 # 告警严重度取值：info（格子满，属正常） < warning（需关注） < critical（队列卡住）。
 
@@ -57,6 +61,33 @@ def _as_utc(value: datetime | None) -> datetime | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+async def worker_lease_state(
+    session: AsyncSession,
+    *,
+    name: str = DEFAULT_WORKER_LEASE_NAME,
+    now_epoch: float | None = None,
+) -> dict[str, Any]:
+    """读进程级选主行（``WorkerLease``）的在线态。
+
+    口径与 ``TaskRepository.is_worker_online`` 一致：``lease_until`` 是 epoch 秒，缺行
+    或已过期都算离线。本模块独立读该表，不经仓库层。
+
+    快照需要这个跨进程信号，是因为 ``lanes`` 只反映**本进程**注入的 worker：泳道为空既
+    可能是「空闲」，也可能是「这个进程根本没挂 worker」。少了这一位，两种情况会被读成
+    同一种，诊断结论正好相反。
+    """
+    result = await session.execute(select(WorkerLease.lease_until).where(WorkerLease.name == name))
+    row = result.first()
+    if row is None:
+        return {"name": name, "online": False, "lease_remaining_seconds": None}
+    epoch = time.time() if now_epoch is None else now_epoch
+    return {
+        "name": name,
+        "online": row[0] > epoch,
+        "lease_remaining_seconds": round(float(row[0]) - epoch, 1),
+    }
 
 
 def percentile(sorted_values: Sequence[float], quantile: float) -> float:
@@ -273,6 +304,7 @@ async def task_queue_position(session: AsyncSession, task_id: str) -> dict[str, 
 def build_alerts(
     *,
     counts: dict[str, int],
+    worker_online: bool,
     lanes: dict[str, dict[str, Any]],
     backlog_threshold: int,
     pending_threshold: int,
@@ -282,6 +314,10 @@ def build_alerts(
     每条告警只有 ``code`` / ``severity`` / 数值字段：文案在前端按 code 本地化，后端不
     造自然语言。``provider_tripped`` 与 ``lane_saturated`` 都带泳道坐标，便于前端直接
     高亮对应格子。
+
+    停滞拆成两种：``worker_offline``（没有进程持有选主行，活干不了，要重启/查服务）与
+    ``queue_stalled``（worker 在线却没任务在跑，通常是泳道全熔断或容量为 0）。两者的
+    处置动作不同，合成一个 code 会把运维引到错的方向。
     """
     alerts: list[dict[str, Any]] = []
 
@@ -296,8 +332,11 @@ def build_alerts(
                 "threshold": backlog_threshold,
             }
         )
-    if queued > 0 and running == 0:
-        # 有排队但一个都没在跑：所有泳道都被熔断、容量为 0、或 worker 不在线。
+    if queued + running > 0 and not worker_online:
+        # 有活却没人持有选主行：重启空档与崩溃后残留的 running 都落在这里。
+        alerts.append({"code": "worker_offline", "severity": "critical", "value": queued, "running": running})
+    elif queued > 0 and running == 0:
+        # worker 在线却一个都没在跑：所有泳道都被熔断、容量为 0，或依赖尚未就绪。
         alerts.append({"code": "queue_stalled", "severity": "critical", "value": queued})
 
     for lane_key in sorted(lanes):
@@ -390,7 +429,11 @@ async def build_snapshot(
     backlog_alert_threshold: int | None = None,
     pending_alert_threshold: int | None = None,
 ) -> dict[str, Any]:
-    """拼出完整诊断快照。``worker`` 可省略：省掉泳道快照与 ETA 容量分母。"""
+    """拼出完整诊断快照。
+
+    ``worker`` 可省略：省掉泳道快照与 ETA 容量分母（``worker`` 块仍给出选主行在线态，
+    并把 ``in_process`` 记为 False）。
+    """
     resolved_now = now or utc_now()
     counts = await _task_status_counts(session, project_name)
     active_by_media = await _active_by_media(session, project_name)
@@ -416,10 +459,15 @@ async def build_snapshot(
         else _read_int_env("QUEUE_PENDING_ALERT_THRESHOLD", DEFAULT_PENDING_ALERT_THRESHOLD, minimum=1)
     )
 
+    worker_state = await worker_lease_state(session, now_epoch=resolved_now.timestamp())
+    # 「本进程挂没挂 worker」与「有没有进程持有选主行」是两件事，一起给出才不会误读空泳道。
+    worker_state["in_process"] = worker is not None
+
     oldest = _as_utc(oldest_queued_at)
     return {
         "generated_at": resolved_now.isoformat(),
         "project_name": project_name,
+        "worker": worker_state,
         "counts": counts,
         "active_by_media": active_by_media,
         "queued_by_provider": queued_by_provider,
@@ -439,6 +487,7 @@ async def build_snapshot(
         "health": health,
         "alerts": build_alerts(
             counts=counts,
+            worker_online=bool(worker_state["online"]),
             lanes=lanes,
             backlog_threshold=resolved_backlog,
             pending_threshold=resolved_pending,

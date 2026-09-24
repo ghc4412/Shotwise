@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from lib.db.models.api_call import ApiCall
-from lib.db.models.task import Task
+from lib.db.models.task import Task, WorkerLease
 from lib.queue_observability import (
     build_alerts,
     build_snapshot,
@@ -18,6 +18,7 @@ from lib.queue_observability import (
     provider_latencies,
     summarize_durations,
     task_queue_position,
+    worker_lease_state,
 )
 
 
@@ -116,11 +117,54 @@ class TestBuildAlerts:
     def test_backlog_and_stalled(self):
         alerts = build_alerts(
             counts={"queued": 60, "running": 0},
+            worker_online=True,
             lanes={},
             backlog_threshold=50,
             pending_threshold=10,
         )
         assert {alert["code"] for alert in alerts} == {"queue_backlog", "queue_stalled"}
+
+    @pytest.mark.unit
+    def test_offline_worker_replaces_stalled(self):
+        """没有进程持有选主行时改报 worker_offline：处置动作是查 worker，不是查泳道。"""
+        alerts = build_alerts(
+            counts={"queued": 3, "running": 0},
+            worker_online=False,
+            lanes={},
+            backlog_threshold=50,
+            pending_threshold=10,
+        )
+        by_code = {alert["code"]: alert for alert in alerts}
+        assert set(by_code) == {"worker_offline"}
+        assert by_code["worker_offline"]["value"] == 3
+
+    @pytest.mark.unit
+    def test_offline_worker_reports_stale_running(self):
+        """崩溃后残留的 running 任务也归 worker_offline：它们不会有人推进（ADR 0007 不重排）。"""
+        alerts = build_alerts(
+            counts={"queued": 2, "running": 4},
+            worker_online=False,
+            lanes={},
+            backlog_threshold=50,
+            pending_threshold=10,
+        )
+        by_code = {alert["code"]: alert for alert in alerts}
+        assert set(by_code) == {"worker_offline"}
+        assert by_code["worker_offline"]["running"] == 4
+
+    @pytest.mark.unit
+    def test_idle_queue_is_quiet_without_worker(self):
+        """空队列 + 无 worker 不该持续报警（服务闲置不是故障）。"""
+        assert (
+            build_alerts(
+                counts={"queued": 0, "running": 0},
+                worker_online=False,
+                lanes={},
+                backlog_threshold=50,
+                pending_threshold=10,
+            )
+            == []
+        )
 
     @pytest.mark.unit
     def test_quiet_when_healthy(self):
@@ -133,7 +177,13 @@ class TestBuildAlerts:
             }
         }
         assert (
-            build_alerts(counts={"queued": 3, "running": 2}, lanes=lanes, backlog_threshold=50, pending_threshold=10)
+            build_alerts(
+                counts={"queued": 3, "running": 2},
+                worker_online=True,
+                lanes=lanes,
+                backlog_threshold=50,
+                pending_threshold=10,
+            )
             == []
         )
 
@@ -144,7 +194,11 @@ class TestBuildAlerts:
             "gemini:image": {"health": "closed", "effective_capacity": 2, "occupied": 2, "pending": 12},
         }
         alerts = build_alerts(
-            counts={"queued": 1, "running": 1}, lanes=lanes, backlog_threshold=50, pending_threshold=10
+            counts={"queued": 1, "running": 1},
+            worker_online=True,
+            lanes=lanes,
+            backlog_threshold=50,
+            pending_threshold=10,
         )
         by_code = {alert["code"]: alert for alert in alerts}
         assert set(by_code) == {"provider_tripped", "lane_saturated", "pending_wait_high"}
@@ -209,7 +263,14 @@ class TestSnapshotReads:
         assert image_eta["effective_capacity"] is None
         assert image_eta["eta_seconds"] is None
         assert snapshot["lanes"] == {}
-        assert {alert["code"] for alert in snapshot["alerts"]} == {"queue_backlog"}
+        # 没有任何进程持有选主行，却有排队/在跑的任务：除了积压还要报 worker_offline。
+        assert snapshot["worker"] == {
+            "name": "default",
+            "online": False,
+            "lease_remaining_seconds": None,
+            "in_process": False,
+        }
+        assert {alert["code"] for alert in snapshot["alerts"]} == {"queue_backlog", "worker_offline"}
 
     @pytest.mark.integration
     async def test_snapshot_uses_worker_lanes_for_eta_and_health(self, async_session):
@@ -256,6 +317,67 @@ class TestSnapshotReads:
         assert image_eta["eta_seconds"] == 60.0
         assert snapshot["lanes"]["ark:image"]["utilization"] == 0.5
         assert snapshot["health"] == {"ark:image": {"state": "closed"}}
+
+    @pytest.mark.integration
+    async def test_worker_lease_state_reads_epoch_ttl(self, async_session):
+        base = datetime(2026, 9, 24, 10, 0, tzinfo=UTC)
+        epoch = base.timestamp()
+        async_session.add_all(
+            [
+                WorkerLease(name="default", owner_id="pid-1", lease_until=epoch + 30, updated_at=base),
+                WorkerLease(name="stale", owner_id="pid-2", lease_until=epoch - 1, updated_at=base),
+            ]
+        )
+        await async_session.commit()
+
+        assert await worker_lease_state(async_session, now_epoch=epoch) == {
+            "name": "default",
+            "online": True,
+            "lease_remaining_seconds": 30.0,
+        }
+        expired = await worker_lease_state(async_session, name="stale", now_epoch=epoch)
+        assert expired["online"] is False
+        assert expired["lease_remaining_seconds"] == -1.0
+        assert await worker_lease_state(async_session, name="absent", now_epoch=epoch) == {
+            "name": "absent",
+            "online": False,
+            "lease_remaining_seconds": None,
+        }
+
+    @pytest.mark.integration
+    async def test_snapshot_worker_block_marks_offline_process(self, async_session):
+        """本进程没挂 worker 且没人持有选主行：worker 块两位都 False，并报 worker_offline。"""
+        base = datetime(2026, 9, 24, 10, 0, tzinfo=UTC)
+        async_session.add(_task("q1", queued_at=base))
+        await async_session.commit()
+
+        snapshot = await build_snapshot(async_session, now=base)
+
+        assert snapshot["worker"] == {
+            "name": "default",
+            "online": False,
+            "lease_remaining_seconds": None,
+            "in_process": False,
+        }
+        assert {alert["code"] for alert in snapshot["alerts"]} == {"worker_offline"}
+
+    @pytest.mark.integration
+    async def test_snapshot_worker_block_marks_live_in_process_worker(self, async_session):
+        """有活、选主行在线、worker 挂在本进程：不报警（running 在跑，泳道非空才可诊断）。"""
+        base = datetime(2026, 9, 24, 10, 0, tzinfo=UTC)
+        async_session.add_all(
+            [
+                WorkerLease(name="default", owner_id="pid-1", lease_until=base.timestamp() + 60, updated_at=base),
+                _task("r1", status="running", queued_at=base, started_at=base),
+            ]
+        )
+        await async_session.commit()
+
+        snapshot = await build_snapshot(async_session, worker=_StubWorker({}), now=base)
+
+        assert snapshot["worker"]["online"] is True
+        assert snapshot["worker"]["in_process"] is True
+        assert snapshot["alerts"] == []
 
     @pytest.mark.integration
     async def test_provider_latencies_filter_and_group(self, async_session):
