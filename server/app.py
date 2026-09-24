@@ -80,6 +80,7 @@ from server.routers import (
     props,
     providers,
     publishing,
+    queue_observability,
     reference_videos,
     scenes,
     script_review,
@@ -679,6 +680,12 @@ app.include_router(
     tags=["助手会话"],
 )
 app.include_router(tasks.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["任务队列"])
+app.include_router(
+    queue_observability.router,
+    prefix="/api/v1",
+    dependencies=[Depends(get_current_user)],
+    tags=["任务队列"],
+)
 app.include_router(features.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["Feature Flags"])
 app.include_router(workflows.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["Shotwise Flow"])
 app.include_router(

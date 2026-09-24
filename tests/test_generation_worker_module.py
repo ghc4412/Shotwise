@@ -327,6 +327,16 @@ class TestCapacityTable:
         assert table.get("unknown", "image") == 5
 
     @pytest.mark.unit
+    def test_snapshot_exposes_registered_lanes_as_copies(self):
+        """snapshot 只暴露已登记泳道（不含惰默认的未知 provider），且逐 lane 拷贝。"""
+        table = CapacityTable(_limits={"p": {"image": 3, "video": 0}}, _defaults={"image": 5, "video": 3})
+        snap = table.snapshot()
+        assert snap == {"p": {"image": 3, "video": 0}}
+        assert "unknown" not in snap, "未登记 provider 的诊断值由调用方补齐，不靠快照捧出惰默认"
+        snap["p"]["image"] = 99
+        assert table.get("p", "image") == 3, "快照必须是拷贝，不能反向写回容量表"
+
+    @pytest.mark.unit
     def test_from_env_derives_support_and_defaults(self, monkeypatch):
         from lib.config.registry import PROVIDER_REGISTRY
 
@@ -1414,6 +1424,64 @@ class TestGenerationWorker:
         assert "unsupported" not in blocked, "不支持该 lane 的 provider 走 fail-fast，不能被 SQL 静默 drop"
         # 熔断是 per-lane 的：没熔断的 media 泳道不受影响
         assert worker._pool_full_providers("video") == frozenset()
+
+    # ------------------------------------------------------------------
+    # observability_snapshot
+    # ------------------------------------------------------------------
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_observability_snapshot_reports_capacity_occupancy_and_health(self):
+        """诊断快照：容量 / 有效并发 / 占用 / 健康态按泳道汇总，熔断 lane 用有效并发做分母。"""
+        worker = GenerationWorker(
+            queue=_FakeQueue(),
+            capacity=_cap({"ark": {"image": 0, "video": 4}, "gemini": {"image": 2, "video": 0}}),
+            health=self._trippable_health(),
+        )
+        busy = asyncio.get_running_loop().create_future()
+        worker._slots.register("gemini", "image", "t-img", busy)
+        worker._health.record_failure("ark", "video", transient=True)
+
+        snap = worker.observability_snapshot()
+        lanes = snap["lanes"]
+        # 只收容量 > 0 的已登记泳道：ark:image 与 gemini:video 都是 0，不进视图
+        assert set(lanes) == {"ark:video", "gemini:image"}
+
+        gemini = lanes["gemini:image"]
+        assert gemini["capacity"] == 2
+        assert gemini["effective_capacity"] == 2
+        assert gemini["occupied"] == 1
+        assert gemini["inflight"] == 1
+        assert gemini["pending"] == 0
+        assert gemini["utilization"] == 0.5
+        assert gemini["health"] == "closed"
+
+        ark = lanes["ark:video"]
+        assert ark["capacity"] == 4
+        assert ark["effective_capacity"] == 0, "熔断期间有效并发为 0"
+        assert ark["occupied"] == 0
+        assert ark["utilization"] == 0.0, "分母为 0 时占用率记 0，不能除零"
+        assert ark["health"] == "open"
+
+        assert snap["health"]["ark:video"]["state"] == "open"
+        busy.cancel()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_observability_snapshot_includes_unknown_provider_with_occupancy(self):
+        """有占用但容量表未登记的 provider 也要出现在诊断视图，避免启动窗口 / 删除的 custom provider 凭空消失。"""
+        worker = GenerationWorker(queue=_FakeQueue(), capacity=_cap({"known": {"image": 1, "video": 0}}))
+        busy = asyncio.get_running_loop().create_future()
+        worker._slots.register("known", "image", "t-known", busy)
+        ghost = asyncio.get_running_loop().create_future()
+        worker._slots.register("ghost", "image", "t-ghost", ghost, pending=True)
+
+        lanes = worker.observability_snapshot()["lanes"]
+        assert "known:image" in lanes
+        assert lanes["ghost:image"]["occupied"] == 1
+        assert lanes["ghost:image"]["pending"] == 1
+        assert lanes["ghost:image"]["inflight"] == 0
+        busy.cancel()
+        ghost.cancel()
 
     @pytest.mark.unit
     @pytest.mark.asyncio

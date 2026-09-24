@@ -286,6 +286,14 @@ class CapacityTable:
         """整表换数字（reload 入口）。占用台账与默认值不受影响。"""
         self._limits = new_limits
 
+    def snapshot(self) -> dict[str, dict[str, int]]:
+        """只读容量快照：``provider_id`` → ``{media_type: 上限}``（逐 lane 浅拷贝）。
+
+        快照刻意不含 ``_defaults``（未知 provider 的懒默认）——诊断视图只关心已登记的
+        泳道，未知 provider 的占用由调用方另行补齐。
+        """
+        return {provider_id: dict(lanes) for provider_id, lanes in self._limits.items()}
+
     @staticmethod
     def _lane_limits(media_types: Any, image: int, video: int, audio: int) -> dict[str, int]:
         """按 provider 支持的 media_types 把上限投影成 lane 字典；不支持的 lane → 0。
@@ -456,6 +464,25 @@ class SlotTable:
     def occupied_providers(self, media: str) -> set[str]:
         """该 ``media`` 下有占用(≥1)的 provider；空 bucket 不计（黑名单源，含未知 provider）。"""
         return {provider for (provider, m), bucket in self._slots.items() if m == media and bucket}
+
+    def snapshot(self) -> dict[tuple[str, str], dict[str, int]]:
+        """只读占用快照：``(provider, media)`` → ``{occupied, inflight, pending}``。
+
+        ``pending`` 是 video sem-throttled dispatcher 已登记、尚未拿到 sem 的子任务；
+        ``occupied`` = inflight + pending，与 ``has_room`` 的计数口径一致。纯诊断，
+        不参与调度决策，调用方改不动内部台账。
+        """
+        out: dict[tuple[str, str], dict[str, int]] = {}
+        for (provider, media), bucket in self._slots.items():
+            if not bucket:
+                continue
+            pending = sum(1 for occ in bucket.values() if occ.pending)
+            out[(provider, media)] = {
+                "occupied": len(bucket),
+                "inflight": len(bucket) - pending,
+                "pending": pending,
+            }
+        return out
 
     def find_by_task(self, task_id: str) -> asyncio.Future[Any] | None:
         """跨全表按 ``task_id`` 找执行体（cancel 用）；未命中返回 None。"""
@@ -706,6 +733,38 @@ class GenerationWorker:
             if self._owns_lease:
                 await self.queue.release_worker_lease(name=self.lease_name, owner_id=self.owner_id)
             self._owns_lease = False
+
+    def observability_snapshot(self) -> dict[str, Any]:
+        """只读诊断快照：每条泳道的占用 / 有效并发 / 健康态，键为 ``"provider:media"``。
+
+        ``capacity`` 是用户配置上限，``effective_capacity`` 是叠加健康折减后的真实并发；
+        ``utilization`` 用有效并发做分母（分母 0 = 熔断或该 lane 关闭，占用率记 0）。
+        只收容量 > 0 的登记泳道，外加任何有占用的未知 provider（首次 reload 前的启动窗口 /
+        运行中被删的 custom provider），避免它们从诊断视图里凭空消失。纯查询、不写库。
+        """
+        slots = self._slots.snapshot()
+        keys = {
+            (provider_id, media_type)
+            for provider_id, media_limits in self._capacity.snapshot().items()
+            for media_type, limit in media_limits.items()
+            if limit > 0
+        }
+        keys |= set(slots)
+        lanes: dict[str, dict[str, Any]] = {}
+        for provider_id, media_type in sorted(keys):
+            occupied = slots.get((provider_id, media_type), {})
+            effective = self._effective_capacity(provider_id, media_type)
+            used = int(occupied.get("occupied", 0))
+            lanes[f"{provider_id}:{media_type}"] = {
+                "capacity": self._capacity.get(provider_id, media_type),
+                "effective_capacity": effective,
+                "occupied": used,
+                "inflight": int(occupied.get("inflight", 0)),
+                "pending": int(occupied.get("pending", 0)),
+                "utilization": (used / effective) if effective > 0 else 0.0,
+                "health": self._health.state(provider_id, media_type).value,
+            }
+        return {"lanes": lanes, "health": self._health.snapshot()}
 
     def _effective_capacity(self, provider_id: str, media_type: str) -> int:
         """容量表上限经健康折减后的有效并发；熔断打开时为 0。

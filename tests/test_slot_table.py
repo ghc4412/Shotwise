@@ -166,3 +166,33 @@ class TestSlotTable:
         assert "p-both" not in st.occupied_providers("video")
         # image lane 不受影响
         assert st.occupied_providers("image") == {"p-img", "p-both"}
+
+    async def test_snapshot_reports_occupancy_and_skips_empty_buckets(self):
+        """⑪ snapshot：按 ``(provider, media)`` 报 occupied/inflight/pending，空 bucket 不出现。
+
+        诊断视图只读：返回的是逐 bucket 的普通 dict，改它不回写内部台账。
+        """
+        st = SlotTable()
+        f_img = _pending_future()
+        f_vid_pending = _pending_future()
+        f_vid_inflight = _pending_future()
+        st.register("p", "image", "i1", f_img)
+        st.register("p", "video", "v1", f_vid_pending, pending=True)
+        st.register("p", "video", "v2", f_vid_inflight)
+
+        snap = st.snapshot()
+        assert snap[("p", "image")] == {"occupied": 1, "inflight": 1, "pending": 0}
+        assert snap[("p", "video")] == {"occupied": 2, "inflight": 1, "pending": 1}
+
+        # 快照是拷贝：篡改返回值不影响真实占用
+        snap[("p", "video")]["occupied"] = 999
+        assert st.occupied("p", "video") == 2
+
+        # 清空一个 bucket 后它不再出现在快照里（与 occupied_providers 同一剪枝口径）
+        st.release("p", "image", "i1")
+        assert ("p", "image") not in st.snapshot()
+        assert set(st.snapshot()) == {("p", "video")}
+
+        f_img.cancel()
+        f_vid_pending.cancel()
+        f_vid_inflight.cancel()
