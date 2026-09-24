@@ -38,10 +38,14 @@ class Task(UserOwnedMixin, Base):
     workflow_node_run_id: Mapped[str | None] = mapped_column(String(36), index=True)
     workflow_node_run_item_id: Mapped[str | None] = mapped_column(String(36), index=True)
     input_fingerprint: Mapped[str | None] = mapped_column(String(64), index=True)
+    # 保留字段（无写者）：workflow 执行契约迁移预置，claim_next 从不写入。当前写者隔离是
+    # 「WorkerLease 单活选主 + 单 in-process worker」，不是 Task 行级 lease/fencing，
+    # 不得把取值当 claim/终态隔离依据；见 docs/adr/0065。
     request_idempotency_key: Mapped[str | None] = mapped_column(String(256))
     progress: Mapped[float | None] = mapped_column(Float)
     progress_source: Mapped[str | None] = mapped_column(String(32))
     phase_code: Mapped[str | None] = mapped_column(String(64))
+    # 同上：保留字段，无写者。
     lease_owner: Mapped[str | None] = mapped_column(String(128))
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     fencing_token: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
