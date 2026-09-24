@@ -161,6 +161,7 @@ MESSAGES = {
     # Providers
     "unknown_provider": "Unknown provider: {provider_id}",
     "max_workers_must_be_positive_integer": "{field} must be a positive integer, got: {value}",
+    "request_timeout_must_be_positive_number": "{field} must be a positive number, got: {value}",
     "credentials_not_found": "Credentials not found",
     "vertex_json_read_failed": "Failed to read the uploaded file",
     "vertex_json_too_large": "Credentials file is too large",

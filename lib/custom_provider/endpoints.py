@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 from urllib.parse import quote, urlsplit
 
 from lib.audio_backends.openai import OpenAIAudioBackend
@@ -349,9 +349,28 @@ def _build_gemini_generate(provider, model_id: str) -> CustomTextBackend:
     return CustomTextBackend(provider_id=provider.provider_id, delegate=delegate, model=model_id)
 
 
+class _ImageTimeoutKwargs(TypedDict, total=False):
+    timeout: float
+
+
+def _image_request_timeout_kwargs(provider) -> _ImageTimeoutKwargs:
+    """按「供应商列 > 环境变量 > backend 内置默认」透传图片请求超时。
+
+    列值为 NULL 时返回空 dict（不下传 timeout），把「未设置」如实交给 backend 解析环境变量兜底——
+    在这一层填默认值会让全局 env 调参失效。显式传 None 同样会覆盖 env，因此须整键省略。
+    """
+    timeout = getattr(provider, "image_request_timeout_seconds", None)
+    return {"timeout": timeout} if timeout is not None else {}
+
+
 def _build_openai_images(provider, model_id: str) -> CustomImageBackend:
     base_url = ensure_openai_base_url(provider.base_url)
-    delegate = OpenAIImageBackend(api_key=provider.api_key, base_url=base_url, model=model_id)
+    delegate = OpenAIImageBackend(
+        api_key=provider.api_key,
+        base_url=base_url,
+        model=model_id,
+        **_image_request_timeout_kwargs(provider),
+    )
     return CustomImageBackend(provider_id=provider.provider_id, delegate=delegate, model=model_id)
 
 
@@ -362,6 +381,7 @@ def _build_openai_images_generations(provider, model_id: str) -> CustomImageBack
         base_url=base_url,
         model=model_id,
         mode="generations_only",
+        **_image_request_timeout_kwargs(provider),
     )
     return CustomImageBackend(provider_id=provider.provider_id, delegate=delegate, model=model_id)
 
@@ -373,6 +393,7 @@ def _build_openai_images_edits(provider, model_id: str) -> CustomImageBackend:
         base_url=base_url,
         model=model_id,
         mode="edits_only",
+        **_image_request_timeout_kwargs(provider),
     )
     return CustomImageBackend(provider_id=provider.provider_id, delegate=delegate, model=model_id)
 

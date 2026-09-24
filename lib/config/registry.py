@@ -881,7 +881,7 @@ PROVIDER_REGISTRY: dict[str, ProviderMeta] = {
         console_url="https://platform.openai.com/api-keys",
         description="OpenAI 官方平台，支持 GPT-5.5 / GPT-5.4 文本、GPT Image 2 图片和 Sora 视频生成。",
         required_keys=["api_key"],
-        optional_keys=["base_url", "image_max_workers", "video_max_workers"],
+        optional_keys=["base_url", "image_max_workers", "video_max_workers", "image_request_timeout_seconds"],
         secret_keys=["api_key"],
         models={
             # --- text ---

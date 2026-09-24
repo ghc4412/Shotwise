@@ -1267,6 +1267,10 @@ export default {
   'cp_audio_max_workers_label': 'Audio Concurrency',
   'cp_max_workers_placeholder': 'Default',
   'max_workers_invalid': 'Concurrency limits must be positive integers. Check the image / video / audio inputs.',
+  'cp_image_request_timeout_label': 'Image request timeout (seconds)',
+  'cp_image_request_timeout_help': 'Per-request timeout for image calls. Leave empty to use the global setting and the backend default.',
+  'cp_image_request_timeout_placeholder': 'Default',
+  'image_request_timeout_invalid': 'Image request timeout must be a number greater than 0.',
 
   // CustomProviderDetail
   'discovery_format_label': 'Model Discovery Protocol',

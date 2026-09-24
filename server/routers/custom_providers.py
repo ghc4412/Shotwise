@@ -65,6 +65,10 @@ DiscoveryFormatLiteral = Literal["openai", "google"]
 # 并发上限定型字段：可空正整数（≥1）；None = 未设置 → 容量装载回退全局默认。
 MaxWorkers = Annotated[int | None, Field(default=None, ge=1)]
 
+# 图片请求超时（秒）：可空正数（>0）；None = 未设置 → 回退全局环境变量与 backend 默认值。
+# 不接受 0 或负值：SDK 会把它们当作「已过期」而非「不设超时」，是配置事故而非合法语义。
+ImageRequestTimeout = Annotated[float | None, Field(default=None, gt=0)]
+
 # 开放给用户覆盖的能力维度。DB 列与合成函数对 VideoCapabilities 全字段通用，写入侧在此收窄：
 # 未列入的维度即便是合法字段名也不落库，扩容只需往这里加键名，无需 DB 迁移或改合成语义。
 CAPABILITY_OVERRIDE_ALLOWLIST = frozenset({"last_frame", "reference_audio_mode", "max_reference_audio_count"})
@@ -208,6 +212,7 @@ class CreateProviderRequest(BaseModel):
     image_max_workers: MaxWorkers
     video_max_workers: MaxWorkers
     audio_max_workers: MaxWorkers
+    image_request_timeout_seconds: ImageRequestTimeout
     is_enabled: bool = True
 
 
@@ -229,6 +234,8 @@ class FullUpdateProviderRequest(BaseModel):
     image_max_workers: MaxWorkers
     video_max_workers: MaxWorkers
     audio_max_workers: MaxWorkers
+    # 图片请求超时随 PUT 全量提交（空输入 → None → 回退全局 env / backend 默认）。
+    image_request_timeout_seconds: ImageRequestTimeout
     # 供应商级启用开关（PUT 全量语义，必填）
     is_enabled: bool = True
 
@@ -278,6 +285,8 @@ class ProviderResponse(BaseModel):
     image_max_workers: int | None = None
     video_max_workers: int | None = None
     audio_max_workers: int | None = None
+    # 图片 lane 单次请求超时（秒）；null = 未设置（回退全局 env / backend 默认值）
+    image_request_timeout_seconds: float | None = None
     # 供应商级启用开关（默认启用）；关闭后该供应商全部模型不再被生成链路选择/调用
     is_enabled: bool = True
 
@@ -426,6 +435,7 @@ def _provider_to_response(provider, models, global_bucket_refs: dict[str, list[s
         image_max_workers=provider.image_max_workers,
         video_max_workers=provider.video_max_workers,
         audio_max_workers=provider.audio_max_workers,
+        image_request_timeout_seconds=provider.image_request_timeout_seconds,
         is_enabled=provider.is_enabled,
     )
 
@@ -658,6 +668,7 @@ async def create_provider(
         image_max_workers=body.image_max_workers,
         video_max_workers=body.video_max_workers,
         audio_max_workers=body.audio_max_workers,
+        image_request_timeout_seconds=body.image_request_timeout_seconds,
         is_enabled=body.is_enabled,
     )
     await session.commit()
@@ -760,6 +771,8 @@ async def full_update_provider(
         "image_max_workers": body.image_max_workers,
         "video_max_workers": body.video_max_workers,
         "audio_max_workers": body.audio_max_workers,
+        # 图片请求超时同走 PUT 权威语义：始终写入（含 None 清除）
+        "image_request_timeout_seconds": body.image_request_timeout_seconds,
         # PUT 为供应商级开关的权威来源：始终写入
         "is_enabled": body.is_enabled,
     }

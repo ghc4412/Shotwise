@@ -26,6 +26,8 @@ class CustomProvider(TimestampMixin, Base):
     # 与加列迁移保持同步：三条并发上限列在 DB 层强制 ≥1，repo 直写或手工 SQL 都无法写入
     # 0 或负值；NULL=未设置回退默认。0 不是合法用户输入，仅作 CapacityTable 内部「不支持该
     # lane」哨兵（由 lane 投影在内存里产生，绝不写回这些列）。
+    # 图片请求超时同样是「NULL=未设置」的可选调参列，DB 层强制 >0：0 或负值会让 SDK 立即超时，
+    # 属于配置事故而非「不设超时」。
     __table_args__ = (
         CheckConstraint(
             "image_max_workers IS NULL OR image_max_workers >= 1",
@@ -38,6 +40,10 @@ class CustomProvider(TimestampMixin, Base):
         CheckConstraint(
             "audio_max_workers IS NULL OR audio_max_workers >= 1",
             name="ck_custom_provider_audio_max_workers_positive",
+        ),
+        CheckConstraint(
+            "image_request_timeout_seconds IS NULL OR image_request_timeout_seconds > 0",
+            name="ck_custom_provider_image_request_timeout_positive",
         ),
     )
 
@@ -54,6 +60,10 @@ class CustomProvider(TimestampMixin, Base):
     image_max_workers: Mapped[int | None] = mapped_column(Integer, nullable=True)
     video_max_workers: Mapped[int | None] = mapped_column(Integer, nullable=True)
     audio_max_workers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 图片 lane 单次 HTTP 请求的超时（秒）；NULL = 未设置 → 回退 IMAGE_REQUEST_TIMEOUT_SECONDS
+    # 环境变量 → 内置默认值。仅图片端点消费此列：video/audio 的超时由各 backend 自带的轮询
+    # max_wait 表达，语义不同，不共用此列（按 lane 命名，对齐三条 max_workers 列）。
+    image_request_timeout_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     @property
     def provider_id(self) -> str:

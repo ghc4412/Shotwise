@@ -2932,7 +2932,7 @@ class API {
     return this.request(`/custom-providers/${id}`);
   }
 
-  static async updateCustomProvider(id: number, data: Partial<Omit<CustomProviderCreateRequest, "discovery_format" | "models" | "image_max_workers" | "video_max_workers" | "audio_max_workers">>): Promise<void> {
+  static async updateCustomProvider(id: number, data: Partial<Omit<CustomProviderCreateRequest, "discovery_format" | "models" | "image_max_workers" | "video_max_workers" | "audio_max_workers" | "image_request_timeout_seconds">>): Promise<void> {
     return this.request(`/custom-providers/${id}`, { method: "PATCH", body: JSON.stringify(data) });
   }
 

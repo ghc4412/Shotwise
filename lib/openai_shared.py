@@ -53,16 +53,23 @@ def create_openai_client(
     api_key: str | None = None,
     base_url: str | None = None,
     max_retries: int | None = None,
+    timeout: float | None = None,
 ) -> AsyncOpenAI:
-    """创建 AsyncOpenAI 客户端，统一处理 api_key 和 base_url。
+    """创建 AsyncOpenAI 客户端，统一处理 api_key、base_url、重试与超时。
 
     base_url 为空（None/空白）时显式回填官方端点：AsyncOpenAI 对空 base_url
     会回落读取 OPENAI_BASE_URL 环境变量，环境残留将静默覆盖 DB 配置。base_url
     的唯一来源是 DB，此处兜死显式值断掉该回落路径。
+
+    max_retries / timeout 为 None 时不下传，保留 SDK 自身默认（2 次内建重试、
+    600s 单次超时）。调用方若要表达「重试只发生在自己这一层」，须显式传
+    max_retries=0：SDK 内建重试与调用方重试相乘会把单任务总时长放大数倍。
     """
     kwargs: dict = {"base_url": (base_url or "").strip() or OFFICIAL_OPENAI_BASE_URL}
     if api_key:
         kwargs["api_key"] = api_key
     if max_retries is not None:
         kwargs["max_retries"] = max_retries
+    if timeout is not None:
+        kwargs["timeout"] = timeout
     return AsyncOpenAI(**kwargs)

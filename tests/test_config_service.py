@@ -127,3 +127,24 @@ async def test_set_other_number_keys_not_restricted_to_integers(config_service: 
     await config_service.set_provider_config("gemini-aistudio", "request_gap", "0.5")
     config = await config_service.get_provider_config("gemini-aistudio")
     assert config["request_gap"] == "0.5"
+
+
+@pytest.mark.parametrize("value", ["", "abc", "-1", "0", "0.0", "inf", "-inf", "nan"])
+async def test_set_timeout_rejects_non_positive_or_non_finite(config_service: ConfigService, value: str):
+    from lib.config.service import ProviderConfigValueError
+
+    with pytest.raises(ProviderConfigValueError) as exc_info:
+        await config_service.set_provider_config("openai", "image_request_timeout_seconds", value)
+    assert exc_info.value.key == "image_request_timeout_seconds"
+    assert exc_info.value.value == value
+    # router 依赖 code/params 泛化渲染 i18n 文案，契约在此 pin 住
+    assert exc_info.value.code == "request_timeout_must_be_positive_number"
+    assert exc_info.value.params == {"field": "image_request_timeout_seconds", "value": value}
+
+
+@pytest.mark.parametrize("value", ["0.5", "30", "600.25"])
+async def test_set_timeout_accepts_positive_numbers(config_service: ConfigService, value: str):
+    # 超时允许小数（与容量键的正整数语义不同），正有限数原样入库
+    await config_service.set_provider_config("openai", "image_request_timeout_seconds", value)
+    config = await config_service.get_provider_config("openai")
+    assert config["image_request_timeout_seconds"] == value

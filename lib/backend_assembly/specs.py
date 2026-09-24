@@ -15,6 +15,7 @@ provider_name 计费归因）各挂专属闭包；文本侧别名映射（dashsc
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
@@ -196,6 +197,54 @@ def _kling_spec(media_type: str) -> ProviderSpec:
     )
 
 
+# ── openai 图片特例 ───────────────────────────────────────────────
+# openai 图片比简单族多一个「单次请求超时」可调项；配置键名（image_request_timeout_seconds）
+# 与 backend 构造参数名（timeout）不同，不满足 extra_keys 的「键名即参数名」约定，故挂专属闭包。
+# 未配置时不下传 timeout，让 backend 自己解析 IMAGE_REQUEST_TIMEOUT_SECONDS / 内置默认值——
+# 在这一层填默认值会让全局 env 调参失效。
+
+_OPENAI_REGISTRY_BACKEND = "openai"
+
+
+def _request_timeout_setting(raw: object) -> float | None:
+    """把写入层已校验为正有限数的超时配置还原为 float；坏值/缺省一律回落 None。
+
+    正常路径下 ProviderConfigService 已在写入口拦下非正数，这里只做防御性解析：旧 DB 里可能
+    残留迁移前的裸字符串，解析失败时宁可当作「未设置」（走 env / 默认值）也不抛出——构造期的
+    异常会把「配置坏值」放大成「生成链路不可用」。
+    """
+    if raw is None or isinstance(raw, (dict, list)):
+        return None
+    try:
+        parsed = float(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) and parsed > 0 else None
+
+
+def _build_openai_image(config: LoadedConfig, model_id: str | None) -> Any:
+    kwargs: dict[str, Any] = {"model": model_id}
+    api_key = config.credentials.get("api_key")
+    if api_key:
+        kwargs["api_key"] = api_key
+    base_url = _resolve_base_url(config)
+    if base_url:
+        kwargs["base_url"] = base_url
+    timeout = _request_timeout_setting(config.credentials.get("image_request_timeout_seconds"))
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    return _media_create_backend("image")(_OPENAI_REGISTRY_BACKEND, **kwargs)
+
+
+def _openai_image_spec() -> ProviderSpec:
+    return ProviderSpec(
+        provider_id=_OPENAI_REGISTRY_BACKEND,
+        media_type="image",
+        registry_backend=_OPENAI_REGISTRY_BACKEND,
+        build_backend=_build_openai_image,
+    )
+
+
 # ── 文本族 ────────────────────────────────────────────────────────
 # 文本 backend 注册在独立的 lib.text_backends.registry（非 media registry），构造形态与媒体有别：
 # api_key/base_url 透传规则、OpenAI-compat 别名映射、provider_name 计费归因透传各不相同，故文本侧
@@ -366,6 +415,9 @@ PROVIDER_SPEC_REGISTRY[("dashscope", "video")] = _simple_spec("dashscope", "vide
 # 与 kling 同走独立显式登记，不并入 _SIMPLE_IMAGE_VIDEO_PROVIDERS 元组。
 PROVIDER_SPEC_REGISTRY[("agnes", "image")] = _simple_spec("agnes", "image")
 PROVIDER_SPEC_REGISTRY[("agnes", "video")] = _simple_spec("agnes", "video")
+
+# openai 图片覆盖默认简单族登记：多消费一个 image_request_timeout_seconds 配置键
+PROVIDER_SPEC_REGISTRY[("openai", "image")] = _openai_image_spec()
 
 # ── 文本族注册 ────────────────────────────────────────────────────
 # 简单文本四家（registry_backend = provider_id 自身）；gemini 两个 provider_id 按 backend 分两行

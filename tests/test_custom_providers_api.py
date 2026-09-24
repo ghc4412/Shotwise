@@ -1196,6 +1196,72 @@ class TestConcurrencyFields:
         assert body["audio_max_workers"] is None
 
 
+class TestImageRequestTimeoutField:
+    """image_request_timeout_seconds 经 POST / PUT 保存后回显，留空 → null，0/负值 → 422。"""
+
+    _BASE = {
+        "display_name": "P",
+        "discovery_format": "openai",
+        "base_url": "https://x.com",
+        "api_key": "sk-test-key-12345678",
+        "models": [],
+    }
+
+    def test_create_echoes_timeout(self, client: TestClient):
+        with patch("server.routers.custom_providers._invalidate_caches", new_callable=AsyncMock):
+            resp = client.post(
+                "/api/v1/custom-providers",
+                json={**self._BASE, "image_request_timeout_seconds": 30},
+            )
+        assert resp.status_code == 201
+        assert resp.json()["image_request_timeout_seconds"] == 30.0
+
+    def test_create_accepts_fractional_timeout(self, client: TestClient):
+        with patch("server.routers.custom_providers._invalidate_caches", new_callable=AsyncMock):
+            resp = client.post(
+                "/api/v1/custom-providers",
+                json={**self._BASE, "image_request_timeout_seconds": 0.5},
+            )
+        assert resp.status_code == 201
+        assert resp.json()["image_request_timeout_seconds"] == 0.5
+
+    def test_create_defaults_to_null_when_omitted(self, client: TestClient):
+        with patch("server.routers.custom_providers._invalidate_caches", new_callable=AsyncMock):
+            resp = client.post("/api/v1/custom-providers", json=self._BASE)
+        assert resp.status_code == 201
+        assert resp.json()["image_request_timeout_seconds"] is None
+
+    @pytest.mark.parametrize("bad_value", [0, -1, 0.0, -0.5])
+    def test_create_rejects_non_positive(self, client: TestClient, bad_value: float):
+        resp = client.post(
+            "/api/v1/custom-providers",
+            json={**self._BASE, "image_request_timeout_seconds": bad_value},
+        )
+        assert resp.status_code == 422
+
+    def test_full_update_overwrites_and_clears(self, client: TestClient):
+        with patch("server.routers.custom_providers._invalidate_caches", new_callable=AsyncMock):
+            create_resp = client.post(
+                "/api/v1/custom-providers",
+                json={**self._BASE, "image_request_timeout_seconds": 30},
+            )
+            pid = create_resp.json()["id"]
+            # PUT 覆盖为 7.5
+            overwrite_resp = client.put(
+                f"/api/v1/custom-providers/{pid}",
+                json={**self._BASE, "image_request_timeout_seconds": 7.5},
+            )
+            # PUT 不带该键 → 权威清除为 null
+            clear_resp = client.put(
+                f"/api/v1/custom-providers/{pid}",
+                json={**self._BASE},
+            )
+        assert overwrite_resp.status_code == 200
+        assert overwrite_resp.json()["image_request_timeout_seconds"] == 7.5
+        assert clear_resp.status_code == 200
+        assert clear_resp.json()["image_request_timeout_seconds"] is None
+
+
 class TestValidateBackendValueCustomPrefix:
     """回归: validate_backend_value 应接受 custom-* 前缀。"""
 

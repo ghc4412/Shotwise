@@ -69,6 +69,7 @@ _FIELD_META: dict[str, dict[str, str]] = {
     "image_max_workers": {"label": "Image Max Workers", "type": "number"},
     "video_max_workers": {"label": "Video Max Workers", "type": "number"},
     "audio_max_workers": {"label": "Audio Max Workers", "type": "number"},
+    "image_request_timeout_seconds": {"label": "Image Request Timeout (sec)", "type": "number"},
 }
 
 

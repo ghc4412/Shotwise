@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import ExitStack
 from pathlib import Path
 from typing import Literal
@@ -33,6 +34,12 @@ DEFAULT_MODEL = "gpt-image-2"
 _MAX_REFERENCE_IMAGES = 16
 ImageBackendMode = Literal["both", "generations_only", "edits_only"]
 
+#: 单次 HTTP 请求的超时（秒）。SDK 默认 600s，且内建重试默认 2 次——与 generate()
+#: 外层的 with_retry_async 相乘后，一次「上游挂死」能把单个任务拖到小时级，占着并发槽
+#: 不放。此处给请求一个显式上界，并让重试只发生在外层一层。
+_IMAGE_REQUEST_TIMEOUT_ENV = "IMAGE_REQUEST_TIMEOUT_SECONDS"
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 600.0
+
 # gpt-image-2 / gpt-image-2-2026-04-21：size 接受任意 WxH，宽高均被 16 整除，比例 1:3~3:1；
 # ≤2560x1440 稳定，~3840x2160 实验性，最大 3840x2160（4K）。
 _GPT_IMAGE_MAX_LONG_EDGE = 3840
@@ -46,6 +53,36 @@ _QUALITY_MAP_CI = {k.lower(): v for k, v in _QUALITY_MAP.items()}
 
 def _quality_for(image_size: str | None) -> str | None:
     return _QUALITY_MAP_CI.get(image_size.strip().lower()) if image_size else None
+
+
+def _resolve_request_timeout(explicit: float | None) -> float:
+    """解析单次请求超时：显式入参 > 环境变量 > 默认值；非法/非正值回落默认。
+
+    超时值属于部署侧调参（上游中转稳定性千差万别），因此不做成硬编码常量：
+    ``IMAGE_REQUEST_TIMEOUT_SECONDS`` 让运维无需改代码即可收紧或放宽上界。
+    """
+    if explicit is not None:
+        if explicit > 0:
+            return explicit
+        logger.warning("显式请求超时 %r 非正数，回落默认 %.0fs", explicit, DEFAULT_REQUEST_TIMEOUT_SECONDS)
+        return DEFAULT_REQUEST_TIMEOUT_SECONDS
+
+    raw = os.environ.get(_IMAGE_REQUEST_TIMEOUT_ENV)
+    if not raw or not raw.strip():
+        return DEFAULT_REQUEST_TIMEOUT_SECONDS
+    try:
+        parsed = float(raw)
+    except ValueError:
+        logger.warning(
+            "%s 非法（%r），回落默认 %.0fs", _IMAGE_REQUEST_TIMEOUT_ENV, raw, DEFAULT_REQUEST_TIMEOUT_SECONDS
+        )
+        return DEFAULT_REQUEST_TIMEOUT_SECONDS
+    if parsed > 0:
+        return parsed
+    logger.warning(
+        "%s 必须为正数（%r），回落默认 %.0fs", _IMAGE_REQUEST_TIMEOUT_ENV, raw, DEFAULT_REQUEST_TIMEOUT_SECONDS
+    )
+    return DEFAULT_REQUEST_TIMEOUT_SECONDS
 
 
 def _resolve_openai_params(
@@ -96,8 +133,16 @@ class OpenAIImageBackend:
         model: str | None = None,
         base_url: str | None = None,
         mode: ImageBackendMode = "both",
+        timeout: float | None = None,
     ):
-        self._client = create_openai_client(api_key=api_key, base_url=base_url)
+        # max_retries=0：把重试收敛到 generate() 的 with_retry_async 单层（text/audio
+        # backend 同此约定），避免 SDK 内建重试与外层重试相乘放大单任务总时长。
+        self._client = create_openai_client(
+            api_key=api_key,
+            base_url=base_url,
+            max_retries=0,
+            timeout=_resolve_request_timeout(timeout),
+        )
         self._model = model or DEFAULT_MODEL
         self._capabilities = set(self._MODE_TO_CAPS[mode])
 

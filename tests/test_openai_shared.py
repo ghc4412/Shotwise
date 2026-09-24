@@ -27,3 +27,29 @@ class TestCreateOpenAIClientBaseURL:
         monkeypatch.setenv("OPENAI_BASE_URL", "https://relay.example.com/v1")
         client = create_openai_client(api_key="x", base_url="https://vllm.internal:8000/v1")
         assert str(client.base_url).rstrip("/") == "https://vllm.internal:8000/v1"
+
+
+class TestCreateOpenAIClientForwarding:
+    """max_retries / timeout 只在显式给出时下传，未声明时不覆盖 SDK 默认。"""
+
+    @staticmethod
+    def _capture(monkeypatch, **kwargs) -> dict:
+        captured: dict = {}
+
+        class _StubClient:
+            def __init__(self, **kw):
+                captured.update(kw)
+
+        monkeypatch.setattr("lib.openai_shared.AsyncOpenAI", _StubClient)
+        create_openai_client(**kwargs)
+        return captured
+
+    def test_explicit_values_forwarded(self, monkeypatch):
+        captured = self._capture(monkeypatch, api_key="k", base_url="https://x/v1", max_retries=0, timeout=180.0)
+        assert captured["max_retries"] == 0
+        assert captured["timeout"] == 180.0
+
+    def test_omitted_values_not_forwarded(self, monkeypatch):
+        captured = self._capture(monkeypatch, api_key="k")
+        assert "max_retries" not in captured
+        assert "timeout" not in captured

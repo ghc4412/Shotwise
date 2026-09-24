@@ -460,6 +460,7 @@ describe("AddCredentialModal", () => {
       image_max_workers: null,
       video_max_workers: null,
       audio_max_workers: null,
+      image_request_timeout_seconds: null,
       is_enabled: true,
     };
 

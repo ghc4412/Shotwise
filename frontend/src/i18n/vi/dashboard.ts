@@ -1190,6 +1190,10 @@ export default {
   'cp_audio_max_workers_label': 'Đồng thời âm thanh',
   'cp_max_workers_placeholder': 'Mặc định',
   'max_workers_invalid': 'Giới hạn đồng thời phải là số nguyên dương. Kiểm tra ô nhập hình ảnh / video / âm thanh.',
+  'cp_image_request_timeout_label': 'Thời gian chờ yêu cầu hình ảnh (giây)',
+  'cp_image_request_timeout_help': 'Thời gian chờ cho mỗi yêu cầu hình ảnh. Để trống để dùng cấu hình chung và giá trị mặc định của backend.',
+  'cp_image_request_timeout_placeholder': 'Mặc định',
+  'image_request_timeout_invalid': 'Thời gian chờ yêu cầu hình ảnh phải là số lớn hơn 0.',
 
   // CustomProviderDetail
   'discovery_format_label': 'Giao thức phát hiện mô hình',

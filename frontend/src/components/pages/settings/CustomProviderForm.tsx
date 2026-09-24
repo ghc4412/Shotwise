@@ -204,6 +204,21 @@ function parseWorkers(s: string): number | null | undefined {
   return Number.isSafeInteger(n) && n >= 1 ? n : undefined;
 }
 
+// 请求超时：number 输入同样用受控字符串存储；空串 = 未设置（null，走全局 env / 后端默认值）。
+function timeoutToStr(n?: number | null): string {
+  return n != null ? String(n) : "";
+}
+
+// 空串 = 未设置（null）；否则必须是正数（>0，允许小数）。返回 undefined 表示非法输入
+// （0、负数、非数字、NaN/Infinity），由 handleSave 拦截并提示——0/负值会被 HTTP 客户端
+// 当作「已过期」而非「不设超时」，不能静默落库。
+function parseTimeoutSeconds(s: string): number | null | undefined {
+  const trimmed = s.trim();
+  if (!trimmed) return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 function WorkersInput({
   id,
   label,
@@ -338,6 +353,9 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
   const [imageMaxWorkers, setImageMaxWorkers] = useState(workersToStr(existing?.image_max_workers));
   const [videoMaxWorkers, setVideoMaxWorkers] = useState(workersToStr(existing?.video_max_workers));
   const [audioMaxWorkers, setAudioMaxWorkers] = useState(workersToStr(existing?.audio_max_workers));
+  const [imageRequestTimeout, setImageRequestTimeout] = useState(
+    timeoutToStr(existing?.image_request_timeout_seconds),
+  );
 
   // --- Loading / status ---
   const [discovering, setDiscovering] = useState(false);
@@ -520,6 +538,12 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
       showError(t("max_workers_invalid"));
       return;
     }
+    // 图片请求超时同样严格解析：非法 → undefined，阻断保存并提示
+    const imageTimeout = parseTimeoutSeconds(imageRequestTimeout);
+    if (imageTimeout === undefined) {
+      showError(t("image_request_timeout_invalid"));
+      return;
+    }
     setSaving(true);
     try {
       if (isEdit && existing) {
@@ -532,6 +556,7 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
           image_max_workers: imageMax,
           video_max_workers: videoMax,
           audio_max_workers: audioMax,
+          image_request_timeout_seconds: imageTimeout,
           is_enabled: existing.is_enabled,
         });
       } else {
@@ -544,6 +569,7 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
           image_max_workers: imageMax,
           video_max_workers: videoMax,
           audio_max_workers: audioMax,
+          image_request_timeout_seconds: imageTimeout,
         });
       }
       // 能力覆盖随本次保存落库，但它不落任何项目字段，在用的能力查询不会因 props 变化而重取；
@@ -564,6 +590,7 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
     imageMaxWorkers,
     videoMaxWorkers,
     audioMaxWorkers,
+    imageRequestTimeout,
     isEdit,
     existing,
     onSaved,
@@ -1037,6 +1064,29 @@ export function CustomProviderForm({ existing, onSaved, onCancel }: CustomProvid
               value={audioMaxWorkers}
               onChange={setAudioMaxWorkers}
               placeholder={t("cp_max_workers_placeholder")}
+            />
+          </div>
+        </div>
+
+        {/* Image request timeout */}
+        <div>
+          <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-accent-2">
+            {t("cp_image_request_timeout_label")}
+          </div>
+          <p className="mb-3 text-[11px] text-text-4">{t("cp_image_request_timeout_help")}</p>
+          <div className="min-w-[110px] max-w-[160px]">
+            <input
+              id="cp-image-request-timeout"
+              aria-label={t("cp_image_request_timeout_label")}
+              type="number"
+              min={0.1}
+              step="any"
+              inputMode="decimal"
+              autoComplete="off"
+              value={imageRequestTimeout}
+              onChange={(e) => setImageRequestTimeout(e.target.value)}
+              placeholder={t("cp_image_request_timeout_placeholder")}
+              className={INPUT_CLS}
             />
           </div>
         </div>

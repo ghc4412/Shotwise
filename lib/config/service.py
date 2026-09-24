@@ -31,6 +31,11 @@ _DEFAULT_REFERENCE_SINGLE_MAX_BYTES = 4 * 1024 * 1024
 _MAX_WORKERS_KEYS = frozenset({"image_max_workers", "video_max_workers", "audio_max_workers"})
 _MAX_WORKERS_CODE = "max_workers_must_be_positive_integer"
 
+# 写入层校验为正有限数的请求超时键（秒）。与容量键不同，超时允许小数（如 0.5），但必须是
+# 严格正数：0/负值会被 SDK 当作「已过期」而非「不设超时」，inf/nan 也不是可下传给 HTTP 客户端的值。
+_TIMEOUT_KEYS = frozenset({"image_request_timeout_seconds"})
+_TIMEOUT_CODE = "request_timeout_must_be_positive_number"
+
 # 预置供应商启用开关在 system_setting 表中的 key 前缀（值 "1"/"0"，缺省视为启用）。
 # 存 system_setting 而非 provider_config，避免污染 configured_keys / status 判定。
 _PROVIDER_ENABLED_PREFIX = "provider_enabled:"
@@ -304,12 +309,18 @@ class ConfigService:
 
     @staticmethod
     def _validate_value(provider: str, key: str, value: str) -> None:
-        """容量键写入校验：正整数（≥1）。留空即不写该 key（回退默认），不会走到这里。
+        """容量键与请求超时键的写入校验。留空即不写该 key（回退默认），不会走到这里。
 
-        0 不是合法用户输入——它仅作 CapacityTable 内部「不支持该 lane」哨兵，由 lane 投影
-        在内存里产生，绝不写回。坏值一旦入库，容量 reload 只能逐 key 回退默认值，配置变更
-        静默失效，因此在写入口拦下。
+        容量键（``_MAX_WORKERS_KEYS``）须为正整数：0 不是合法用户输入——它仅作 CapacityTable
+        内部「不支持该 lane」哨兵，由 lane 投影在内存里产生，绝不写回。坏值一旦入库，容量
+        reload 只能逐 key 回退默认值，配置变更静默失效，因此在写入口拦下。
+
+        请求超时键（``_TIMEOUT_KEYS``）须为严格正有限数，允许小数；0/负值会被 HTTP 客户端
+        当作「已过期」而非「不设超时」，属于配置事故。
         """
+        if key in _TIMEOUT_KEYS:
+            ConfigService._validate_timeout(provider, key, value)
+            return
         if key not in _MAX_WORKERS_KEYS:
             return
         try:
@@ -318,6 +329,16 @@ class ConfigService:
             raise ProviderConfigValueError(provider, key, value, code=_MAX_WORKERS_CODE) from None
         if parsed < 1:
             raise ProviderConfigValueError(provider, key, value, code=_MAX_WORKERS_CODE)
+
+    @staticmethod
+    def _validate_timeout(provider: str, key: str, value: str) -> None:
+        """请求超时写入校验：严格正有限数（允许小数）。"""
+        try:
+            parsed = float(value)
+        except ValueError:
+            raise ProviderConfigValueError(provider, key, value, code=_TIMEOUT_CODE) from None
+        if not math.isfinite(parsed) or parsed <= 0:
+            raise ProviderConfigValueError(provider, key, value, code=_TIMEOUT_CODE)
 
     @staticmethod
     def _parse_backend(raw: str, fallback: str) -> tuple[str, str]:

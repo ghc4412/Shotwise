@@ -89,6 +89,53 @@ class TestBuildSimpleBaseUrlPriority:
         mock_create.assert_called_once_with("openai", model="gpt-image-1")
 
 
+class TestOpenAIImageTimeoutSpec:
+    """openai 图片专属闭包：仅当配置了正数超时才下传 timeout（保留 env/默认解析路径）。"""
+
+    @patch("lib.image_backends.registry.create_backend")
+    def test_timeout_set_is_forwarded(self, mock_create):
+        spec = get_provider_spec("openai", "image")
+        config = _loaded(
+            credentials={"api_key": "sk-test", "image_request_timeout_seconds": "45"},
+            provider_id="openai",
+        )
+        spec.build_backend(config, "gpt-image-1")
+        mock_create.assert_called_once_with("openai", api_key="sk-test", model="gpt-image-1", timeout=45.0)
+
+    @patch("lib.image_backends.registry.create_backend")
+    def test_timeout_unset_omits_kwarg_for_env_fallback(self, mock_create):
+        # 未配置时不下传 timeout，让 backend 解析 IMAGE_REQUEST_TIMEOUT_SECONDS / 内置默认，
+        # 在这一层填默认值会让全局 env 调参失效。
+        spec = get_provider_spec("openai", "image")
+        config = _loaded(credentials={"api_key": "sk-test"}, provider_id="openai")
+        spec.build_backend(config, "gpt-image-1")
+        mock_create.assert_called_once_with("openai", api_key="sk-test", model="gpt-image-1")
+
+    @patch("lib.image_backends.registry.create_backend")
+    def test_user_base_url_forwarded(self, mock_create):
+        spec = get_provider_spec("openai", "image")
+        config = _loaded(
+            credentials={"api_key": "sk-test", "base_url": "https://relay.example.com/v1"},
+            provider_id="openai",
+        )
+        spec.build_backend(config, "gpt-image-1")
+        mock_create.assert_called_once_with(
+            "openai", api_key="sk-test", model="gpt-image-1", base_url="https://relay.example.com/v1"
+        )
+
+    @pytest.mark.parametrize("raw", ["abc", "-1", "0", "inf", "nan", "", None, {"a": 1}, [1]])
+    def test_defensive_timeout_parse_drops_bad_values(self, raw):
+        from lib.backend_assembly.specs import _request_timeout_setting
+
+        assert _request_timeout_setting(raw) is None
+
+    @pytest.mark.parametrize(("raw", "expected"), [("0.5", 0.5), (30, 30.0), ("600", 600.0)])
+    def test_defensive_timeout_parse_keeps_positive(self, raw, expected):
+        from lib.backend_assembly.specs import _request_timeout_setting
+
+        assert _request_timeout_setting(raw) == expected
+
+
 class TestMediaRegistryRouting:
     """_build_simple 按 media_type 选对应 registry 的 create_backend（唯一分支逻辑）。"""
 

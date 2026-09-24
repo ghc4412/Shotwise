@@ -17,11 +17,19 @@ from lib.custom_provider.factory import create_custom_backend
 pytestmark = pytest.mark.unit
 
 
-def _make_provider(*, base_url: str = "https://api.example.com/v1", api_key: str = "sk-test") -> MagicMock:
+def _make_provider(
+    *,
+    base_url: str = "https://api.example.com/v1",
+    api_key: str = "sk-test",
+    image_request_timeout_seconds: float | None = None,
+) -> MagicMock:
     p = MagicMock()
     p.base_url = base_url
     p.api_key = api_key
     p.provider_id = "custom-42"
+    # 真实 ORM 行始终有该列（未设置为 NULL）；MagicMock 需显式给出，
+    # 否则 getattr 会凭空造出子 mock 并被当成已配置的超时下传。
+    p.image_request_timeout_seconds = image_request_timeout_seconds
     return p
 
 
@@ -200,6 +208,17 @@ class TestEndpointDispatch:
             api_key="sk-test",
             base_url="https://relay.example.com/v1",
             model="kling-v3",
+        )
+
+    @patch("lib.custom_provider.endpoints.OpenAIImageBackend")
+    def test_openai_images_forwards_timeout(self, mock_cls):
+        provider = _make_provider(image_request_timeout_seconds=30.0)
+        create_custom_backend(provider=provider, model_id="dall-e-3", endpoint="openai-images")
+        mock_cls.assert_called_once_with(
+            api_key="sk-test",
+            base_url="https://api.example.com/v1",
+            model="dall-e-3",
+            timeout=30.0,
         )
 
     @patch("lib.custom_provider.endpoints.OpenAIImageBackend")

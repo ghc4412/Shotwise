@@ -1266,6 +1266,10 @@ export default {
   'cp_audio_max_workers_label': '音频并发',
   'cp_max_workers_placeholder': '默认',
   'max_workers_invalid': '并发上限必须为正整数，请检查图片 / 视频 / 音频并发输入。',
+  'cp_image_request_timeout_label': '图片请求超时（秒）',
+  'cp_image_request_timeout_help': '单次图片请求的超时时间；留空则使用全局配置与后端默认值。',
+  'cp_image_request_timeout_placeholder': '默认',
+  'image_request_timeout_invalid': '图片请求超时必须是大于 0 的数字。',
 
   // CustomProviderDetail
   'discovery_format_label': '模型发现协议',

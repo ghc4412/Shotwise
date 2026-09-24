@@ -520,3 +520,48 @@ class TestModeGating:
             assert excinfo.value.code == "image_endpoint_mismatch_no_i2i"
             assert excinfo.value.params.get("model") == "m"
             assert excinfo.value.params.get("detail") == "all reference images failed to open"
+
+
+class TestOpenAIImageBackendRequestBounds:
+    """图片请求必须有确定的失败上界，且重试只发生在单层。"""
+
+    @staticmethod
+    def _capture_client_kwargs(monkeypatch, **backend_kwargs):
+        captured = {}
+
+        class _StubClient:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        monkeypatch.setattr("lib.openai_shared.AsyncOpenAI", _StubClient)
+        from lib.image_backends.openai import OpenAIImageBackend
+
+        OpenAIImageBackend(api_key="k", **backend_kwargs)
+        return captured
+
+    def test_client_disables_sdk_retries_to_keep_one_retry_layer(self, monkeypatch):
+        # SDK 内建重试与外层 with_retry_async 相乘会把单任务总时长放大数倍
+        monkeypatch.delenv("IMAGE_REQUEST_TIMEOUT_SECONDS", raising=False)
+        captured = self._capture_client_kwargs(monkeypatch)
+        assert captured["max_retries"] == 0
+
+    def test_default_request_timeout_applied(self, monkeypatch):
+        monkeypatch.delenv("IMAGE_REQUEST_TIMEOUT_SECONDS", raising=False)
+        captured = self._capture_client_kwargs(monkeypatch)
+        assert captured["timeout"] == 600.0
+
+    def test_env_var_overrides_request_timeout(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_REQUEST_TIMEOUT_SECONDS", "180")
+        captured = self._capture_client_kwargs(monkeypatch)
+        assert captured["timeout"] == 180.0
+
+    def test_explicit_timeout_wins_over_env_var(self, monkeypatch):
+        monkeypatch.setenv("IMAGE_REQUEST_TIMEOUT_SECONDS", "180")
+        captured = self._capture_client_kwargs(monkeypatch, timeout=45.0)
+        assert captured["timeout"] == 45.0
+
+    @pytest.mark.parametrize("raw", ["0", "-5", "abc", "   "])
+    def test_invalid_env_var_falls_back_to_default(self, monkeypatch, raw):
+        monkeypatch.setenv("IMAGE_REQUEST_TIMEOUT_SECONDS", raw)
+        captured = self._capture_client_kwargs(monkeypatch)
+        assert captured["timeout"] == 600.0

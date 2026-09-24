@@ -32,6 +32,8 @@ export interface CustomProviderInfo {
   image_max_workers: number | null;
   video_max_workers: number | null;
   audio_max_workers: number | null;
+  /** 图片 lane 单次请求超时（秒）；null = 未设置（走全局 env / 后端默认值）。 */
+  image_request_timeout_seconds: number | null;
   /** 供应商级启用开关；关闭后该供应商全部模型不再被生成链路选择/调用。 */
   is_enabled: boolean;
 }
@@ -96,6 +98,8 @@ export interface CustomProviderCreateRequest {
   image_max_workers?: number | null;
   video_max_workers?: number | null;
   audio_max_workers?: number | null;
+  /** 图片请求超时（秒）；省略或 null = 未设置（走全局 env / 后端默认值）。 */
+  image_request_timeout_seconds?: number | null;
   /** 供应商级启用开关；省略 = 启用。 */
   is_enabled?: boolean;
 }
@@ -110,6 +114,8 @@ export interface CustomProviderFullUpdateRequest {
   image_max_workers: number | null;
   video_max_workers: number | null;
   audio_max_workers: number | null;
+  /** 图片请求超时同走 PUT 权威语义：必填，null 即清除（走全局 env / 后端默认值）。 */
+  image_request_timeout_seconds: number | null;
   /** PUT 为供应商级开关权威来源：必填。 */
   is_enabled: boolean;
 }

@@ -45,6 +45,7 @@ class CustomProviderRepository(BaseRepository):
         image_max_workers: int | None = None,
         video_max_workers: int | None = None,
         audio_max_workers: int | None = None,
+        image_request_timeout_seconds: float | None = None,
         is_enabled: bool = True,
     ) -> CustomProvider:
         """创建供应商，可选同时创建模型列表。"""
@@ -56,6 +57,7 @@ class CustomProviderRepository(BaseRepository):
             image_max_workers=image_max_workers,
             video_max_workers=video_max_workers,
             audio_max_workers=audio_max_workers,
+            image_request_timeout_seconds=image_request_timeout_seconds,
             is_enabled=is_enabled,
         )
         self.session.add(provider)
