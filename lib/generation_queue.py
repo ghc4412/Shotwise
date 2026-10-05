@@ -431,11 +431,39 @@ class GenerationQueue:
         async with self._task_repo() as repo:
             return await repo.get_cancel_preview(task_id)
 
-    async def cancel_all_queued(self, project_name: str) -> dict[str, Any]:
+    async def cancel_all_active(self, project_name: str) -> dict[str, Any]:
+        """停止项目内全部活动任务，并在 worker 可用时同步通知它中断运行中调用。
+
+        worker 回调不存在或 lease 已过期时，running 任务无法等待进程内 finally 收口，
+        直接落 cancelled；否则停服务或 worker 崩溃后的僵尸任务会永久停在 cancelling。
+        """
+        callback = self._worker_cancel_callback
         async with self._task_repo() as repo:
-            result = await repo.cancel_all_queued(project_name)
-        if result["cancelled_count"] > 0:
-            logger.info("批量取消 project=%s 共取消 %d 个", project_name, result["cancelled_count"])
+            result = await repo.cancel_all_active(project_name)
+            cancelling = list(result.get("cancelling", []))
+            if cancelling and (callback is None or not await repo.is_worker_online()):
+                result["cancelled"].extend(await repo.finalize_cancelling(cancelling, cancelled_by="user"))
+                result["cancelling"] = []
+                cancelling = []
+
+        # worker 存活时仍走进程内取消信号，保证 provider 调用被立即打断；repo 先落
+        # cancelling 中间态，worker finally 再把任务收口到 cancelled。
+        if callback is not None:
+            for tid in cancelling:
+                try:
+                    callback(tid)
+                except Exception:
+                    logger.exception("worker cancel callback 派发失败 task_id=%s (cancel all)", tid)
+
+        cancelled_count = len(result.get("cancelled", []))
+        cancelling_count = len(result.get("cancelling", []))
+        if cancelled_count or cancelling_count:
+            logger.info(
+                "批量取消 project=%s cancelled=%d cancelling=%d",
+                project_name,
+                cancelled_count,
+                cancelling_count,
+            )
         return result
 
     async def get_cancel_all_preview(self, project_name: str) -> int:

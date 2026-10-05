@@ -985,54 +985,68 @@ class TaskRepository(BaseRepository):
         await self.session.commit()
         return {"rows": 1 if data is not None else 0, "cancelling": cancelling}
 
+    async def finalize_cancelling(self, task_ids: Sequence[str], *, cancelled_by: str = "user") -> list[dict[str, Any]]:
+        """把已进入 cancelling 的任务批量落为 cancelled，供无可用 worker 时兜底。
+
+        ``cancel_all_active`` 先把 running 任务置为 cancelling，再交给 worker 收口。
+        worker 已退出或 lease 过期时不会有人调用 ``finalize_cancelled``，这些任务会永久
+        停在中间态；批量取消入口因此需要一条直接落终态的路径。
+        """
+        cancelled: list[dict[str, Any]] = []
+        for task_id in task_ids:
+            await self._mark_cancelled(
+                task_id,
+                cancelled_by=cancelled_by,
+                cancelled=cancelled,
+                cascade=False,
+            )
+        await self.session.commit()
+        return cancelled
+
     async def get_cancel_all_preview(self, project_name: str) -> int:
-        """返回项目中当前 queued 状态的任务数量。"""
+        """返回项目中当前活动状态（queued / running / cancelling）的任务数量。"""
         result = await self.session.execute(
-            select(func.count()).select_from(Task).where(Task.project_name == project_name, Task.status == "queued")
+            select(func.count())
+            .select_from(Task)
+            .where(Task.project_name == project_name, Task.status.in_(ACTIVE_TASK_STATUSES))
         )
         return result.scalar_one()
 
-    async def cancel_all_queued(self, project_name: str) -> dict[str, Any]:
-        """取消项目中所有 queued 任务。"""
-        queued_result = await self.session.execute(
-            select(Task).where(Task.project_name == project_name, Task.status == "queued")
-        )
-        queued_tasks = list(queued_result.scalars().all())
+    async def cancel_all_active(self, project_name: str) -> dict[str, Any]:
+        """取消项目中全部活动任务：queued 直接落 cancelled，running 落 cancelling 并等待取消信号。
 
-        now = utc_now()
-        stmt = (
-            update(Task)
-            .where(Task.project_name == project_name, Task.status == "queued")
-            .values(
-                status="cancelled",
-                cancelled_by="user",
-                finished_at=now,
-                updated_at=now,
-            )
-        )
-        result = await self.session.execute(stmt)
-        cancelled_count = rowcount(result)
+        每个任务仍经过 ``_dispatch_cancel``，与单任务取消、分集删除共用同一套状态迁移：
+        queued 走 ``_mark_cancelled(cascade=True)`` 级联下游，running 走 ``_mark_cancelling``
+        并把 task_id 收进 ``cancelling`` 供上层派发 in-process 取消信号。因此图片通道与
+        视频通道的活动任务会被一并停止，不区分 media_type。
 
-        if queued_tasks:
-            await self.session.flush()
-            task_ids = [t.task_id for t in queued_tasks]
-            refreshed = await self.session.execute(
-                select(Task).where(Task.task_id.in_(task_ids), Task.status == "cancelled")
-            )
-            for updated_task in refreshed.scalars().all():
-                self._record_terminal_event(
-                    task_id=updated_task.task_id,
-                    project_name=project_name,
-                    status="cancelled",
-                    task_type=updated_task.task_type,
+        返回 ``cancelled``（已取消，含级联取消的下游）、``cancelling``（已发出取消信号、
+        等待 worker finally 落终态）、``skipped_terminal``（查询后被 worker 抢先落终态）三个桶。
+        """
+        result = await self.session.execute(
+            select(Task)
+            .where(Task.project_name == project_name, Task.status.in_(ACTIVE_TASK_STATUSES))
+            .order_by(Task.queued_at.asc(), Task.task_id.asc())
+        )
+        tasks = list(result.scalars().all())
+        cancelled: list[dict[str, Any]] = []
+        cancelling: list[str] = []
+        skipped_terminal: list[dict[str, Any]] = []
+        # 作用域内没有活动任务时提前返回：无任务可取消，省掉逐任务级联扫描与 commit。
+        if tasks:
+            for task in tasks:
+                await self._dispatch_cancel(
+                    task,
+                    cancelled_by="user",
+                    cancelled=cancelled,
+                    cancelling=cancelling,
+                    skipped_terminal=skipped_terminal,
                 )
-
-        await self.session.commit()
-        # 竞态时部分任务可能在 UPDATE 前被 worker 领走，skipped = 预期取消数 - 实际取消数
-        skipped = len(queued_tasks) - cancelled_count
+            await self.session.commit()
         return {
-            "cancelled_count": cancelled_count,
-            "skipped_running_count": max(0, skipped),
+            "cancelled": cancelled,
+            "cancelling": cancelling,
+            "skipped_terminal": skipped_terminal,
         }
 
     async def requeue_running(self, *, limit: int = 1000) -> int:

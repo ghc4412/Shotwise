@@ -565,10 +565,10 @@ class TestTaskRepository:
         assert preview["cascaded"][0]["task_id"] == second["task_id"]
 
     @pytest.mark.unit
-    async def test_cancel_all_queued(self, db_session):
+    async def test_cancel_all_active_covers_running_and_queued(self, db_session):
         repo = TaskRepository(db_session)
 
-        await repo.enqueue(
+        running = await repo.enqueue(
             project_name="demo",
             task_type="storyboard",
             media_type="image",
@@ -576,7 +576,7 @@ class TestTaskRepository:
             payload={},
             script_file="ep1.json",
         )
-        t2 = await repo.enqueue(
+        queued = await repo.enqueue(
             project_name="demo",
             task_type="video",
             media_type="video",
@@ -584,15 +584,20 @@ class TestTaskRepository:
             payload={},
             script_file="ep1.json",
         )
-        # Claim one task so it becomes running
-        await repo.claim_next("image")
+        claimed = await repo.claim_next("image")
+        assert claimed is not None
+        assert claimed["task_id"] == running["task_id"]
 
-        result = await repo.cancel_all_queued("demo")
-        assert result["cancelled_count"] == 1  # only the queued video task
-        assert result["skipped_running_count"] == 0  # running 任务在查询 queued 前已被 claim，不算 skipped
+        preview = await repo.get_cancel_all_preview("demo")
+        assert preview == 2  # queued + running，不区分 media_type
 
-        task = await repo.get(t2["task_id"])
-        assert task["status"] == "cancelled"
+        result = await repo.cancel_all_active("demo")
+        assert [task["task_id"] for task in result["cancelled"]] == [queued["task_id"]]
+        assert result["cancelling"] == [running["task_id"]]
+        assert result["skipped_terminal"] == []
+
+        assert (await repo.get(queued["task_id"]))["status"] == "cancelled"
+        assert (await repo.get(running["task_id"]))["status"] == "cancelling"
 
     @pytest.mark.unit
     async def test_get_stats_includes_cancelled(self, db_session):

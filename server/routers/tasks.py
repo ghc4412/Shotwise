@@ -176,15 +176,19 @@ async def cancel_task(task_id: str, _t: Translator):
 @router.get("/projects/{project_name}/tasks/cancel-all-preview")
 async def cancel_all_preview(project_name: str):
     queue = get_task_queue()
-    queued_count = await queue.get_cancel_all_preview(project_name)
-    return {"queued_count": queued_count}
+    active_count = await queue.get_cancel_all_preview(project_name)
+    return {"active_count": active_count}
 
 
 @router.post("/projects/{project_name}/tasks/cancel-all")
-async def cancel_all_queued(project_name: str):
+async def cancel_all_active(project_name: str):
     queue = get_task_queue()
-    result = await queue.cancel_all_queued(project_name)
-    return result
+    result = await queue.cancel_all_active(project_name)
+    return {
+        "cancelled_count": len(result.get("cancelled", [])),
+        "cancelling_count": len(result.get("cancelling", [])),
+        "skipped_terminal_count": len(result.get("skipped_terminal", [])),
+    }
 
 
 @router.get("/tasks/{task_id}")

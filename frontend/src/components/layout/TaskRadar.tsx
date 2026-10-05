@@ -139,35 +139,37 @@ export function TaskRadar() {
   const completedCount = Math.max(0, stats.succeeded - reviewCount);
   const filteredTasks = useMemo(() => tasks.filter((task) => matchesRadarFilter(task, filter)).slice(0, 8), [filter, tasks]);
   const activeCount = stats.queued + stats.running + stats.cancelling;
+  const availableCount = stats.queued + stats.running;
   const totalCount = stats.total || tasks.length;
 
   const handleStopAll = useCallback(async () => {
-    if (!currentProjectName || stats.queued <= 0 || stopping) return;
+    if (!currentProjectName || availableCount <= 0 || stopping) return;
     try {
-      const { queued_count } = await API.cancelAllPreview(currentProjectName);
-      if (queued_count > 0) {
-        setStopConfirm({ count: queued_count, projectName: currentProjectName });
+      const { active_count } = await API.cancelAllPreview(currentProjectName);
+      if (active_count > 0) {
+        setStopConfirm({ count: active_count, projectName: currentProjectName });
       }
     } catch {
       pushToast(t("task_radar_stop_error"), "error");
     }
-  }, [currentProjectName, pushToast, stats.queued, stopping, t]);
+  }, [availableCount, currentProjectName, pushToast, stopping, t]);
 
   const confirmStopAll = useCallback(async () => {
     if (!stopConfirm) return;
     setStopping(true);
     try {
-      const result = await API.cancelAllQueued(stopConfirm.projectName);
-      if (result.skipped_running_count > 0) {
+      const result = await API.cancelAllActive(stopConfirm.projectName);
+      const stoppedCount = result.cancelled_count + result.cancelling_count;
+      if (result.skipped_terminal_count > 0) {
         pushToast(
           t("task_radar_stop_partial", {
-            cancelled: result.cancelled_count,
-            skipped: result.skipped_running_count,
+            stopped: stoppedCount,
+            skipped: result.skipped_terminal_count,
           }),
           "warning",
         );
       } else {
-        pushToast(t("task_radar_stop_success", { count: result.cancelled_count }), "success");
+        pushToast(t("task_radar_stop_success", { count: stoppedCount }), "success");
       }
     } catch {
       pushToast(t("task_radar_stop_error"), "error");
@@ -222,13 +224,13 @@ export function TaskRadar() {
             <div className="grid min-w-0 flex-1 grid-cols-5 gap-1">
               {filters.map((item) => <button key={item.id} type="button" className="rounded px-1 py-1.5 text-[10px] transition-colors focus-ring" style={{ color: filter === item.id ? "var(--color-text-1)" : "var(--color-text-4)", background: filter === item.id ? "var(--color-accent-dim)" : "transparent" }} onClick={() => setFilter(item.id)} aria-pressed={filter === item.id}><span className="block truncate">{item.label}</span><span className="mt-0.5 block tabular-nums">{item.count}</span></button>)}
             </div>
-            {currentProjectName && stats.queued > 0 && (
+            {currentProjectName && availableCount > 0 && (
               <button
                 type="button"
                 className="focus-ring inline-flex w-8 shrink-0 items-center justify-center rounded border transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                 style={{ color: "oklch(0.72 0.18 25)", borderColor: "oklch(0.72 0.18 25 / 0.35)", background: "oklch(0.72 0.18 25 / 0.06)" }}
                 onClick={() => void handleStopAll()}
-                disabled={stopping}
+                disabled={stopping || availableCount <= 0}
                 aria-label={t("task_radar_stop_all_aria")}
                 title={t("task_radar_stop_all")}
               >

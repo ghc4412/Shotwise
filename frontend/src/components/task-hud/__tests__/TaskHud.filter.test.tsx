@@ -129,18 +129,19 @@ describe("TaskHud status filter", () => {
     }
   });
 
-  it("keeps the stop button visible and disabled when there are no queued tasks", () => {
+  it("keeps the stop button visible and disabled when there are no active tasks", () => {
     useTasksStore.setState({ tasks: [], stats: emptyStats });
     render(<HostedTaskHud />);
 
-    expect(screen.getByRole("button", { name: "停止当前项目所有排队任务" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "停止当前项目所有进行中的任务" })).toBeDisabled();
   });
 
-  it("previews and confirms stopping queued tasks from the task radar", async () => {
-    const preview = vi.spyOn(API, "cancelAllPreview").mockResolvedValue({ queued_count: 1 });
-    const cancelAll = vi.spyOn(API, "cancelAllQueued").mockResolvedValue({
+  it("previews and confirms stopping active tasks from the task radar", async () => {
+    const preview = vi.spyOn(API, "cancelAllPreview").mockResolvedValue({ active_count: 1 });
+    const cancelAll = vi.spyOn(API, "cancelAllActive").mockResolvedValue({
       cancelled_count: 1,
-      skipped_running_count: 0,
+      cancelling_count: 0,
+      skipped_terminal_count: 0,
     });
     const refreshTasks = vi.fn().mockResolvedValue(undefined);
     useTasksStore.setState({
@@ -151,7 +152,7 @@ describe("TaskHud status filter", () => {
     const user = userEvent.setup();
     render(<HostedTaskHud />);
 
-    const stopButton = screen.getByRole("button", { name: "停止当前项目所有排队任务" });
+    const stopButton = screen.getByRole("button", { name: "停止当前项目所有进行中的任务" });
     expect(stopButton).toBeEnabled();
     await user.click(stopButton);
     await waitFor(() => expect(preview).toHaveBeenCalledWith("proj"));
@@ -161,6 +162,45 @@ describe("TaskHud status filter", () => {
       expect(cancelAll).toHaveBeenCalledWith("proj");
       expect(refreshTasks).toHaveBeenCalledTimes(1);
     });
+    expect(useAppStore.getState().toast?.text).toBe("已停止 1 个任务");
+  });
+
+  it("keeps the stop-all confirmation reachable when the task list overflows", async () => {
+    const preview = vi.spyOn(API, "cancelAllPreview").mockResolvedValue({ active_count: 24 });
+    const cancelAll = vi.spyOn(API, "cancelAllActive").mockResolvedValue({
+      cancelled_count: 24,
+      cancelling_count: 0,
+      skipped_terminal_count: 0,
+    });
+    const refreshTasks = vi.fn().mockResolvedValue(undefined);
+    // 长列表会让可滚动区域远超面板高度；确认块必须渲染在列表之前，
+    // 否则确认按钮会落在屏幕外点不到。
+    const many = Array.from({ length: 24 }, (_, index) =>
+      makeTask({
+        task_id: `queued-${index}`,
+        status: "queued",
+        media_type: "video",
+        resource_id: `LONG${index}`,
+      }),
+    );
+    useTasksStore.setState({
+      tasks: many,
+      stats: { ...emptyStats, queued: 24, total: 24 },
+      refreshTasks,
+    });
+    const user = userEvent.setup();
+    render(<HostedTaskHud />);
+
+    await user.click(screen.getByRole("button", { name: "停止当前项目所有进行中的任务" }));
+    await waitFor(() => expect(preview).toHaveBeenCalledWith("proj"), { timeout: 5000 });
+
+    const dialog = screen.getByRole("alertdialog");
+    const channels = document.querySelector(".max-h-80");
+    expect(channels).not.toBeNull();
+    expect(dialog.compareDocumentPosition(channels as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await user.click(within(dialog).getByRole("button", { name: "确认取消" }));
+    await waitFor(() => expect(cancelAll).toHaveBeenCalledWith("proj"));
   });
 
   it("keeps terminal tasks visible instead of fading them out", async () => {

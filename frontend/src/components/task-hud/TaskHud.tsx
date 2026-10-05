@@ -677,10 +677,11 @@ function StatPill({
 
 export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null> }) {
   const { t } = useTranslation("dashboard");
-  const { taskHudOpen, setTaskHudOpen } = useAppStore();
+  const { taskHudOpen, setTaskHudOpen, pushToast } = useAppStore();
   const { tasks, stats, refreshTasks } = useTasksStore();
   const currentProjectName = useProjectsStore((state) => state.currentProjectName);
   const hasActiveTasks = tasks.some((task) => !isTerminalStatus(task.status));
+  const availableCount = stats.queued + stats.running;
   const nowMs = useNowTick(hasActiveTasks);
 
   const [cancelConfirm, setCancelConfirm] = useState<{
@@ -705,32 +706,54 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
   }, []);
 
   const handleCancelAll = useCallback(async () => {
-    if (!currentProjectName || stats.queued <= 0) return;
+    if (!currentProjectName || availableCount <= 0) return;
     try {
-      const { queued_count } = await API.cancelAllPreview(currentProjectName);
-      if (queued_count > 0) {
-        setCancelConfirm({ allCount: queued_count, projectName: currentProjectName });
+      const { active_count } = await API.cancelAllPreview(currentProjectName);
+      if (active_count > 0) {
+        setCancelConfirm({ allCount: active_count, projectName: currentProjectName });
       }
     } catch {
-      // The task list will reconcile on its next refresh if the preview races with completion.
+      pushToast(t("task_radar_stop_error"), "error");
     }
-  }, [currentProjectName, stats.queued]);
+  }, [availableCount, currentProjectName, pushToast, t]);
 
   const confirmCancel = useCallback(async () => {
-    if (!cancelConfirm) return;
+    const pending = cancelConfirm;
+    if (!pending) return;
     setCancelling(true);
     try {
-      if (cancelConfirm.taskId) {
-        await API.cancelTask(cancelConfirm.taskId);
-      } else if (cancelConfirm.projectName) {
-        await API.cancelAllQueued(cancelConfirm.projectName);
-        await refreshTasks();
+      if (pending.taskId) {
+        await API.cancelTask(pending.taskId);
+        return;
       }
+      if (pending.projectName) {
+        const result = await API.cancelAllActive(pending.projectName);
+        const stoppedCount = result.cancelled_count + result.cancelling_count;
+        if (result.skipped_terminal_count > 0) {
+          pushToast(
+            t("task_radar_stop_partial", {
+              stopped: stoppedCount,
+              skipped: result.skipped_terminal_count,
+            }),
+            "warning",
+          );
+        } else if (stoppedCount > 0) {
+          pushToast(t("task_radar_stop_success", { count: stoppedCount }), "success");
+        }
+        try {
+          await refreshTasks();
+        } catch {
+          // The cancellation result is already reported; the next task refresh will reconcile the list.
+        }
+      }
+    } catch {
+      // 单任务与整项目取消都要让失败可见，否则用户点击后界面毫无反馈。
+      pushToast(t("task_radar_stop_error"), "error");
     } finally {
       setCancelling(false);
       setCancelConfirm(null);
     }
-  }, [cancelConfirm, refreshTasks]);
+  }, [cancelConfirm, pushToast, refreshTasks, t]);
 
   useEscapeClose(() => setCancelConfirm(null), Boolean(cancelConfirm));
 
@@ -789,12 +812,12 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
           <button
             type="button"
             onClick={voidPromise(handleCancelAll)}
-            disabled={!currentProjectName || stats.queued <= 0 || cancelling}
+            disabled={!currentProjectName || availableCount <= 0 || cancelling}
             className="focus-ring inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition-colors disabled:cursor-not-allowed disabled:opacity-40"
             style={{
-              color: stats.queued > 0 ? "oklch(0.72 0.18 25)" : "var(--color-text-4)",
-              borderColor: stats.queued > 0 ? "oklch(0.72 0.18 25 / 0.4)" : "var(--color-hairline-soft)",
-              background: stats.queued > 0 ? "oklch(0.72 0.18 25 / 0.08)" : "transparent",
+              color: availableCount > 0 ? "oklch(0.72 0.18 25)" : "var(--color-text-4)",
+              borderColor: availableCount > 0 ? "oklch(0.72 0.18 25 / 0.4)" : "var(--color-hairline-soft)",
+              background: availableCount > 0 ? "oklch(0.72 0.18 25 / 0.08)" : "transparent",
             }}
             aria-label={t("task_radar_stop_all_aria")}
             title={t("task_radar_stop_all")}
@@ -802,6 +825,82 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
             {cancelling ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5 fill-current" />}
           </button>
         </div>
+
+        {/* Cancel confirmation */}
+        {cancelConfirm && (
+          <div
+            className="px-4 py-3"
+            role="alertdialog"
+            aria-label={t("cancel_confirm_aria")}
+            style={{ background: "var(--color-shell-hud)" }}
+          >
+            <p
+              className="text-[12px]"
+              style={{ color: "var(--color-text-2)" }}
+            >
+              {cancelConfirm.preview
+                ? cancelConfirm.preview.cascaded.length > 0
+                  ? t("cancel_cascade_msg", {
+                      count: cancelConfirm.preview.cascaded.length,
+                    })
+                  : t("cancel_single_confirm")
+                : t("cancel_all_confirm", { count: cancelConfirm.allCount })}
+            </p>
+            {cancelConfirm.preview &&
+              cancelConfirm.preview.cascaded.length > 0 && (
+                <ul
+                  className="num mt-1.5 max-h-20 overflow-y-auto text-[10.5px]"
+                  style={{ color: "var(--color-text-4)" }}
+                >
+                  {cancelConfirm.preview.cascaded.map((task) => (
+                    <li key={task.task_id}>
+                      {t(`task_type_${task.task_type}`, {
+                        defaultValue: task.task_type,
+                      })}{" "}
+                      / {task.resource_id}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            <div className="mt-2.5 flex gap-2">
+              <button
+                type="button"
+                onClick={voidPromise(confirmCancel)}
+                disabled={cancelling}
+                className="focus-ring rounded px-2.5 py-1 text-[11px] font-medium transition-transform disabled:opacity-50"
+                style={{
+                  color: "oklch(0.98 0 0)",
+                  background:
+                    "linear-gradient(135deg, oklch(0.55 0.20 25), oklch(0.45 0.18 25))",
+                  boxShadow:
+                    "inset 0 1px 0 oklch(1 0 0 / 0.18), 0 4px 14px -4px oklch(0.40 0.18 25 / 0.5)",
+                }}
+              >
+                {cancelling ? t("cancelling") : t("confirm_cancel")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCancelConfirm(null)}
+                className="focus-ring rounded px-2.5 py-1 text-[11px] transition-colors"
+                style={{
+                  color: "var(--color-text-3)",
+                  border: "1px solid var(--color-hairline)",
+                  background: "var(--color-shell-btn)",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "var(--color-text)";
+                  e.currentTarget.style.background = "var(--color-shell-hover-strong)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "var(--color-text-3)";
+                  e.currentTarget.style.background = "var(--color-shell-btn)";
+                }}
+              >
+                {t("go_back")}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Stats bar */}
         <div
@@ -888,82 +987,6 @@ export function TaskHud({ anchorRef }: { anchorRef: RefObject<HTMLElement | null
             </>
           )}
         </div>
-
-        {/* Cancel confirmation */}
-        {cancelConfirm && (
-          <div
-            className="px-4 py-3"
-            role="alertdialog"
-            aria-label={t("cancel_confirm_aria")}
-            style={{ background: "var(--color-shell-hud)" }}
-          >
-            <p
-              className="text-[12px]"
-              style={{ color: "var(--color-text-2)" }}
-            >
-              {cancelConfirm.preview
-                ? cancelConfirm.preview.cascaded.length > 0
-                  ? t("cancel_cascade_msg", {
-                      count: cancelConfirm.preview.cascaded.length,
-                    })
-                  : t("cancel_single_confirm")
-                : t("cancel_all_confirm", { count: cancelConfirm.allCount })}
-            </p>
-            {cancelConfirm.preview &&
-              cancelConfirm.preview.cascaded.length > 0 && (
-                <ul
-                  className="num mt-1.5 max-h-20 overflow-y-auto text-[10.5px]"
-                  style={{ color: "var(--color-text-4)" }}
-                >
-                  {cancelConfirm.preview.cascaded.map((task) => (
-                    <li key={task.task_id}>
-                      {t(`task_type_${task.task_type}`, {
-                        defaultValue: task.task_type,
-                      })}{" "}
-                      / {task.resource_id}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            <div className="mt-2.5 flex gap-2">
-              <button
-                type="button"
-                onClick={voidPromise(confirmCancel)}
-                disabled={cancelling}
-                className="focus-ring rounded px-2.5 py-1 text-[11px] font-medium transition-transform disabled:opacity-50"
-                style={{
-                  color: "oklch(0.98 0 0)",
-                  background:
-                    "linear-gradient(135deg, oklch(0.55 0.20 25), oklch(0.45 0.18 25))",
-                  boxShadow:
-                    "inset 0 1px 0 oklch(1 0 0 / 0.18), 0 4px 14px -4px oklch(0.40 0.18 25 / 0.5)",
-                }}
-              >
-                {cancelling ? t("cancelling") : t("confirm_cancel")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setCancelConfirm(null)}
-                className="focus-ring rounded px-2.5 py-1 text-[11px] transition-colors"
-                style={{
-                  color: "var(--color-text-3)",
-                  border: "1px solid var(--color-hairline)",
-                  background: "var(--color-shell-btn)",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = "var(--color-text)";
-                  e.currentTarget.style.background = "var(--color-shell-hover-strong)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = "var(--color-text-3)";
-                  e.currentTarget.style.background = "var(--color-shell-btn)";
-                }}
-              >
-                {t("go_back")}
-              </button>
-            </div>
-          </div>
-        )}
       </motion.div>
     </GlassPopover>
   );

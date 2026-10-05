@@ -255,7 +255,7 @@ class TestGenerationQueue:
         assert len(cancel_result["cancelled"]) == 1
         assert cancel_result["cancelled"][0]["status"] == "cancelled"
 
-    async def test_cancel_all_queued(self, queue):
+    async def test_cancel_all_active_dispatches_worker_signal(self, queue):
         await queue.enqueue_task(
             project_name="demo",
             task_type="storyboard",
@@ -272,12 +272,63 @@ class TestGenerationQueue:
             payload={},
             script_file="ep1.json",
         )
+        running = await queue.claim_next_task(media_type="image")
+        assert running is not None
 
-        result = await queue.cancel_all_queued("demo")
-        assert result["cancelled_count"] == 2
+        # worker 在线时才走 cancelling + in-process 取消信号；先登记租约模拟 worker 存活。
+        assert await queue.acquire_or_renew_worker_lease(name="default", owner_id="worker-a", ttl_seconds=60)
+
+        signalled: list[str] = []
+        queue.set_worker_cancel_callback(lambda tid: signalled.append(tid) or True)
+
+        result = await queue.cancel_all_active("demo")
+
+        # queued 直接 cancelled，running 落 cancelling 并由 queue 同步派发取消信号
+        assert len(result["cancelled"]) == 1
+        assert result["cancelling"] == [running["task_id"]]
+        assert signalled == [running["task_id"]]
+
+        stats = await queue.get_task_stats(project_name="demo")
+        assert stats["cancelled"] == 1
+        assert stats["cancelling"] == 1
+        assert stats["queued"] == 0
+
+    async def test_cancel_all_active_without_worker_finalizes_running(self, queue):
+        """worker 离线时 running 没有 finally 收口，批量取消必须直接落 cancelled。"""
+        await queue.enqueue_task(
+            project_name="demo",
+            task_type="storyboard",
+            media_type="image",
+            resource_id="E1S01",
+            payload={},
+            script_file="ep1.json",
+        )
+        await queue.enqueue_task(
+            project_name="demo",
+            task_type="video",
+            media_type="video",
+            resource_id="E1S02",
+            payload={},
+            script_file="ep1.json",
+        )
+        running = await queue.claim_next_task(media_type="image")
+        assert running is not None
+
+        signalled: list[str] = []
+        queue.set_worker_cancel_callback(lambda tid: signalled.append(tid) or True)
+
+        result = await queue.cancel_all_active("demo")
+
+        # 无租约 → is_worker_online() 为 False → running 直接兜底落 cancelled，不派发信号
+        assert signalled == []
+        assert result["cancelling"] == []
+        statuses = {task["task_id"]: task["status"] for task in result["cancelled"]}
+        assert statuses[running["task_id"]] == "cancelled"
 
         stats = await queue.get_task_stats(project_name="demo")
         assert stats["cancelled"] == 2
+        assert stats["running"] == 0
+        assert stats["cancelling"] == 0
         assert stats["queued"] == 0
 
     async def test_persist_provider_job_id_wrapper(self, queue):

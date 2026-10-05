@@ -39,7 +39,7 @@ class _FakeQueue:
         self._cancel_task_result = cancel_task_result or {}
         self._cancel_task_error = cancel_task_error
         self._cancel_all_preview_count = cancel_all_preview_count
-        self._cancel_all_result = cancel_all_result or {"cancelled_count": 0, "skipped_running_count": 0}
+        self._cancel_all_result = cancel_all_result or {"cancelled": [], "cancelling": [], "skipped_terminal": []}
         # ADR 0006: 单点 cancel 现返回 {cancelled, cancelling, skipped_terminal}
         self._cancel_task_result.setdefault("cancelled", [])
         self._cancel_task_result.setdefault("cancelling", [])
@@ -58,7 +58,7 @@ class _FakeQueue:
     async def get_cancel_all_preview(self, project_name: str) -> int:
         return self._cancel_all_preview_count
 
-    async def cancel_all_queued(self, project_name: str):
+    async def cancel_all_active(self, project_name: str):
         return self._cancel_all_result
 
 
@@ -234,7 +234,7 @@ class TestCancelTask:
 
 class TestCancelAllPreview:
     @pytest.mark.unit
-    def test_returns_queued_count(self, monkeypatch):
+    def test_returns_active_count(self, monkeypatch):
         fake = _FakeQueue(cancel_all_preview_count=5)
         monkeypatch.setattr(tasks_router, "get_task_queue", lambda: fake)
 
@@ -243,10 +243,10 @@ class TestCancelAllPreview:
             resp = client.get("/api/v1/projects/my-project/tasks/cancel-all-preview")
 
         assert resp.status_code == 200
-        assert resp.json() == {"queued_count": 5}
+        assert resp.json() == {"active_count": 5}
 
     @pytest.mark.unit
-    def test_returns_zero_when_no_queued_tasks(self, monkeypatch):
+    def test_returns_zero_when_no_active_tasks(self, monkeypatch):
         fake = _FakeQueue(cancel_all_preview_count=0)
         monkeypatch.setattr(tasks_router, "get_task_queue", lambda: fake)
 
@@ -255,7 +255,7 @@ class TestCancelAllPreview:
             resp = client.get("/api/v1/projects/empty-project/tasks/cancel-all-preview")
 
         assert resp.status_code == 200
-        assert resp.json() == {"queued_count": 0}
+        assert resp.json() == {"active_count": 0}
 
 
 # ---------------------------------------------------------------------------
@@ -263,12 +263,13 @@ class TestCancelAllPreview:
 # ---------------------------------------------------------------------------
 
 
-class TestCancelAllQueued:
+class TestCancelAll:
     @pytest.mark.unit
-    def test_cancels_all_queued_tasks(self, monkeypatch):
+    def test_reports_cancelled_and_cancelling_tasks(self, monkeypatch):
         result = {
-            "cancelled_count": 3,
-            "skipped_running_count": 0,
+            "cancelled": [{"task_id": "q1"}, {"task_id": "q2"}],
+            "cancelling": ["r1"],
+            "skipped_terminal": [{"task_id": "done1"}],
         }
         fake = _FakeQueue(cancel_all_result=result)
         monkeypatch.setattr(tasks_router, "get_task_queue", lambda: fake)
@@ -278,14 +279,15 @@ class TestCancelAllQueued:
             resp = client.post("/api/v1/projects/my-project/tasks/cancel-all")
 
         assert resp.status_code == 200
-        body = resp.json()
-        assert body["cancelled_count"] == 3
-        assert body["skipped_running_count"] == 0
+        assert resp.json() == {
+            "cancelled_count": 2,
+            "cancelling_count": 1,
+            "skipped_terminal_count": 1,
+        }
 
     @pytest.mark.unit
     def test_returns_zero_when_nothing_to_cancel(self, monkeypatch):
-        result = {"cancelled_count": 0, "skipped_running_count": 0}
-        fake = _FakeQueue(cancel_all_result=result)
+        fake = _FakeQueue()
         monkeypatch.setattr(tasks_router, "get_task_queue", lambda: fake)
 
         app = _make_app()
@@ -293,6 +295,8 @@ class TestCancelAllQueued:
             resp = client.post("/api/v1/projects/empty-project/tasks/cancel-all")
 
         assert resp.status_code == 200
-        body = resp.json()
-        assert body["cancelled_count"] == 0
-        assert body["skipped_running_count"] == 0
+        assert resp.json() == {
+            "cancelled_count": 0,
+            "cancelling_count": 0,
+            "skipped_terminal_count": 0,
+        }

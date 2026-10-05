@@ -130,7 +130,7 @@ class TestQueueEmitsTerminalEvents:
         assert [c["action"] for c in changes] == ["task_cancelled"]
         assert changes[0]["entity_id"] == task["task_id"]
 
-    async def test_cancel_all_queued_emits_one_batch_per_project(self, queue, captured_batches):
+    async def test_cancel_all_active_emits_one_batch_per_project(self, queue, captured_batches):
         for idx in range(3):
             await queue.enqueue_task(
                 project_name="demo",
@@ -143,7 +143,7 @@ class TestQueueEmitsTerminalEvents:
             )
         captured_batches.clear()
 
-        await queue.cancel_all_queued("demo")
+        await queue.cancel_all_active("demo")
 
         # 三条终态合并进同一批，避免每任务一次快照重建。
         assert len(captured_batches) == 1
