@@ -110,3 +110,11 @@ deploy/production/projects/
 deploy/production/vertex_keys/
 deploy/production/claude_data/
 deploy/production/pgdata/
+
+# Local test artifacts
+/.pytest-*/
+/.test-tmp-*/
+/.tmp-pytest-*/
+
+# Local generated output
+/output/
