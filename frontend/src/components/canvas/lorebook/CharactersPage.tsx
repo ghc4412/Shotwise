@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { User } from "lucide-react";
-import { GalleryToolbar } from "./GalleryToolbar";
+import { GalleryToolbar, type GenerateDesignsMode } from "./GalleryToolbar";
 import { CharacterCard } from "./CharacterCard";
 import { AssetFormModal } from "@/components/assets/AssetFormModal";
 import { AssetPickerModal } from "@/components/assets/AssetPickerModal";
@@ -36,10 +36,12 @@ export function CharactersPage({ projectName, characters, onSaveCharacter, onGen
   useScrollTarget("character");
 
   const entries = Object.entries(characters);
+  const pendingDesignEntries = entries.filter(([, character]) => !character.character_sheet);
   const hasGeneratingCharacter = entries.some(([name]) => generatingCharacterNames?.has(name));
 
-  const handleGenerateAll = () => {
-    for (const [name] of entries) {
+  const handleGenerateDesigns = (mode: GenerateDesignsMode) => {
+    const targets = mode === "missing" ? pendingDesignEntries : entries;
+    for (const [name] of targets) {
       onGenerateCharacter(name);
     }
   };
@@ -67,8 +69,9 @@ export function CharactersPage({ projectName, characters, onSaveCharacter, onGen
         count={entries.length}
         onAdd={readOnly ? undefined : () => setAdding(true)}
         onPickFromLibrary={readOnly ? undefined : () => setPicking(true)}
-        onGenerateDesigns={readOnly || entries.length === 0 ? undefined : handleGenerateAll}
+        onGenerateDesigns={readOnly || entries.length === 0 ? undefined : handleGenerateDesigns}
         generateDesignsDisabled={hasGeneratingCharacter}
+        pendingDesignCount={pendingDesignEntries.length}
         onViewRelations={() => setRelationsOpen(true)}
       />
       <div className="px-5 py-5" data-onboarding={ONBOARDING_ANCHORS.workbenchLorebook}>

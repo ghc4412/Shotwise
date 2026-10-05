@@ -61,6 +61,22 @@ describe("formatTaskElapsed", () => {
     });
   });
 
+  it("treats naive backend timestamps as UTC against a UTC epoch end", () => {
+    // 后端 dt_to_iso 不带时区后缀（naive UTC），末端取 Date.now()（UTC epoch）。
+    // 若把 naive 串按本地时区解析，进行中任务会平白多算一个时区偏移。
+    const task: TaskItem = {
+      ...baseTask,
+      queued_at: "2026-08-31T00:00:00",
+      started_at: "2026-08-31T00:00:10",
+      finished_at: null,
+    };
+    expect(formatTaskElapsed(task, Date.parse("2026-08-31T00:01:15.000Z"))).toEqual({
+      waitingSeconds: 10,
+      runningSeconds: 65,
+      totalSeconds: 75,
+    });
+  });
+
   it("does not invent running time before a task starts", () => {
     const task: TaskItem = { ...baseTask, status: "queued", started_at: null };
     expect(formatTaskElapsed(task, Date.parse("2026-08-31T00:00:12.000Z"))).toEqual({

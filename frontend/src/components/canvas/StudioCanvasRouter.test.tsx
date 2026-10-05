@@ -841,6 +841,96 @@ describe("StudioCanvasRouter", () => {
     // The add-character button is on CharactersPage which is not directly exposed; we test the form submit instead.
   });
 
+  it("requests regeneration when the character already has a design sheet", async () => {
+    useProjectsStore.setState({
+      currentProjectName: "demo",
+      currentProjectData: makeProjectData({
+        characters: {
+          Hero: {
+            description: "hero description",
+            character_sheet: "characters/Hero.png",
+          },
+        },
+      }),
+      currentScripts: { "episode_1.json": makeScript() },
+    });
+
+    const generate = vi.spyOn(API, "generateCharacter").mockResolvedValue({
+      success: true,
+      task_id: "t-1",
+      deduped: false,
+      reused: false,
+      message: "已提交",
+    });
+
+    renderAt("/characters");
+
+    fireEvent.click(screen.getByText("generate-character"));
+    await waitFor(() => {
+      expect(generate).toHaveBeenCalledWith("demo", "Hero", "hero description", true);
+    });
+  });
+
+  it("requests regeneration when the scene already has a design sheet", async () => {
+    useProjectsStore.setState({
+      currentProjectName: "demo",
+      currentProjectData: makeProjectData({
+        scenes: {
+          Temple: {
+            description: "ancient temple",
+            scene_sheet: "scenes/Temple.png",
+          },
+        },
+      }),
+      currentScripts: { "episode_1.json": makeScript() },
+    });
+
+    const generate = vi.spyOn(API, "generateProjectScene").mockResolvedValue({
+      success: true,
+      task_id: "t-1",
+      deduped: false,
+      reused: false,
+      message: "已提交",
+    });
+
+    renderAt("/scenes");
+
+    fireEvent.click(screen.getByText("generate-scene"));
+    await waitFor(() => {
+      expect(generate).toHaveBeenCalledWith("demo", "Temple", "ancient temple", true);
+    });
+  });
+
+  it("requests regeneration when the prop already has a design sheet", async () => {
+    useProjectsStore.setState({
+      currentProjectName: "demo",
+      currentProjectData: makeProjectData({
+        props: {
+          Sword: {
+            description: "rusty sword",
+            prop_sheet: "props/Sword.png",
+          },
+        },
+      }),
+      currentScripts: { "episode_1.json": makeScript() },
+    });
+
+    const generate = vi.spyOn(API, "generateProjectProp").mockResolvedValue({
+      success: true,
+      task_id: "t-1",
+      deduped: false,
+      reused: false,
+      message: "已提交",
+    });
+
+    renderAt("/props");
+
+    fireEvent.click(screen.getByText("generate-prop"));
+    await waitFor(() => {
+      expect(generate).toHaveBeenCalledWith("demo", "Sword", "rusty sword", true);
+    });
+  });
+
   it("refreshes the project even when the audio upload step fails partway through save", async () => {
     useProjectsStore.setState({
       currentProjectName: "demo",

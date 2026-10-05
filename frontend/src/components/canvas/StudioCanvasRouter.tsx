@@ -473,11 +473,13 @@ export function StudioCanvasRouter() {
 
   const handleGenerateCharacter = useCallback(async (name: string) => {
     if (!currentProjectName) return;
+    const character = currentProjectData?.characters?.[name];
     try {
       await enqueueCharacter(
         currentProjectName,
         name,
-        currentProjectData?.characters?.[name]?.description ?? "",
+        character?.description ?? "",
+        Boolean(character?.character_sheet),
       );
     } catch (err) {
       useAppStore.getState().pushToast(tRef.current("submit_failed", { message: errMsg(err) }), "error");
@@ -523,8 +525,14 @@ export function StudioCanvasRouter() {
 
   const handleGenerateScene = useCallback(async (name: string) => {
     if (!currentProjectName) return;
+    const scene = currentProjectData?.scenes?.[name];
     try {
-      await enqueueScene(currentProjectName, name, currentProjectData?.scenes?.[name]?.description ?? "");
+      await enqueueScene(
+        currentProjectName,
+        name,
+        scene?.description ?? "",
+        Boolean(scene?.scene_sheet),
+      );
     } catch (err) {
       useAppStore.getState().pushToast(tRef.current("submit_failed", { message: errMsg(err) }), "error");
     }
@@ -555,8 +563,14 @@ export function StudioCanvasRouter() {
 
   const handleGenerateProp = useCallback(async (name: string) => {
     if (!currentProjectName) return;
+    const prop = currentProjectData?.props?.[name];
     try {
-      await enqueueProp(currentProjectName, name, currentProjectData?.props?.[name]?.description ?? "");
+      await enqueueProp(
+        currentProjectName,
+        name,
+        prop?.description ?? "",
+        Boolean(prop?.prop_sheet),
+      );
     } catch (err) {
       useAppStore.getState().pushToast(tRef.current("submit_failed", { message: errMsg(err) }), "error");
     }
@@ -616,11 +630,13 @@ export function StudioCanvasRouter() {
 
   const handleGenerateProduct = useCallback(async (name: string) => {
     if (!currentProjectName) return;
+    const product = currentProjectData?.products?.[name];
     try {
       await enqueueProduct(
         currentProjectName,
         name,
-        currentProjectData?.products?.[name]?.description ?? "",
+        product?.description ?? "",
+        Boolean(product?.product_sheet),
       );
     } catch (err) {
       useAppStore.getState().pushToast(tRef.current("submit_failed", { message: errMsg(err) }), "error");

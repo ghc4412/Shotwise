@@ -1,4 +1,5 @@
 import type { TaskItem } from "@/types";
+import { parseIso } from "@/utils/date-format";
 
 export interface TaskElapsed {
   waitingSeconds: number;
@@ -8,7 +9,11 @@ export interface TaskElapsed {
 
 function parseTimestamp(value: string | null): number | null {
   if (!value) return null;
-  const timestamp = Date.parse(value);
+  // 复用 parseIso：后端 dt_to_iso 直出 DB 里的 naive UTC 串（无 Z / 偏移量），直接交给
+  // Date.parse 会按本地时区解释，与进行中任务的末端（Date.now 的 UTC epoch）相差一个
+  // 时区偏移，时长因此多算整个时差。终态任务两端同为 naive、差值相消，所以该问题只在
+  // 进行中任务（finished_at 为空）上暴露。
+  const timestamp = parseIso(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
