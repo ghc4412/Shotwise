@@ -403,6 +403,7 @@ MESSAGES = {
     "jianying_no_completed_segments": "Tập {episode} chưa có đoạn video hoàn thành; hãy tạo video trước",
     "project_config_invalid": "Cấu hình dự án không hợp lệ; hãy kiểm tra tham số và thử lại",
     "invalid_discovery_format": "Định dạng khám phá mô hình không được hỗ trợ: {discovery_format}",
+    "invalid_base_url": "Base URL không hợp lệ: phải là URL http(s) tuyệt đối, không kèm tham số truy vấn hoặc thông tin người dùng",
     "request_invalid": "Yêu cầu không hợp lệ, vui lòng kiểm tra và thử lại",
     "assistant_image_invalid": "Tệp đính kèm trò chuyện không phải là ảnh hợp lệ; hãy tải ảnh có thể giải mã rồi thử lại",
     "assistant_image_too_large": "Tệp đính kèm trò chuyện quá lớn; hãy nén rồi thử lại",
@@ -431,4 +432,5 @@ MESSAGES = {
     "memory_candidate_resolved": "Ứng viên bộ nhớ đã được xử lý",
     "memory_scope_required": "Khi lọc theo dự án phải chỉ định phạm vi bộ nhớ",
     "memory_import_invalid": "Dữ liệu nhập bộ nhớ không hợp lệ",
+    "prompt_template_not_found": "Không tìm thấy mẫu prompt",
 }

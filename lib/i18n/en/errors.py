@@ -401,6 +401,7 @@ MESSAGES = {
     "jianying_no_completed_segments": "Episode {episode} has no completed video clips; generate videos first",
     "project_config_invalid": "Invalid project configuration; check the parameters and retry",
     "invalid_discovery_format": "Unsupported model discovery format: {discovery_format}",
+    "invalid_base_url": "Invalid base URL: must be an absolute http(s) URL without query parameters or userinfo",
     "request_invalid": "Invalid request, please check and retry",
     "assistant_image_invalid": "The chat attachment is not a valid image; upload a decodable image and try again",
     "assistant_image_too_large": "The chat attachment is too large; compress it and try again",
@@ -429,4 +430,5 @@ MESSAGES = {
     "memory_candidate_resolved": "Memory candidate has already been resolved",
     "memory_scope_required": "A memory scope is required when filtering by project",
     "memory_import_invalid": "Invalid memory import payload",
+    "prompt_template_not_found": "Prompt template not found",
 }

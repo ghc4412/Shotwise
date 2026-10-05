@@ -355,6 +355,7 @@ MESSAGES = {
     "jianying_no_completed_segments": "第 {episode} 集没有已完成的视频片段，请先生成视频",
     "project_config_invalid": "项目配置无效，请检查参数后重试",
     "invalid_discovery_format": "不支持的模型发现格式：{discovery_format}",
+    "invalid_base_url": "Base URL 非法：需为绝对的 http(s) 地址，且不能带查询参数或用户信息",
     "request_invalid": "请求无效，请检查后重试",
     "assistant_image_invalid": "聊天附图无效，请上传可解码的图片",
     "assistant_image_too_large": "聊天附图过大，请压缩后重试",
@@ -383,4 +384,5 @@ MESSAGES = {
     "memory_candidate_resolved": "记忆候选已处理",
     "memory_scope_required": "指定项目时必须同时指定记忆作用域",
     "memory_import_invalid": "记忆导入数据无效",
+    "prompt_template_not_found": "提示词模板不存在",
 }
