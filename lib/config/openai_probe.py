@@ -25,6 +25,7 @@ from lib.config.anthropic_probe import (
 )
 from lib.config.url_utils import ensure_openai_base_url
 from lib.httpx_shared import get_http_client
+from lib.outbound_url import validate_outbound_url
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ async def _post(
     timeout_s: float,
 ) -> httpx.Response:
     """间接层：测试时 patch 这一个。"""
+    url = validate_outbound_url(url)
     client = get_http_client()
     return await client.post(url, headers=headers, json=payload, timeout=timeout_s)
 
@@ -180,6 +182,7 @@ async def probe_responses(
 
 async def _get(*, url: str, headers: dict[str, str], timeout_s: float) -> httpx.Response:
     """间接层：测试时 patch 这一个。"""
+    url = validate_outbound_url(url)
     client = get_http_client()
     return await client.get(url, headers=headers, timeout=timeout_s)
 

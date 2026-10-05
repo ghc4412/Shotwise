@@ -65,6 +65,8 @@ class TestRegistry:
             "video_max_reference_images": None,
             "end_image_capable": False,
             "reference_audio_capable": False,
+            "source": "builtin",
+            "version": None,
         }
 
     def test_new_video_endpoints_have_unset_cap(self):

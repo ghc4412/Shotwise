@@ -31,6 +31,7 @@ from lib.db.base import dt_to_iso
 from lib.db.repositories.credential_repository import CredentialRepository
 from lib.gemini_shared import VERTEX_SCOPES
 from lib.i18n import Translator
+from lib.outbound_url import OutboundUrlError, validate_outbound_base_url
 from lib.video_backends.registry import video_capabilities_for_model as builtin_video_capabilities_for_model
 from server.auth import AdminUser
 from server.dependencies import get_config_service
@@ -1212,6 +1213,17 @@ async def test_provider_connection(
         meta = PROVIDER_REGISTRY.get(provider_id)
         if meta and meta.default_base_url:
             config["base_url"] = meta.default_base_url
+
+    # 出站目的地统一校验：形态非法时给可读失败，不把请求发出去。
+    if config.get("base_url"):
+        try:
+            config["base_url"] = validate_outbound_base_url(config["base_url"])
+        except OutboundUrlError:
+            return ConnectionTestResponse(
+                success=False,
+                available_models=[],
+                message=_t("invalid_base_url"),
+            )
 
     test_fn = _TEST_DISPATCH.get(provider_id)
     if test_fn is None:

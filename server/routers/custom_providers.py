@@ -187,6 +187,14 @@ class ModelInput(BaseModel):
             raise ValueError("video model supported_durations must be explicitly declared")
         return self
 
+    @model_validator(mode="after")
+    def _restrict_poll_to_image_endpoints(self) -> ModelInput:
+        """轮询传输目前只在图片委托里接线；非图片 endpoint 声明 poll 属配置错误，写入侧直接拦截。"""
+        if self.endpoint_declaration and self.endpoint_declaration.get("poll"):
+            if endpoint_to_media_type(self.endpoint) != "image":
+                raise ValueError("endpoint_declaration.poll is only supported on image endpoints")
+        return self
+
     def to_db_dict(self) -> dict:
         """返回适合写入数据库的字典（supported_durations 序列化为 JSON 字符串）。
 
@@ -324,6 +332,10 @@ class EndpointDescriptor(BaseModel):
     # 该 endpoint 的执行层是否真的下传尾帧约束；仅 video 类有意义。前端据此收窄 last_frame
     # 覆盖控件里「强制开」的可选范围——否则用户只能撞上写入侧的 422 才知道这条路不通。
     end_image_capable: bool = False
+    # 端点来源（builtin = 随应用内置）与条目版本（内置端点为 None）。前端据此区分内置端点与
+    # 未来的市场安装条目；纯描述性元数据，不承载安装 / 更新 / 卸载语义（同 EndpointSpec）。
+    source: str = "builtin"
+    version: str | None = None
 
 
 class EndpointCatalogResponse(BaseModel):
@@ -992,6 +1004,14 @@ async def _run_discover(
         UnsupportedDiscoveryFormatError,
         discover_models,
     )
+    from lib.outbound_url import OutboundUrlError, validate_outbound_base_url
+
+    # 非法 base_url 属客户端请求错误：在 try 之前拦下，避免被下面的兜底 except 归成 502。
+    if base_url:
+        try:
+            base_url = validate_outbound_base_url(base_url)
+        except OutboundUrlError as exc:
+            raise BadRequestError("invalid_base_url") from exc
 
     try:
         models = await discover_models(
@@ -1018,7 +1038,17 @@ async def _run_connection_test(
     discovery_format: str, base_url: str, api_key: str, _t: Callable[..., str]
 ) -> ConnectionTestResponse:
     """共用的连接测试逻辑。"""
+    from lib.outbound_url import OutboundUrlError, validate_outbound_base_url
+
     try:
+        if base_url:
+            try:
+                base_url = validate_outbound_base_url(base_url)
+            except OutboundUrlError:
+                return ConnectionTestResponse(
+                    success=False,
+                    message=_t("invalid_base_url"),
+                )
         if discovery_format == "openai":
             result = await asyncio.wait_for(
                 asyncio.to_thread(_test_openai, base_url, api_key, _t),

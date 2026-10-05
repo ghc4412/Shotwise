@@ -14,6 +14,7 @@ from typing import Protocol
 import httpx
 from sqlalchemy.exc import InterfaceError, OperationalError
 
+from lib.outbound_url import validate_outbound_url
 from lib.retry import BASE_RETRYABLE_ERRORS, _should_retry, with_retry_async
 
 # `_should_retry` 默认会做字符串模式兜底（"timeout"/"503" 等），
@@ -379,6 +380,9 @@ async def poll_with_retry[T](
 @with_retry_async()
 async def download_video(url: str, output_path: Path, *, timeout: int = 120) -> None:
     """从 URL 流式下载视频到本地文件（含瞬态错误重试）。"""
+    # 出站目的地统一校验：非法形态在此快速失败。OutboundUrlError 是 ValueError，
+    # should_retry_download 只认 HTTP/传输类异常，不会把形态错误拖进重试窗口。
+    url = validate_outbound_url(url)
     await asyncio.to_thread(output_path.parent.mkdir, parents=True, exist_ok=True)
     async with httpx.AsyncClient() as http_client:
         async with http_client.stream("GET", url, timeout=timeout) as resp:

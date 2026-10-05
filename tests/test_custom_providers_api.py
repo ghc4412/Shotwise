@@ -245,9 +245,24 @@ class TestEndpointCatalog:
                 "request_path_template",
                 "image_capabilities",
                 "end_image_capable",
+                "source",
+                "version",
             }
             assert entry["request_method"] == "POST"
             assert entry["request_path_template"].startswith("/")
+
+    def test_descriptor_exposes_provenance(self, client: TestClient):
+        """catalog 带出 source / version：内置端点标 builtin、无独立版本号。
+
+        纯描述性元数据，供前端与（未落地的）端点市场区分内置与市场安装条目——本字段不参与
+        任何安装 / 更新 / 卸载判定，与 ENDPOINT_REGISTRY 同源。
+        """
+        resp = client.get("/api/v1/custom-providers/endpoints")
+        assert resp.status_code == 200
+        by_key = {e["key"]: e for e in resp.json()["endpoints"]}
+        for key, spec in ENDPOINT_REGISTRY.items():
+            assert by_key[key]["source"] == spec.source == "builtin"
+            assert by_key[key]["version"] == spec.version is None
 
     def test_endpoints_expose_end_image_capable(self, client: TestClient):
         """catalog 带出 end_image_capable：前端据此禁用不下传尾帧的 endpoint 的 last_frame 强制开，
@@ -443,6 +458,45 @@ class TestReplaceModels:
         resp = client.put("/api/v1/custom-providers/9999/models", json={"models": []})
         assert resp.status_code == 404
 
+    def test_rejects_poll_declaration_on_non_image_endpoint(self, client: TestClient):
+        create_resp = client.post(
+            "/api/v1/custom-providers",
+            json={
+                "display_name": "Poll Guard",
+                "discovery_format": "openai",
+                "base_url": "https://api.example.com/v1",
+                "api_key": "sk-poll-guard-1234",
+                "models": [],
+            },
+        )
+        pid = create_resp.json()["id"]
+        resp = client.put(
+            f"/api/v1/custom-providers/{pid}/models",
+            json={
+                "models": [
+                    {
+                        "model_id": "legacy-video",
+                        "display_name": "Legacy Video",
+                        "endpoint": "newapi-video",
+                        "supported_durations": [4, 8],
+                        "endpoint_declaration": {
+                            "method": "POST",
+                            "path": "/v1/videos",
+                            "body": {"/prompt": "prompt"},
+                            "response": {"result_url": "/output/url"},
+                            "poll": {
+                                "path": "/v1/jobs/{job_id}",
+                                "job_id": "/id",
+                                "status": "/status",
+                                "done_value": "succeeded",
+                            },
+                        },
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 422
+
     def test_verify_old_models_removed(self, client: TestClient):
         create_resp = client.post(
             "/api/v1/custom-providers",
@@ -544,6 +598,18 @@ class TestDiscoverModels:
         assert resp.json()["models"][0]["model_id"] == "gemini-2.0-flash"
         # 确认 discovery_format 透传
         assert mock_discover.call_args.kwargs["discovery_format"] == "google"
+
+    def test_discover_invalid_base_url_returns_400(self, client: TestClient):
+        """非法 base_url 属客户端请求错误：在发请求前拦下，返回 400 而非 502。"""
+        resp = client.post(
+            "/api/v1/custom-providers/discover",
+            json={
+                "discovery_format": "openai",
+                "base_url": "not a url",
+                "api_key": "sk-test",
+            },
+        )
+        assert resp.status_code == 400
 
     def test_discover_invalid_format(self, client: TestClient):
         """discover_models 抛 UnsupportedDiscoveryFormatError 时返回 400。"""
@@ -744,6 +810,20 @@ class TestConnectionTest:
                 "discovery_format": "unsupported",
                 "base_url": "https://api.example.com",
                 "api_key": "test",
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["success"] is False
+
+    def test_invalid_base_url_returns_false(self, client: TestClient):
+        """非法 base_url 不发起请求，直接返回 success=False。"""
+        resp = client.post(
+            "/api/v1/custom-providers/test",
+            json={
+                "discovery_format": "openai",
+                "base_url": "https://user:pass@api.example.com/v1",
+                "api_key": "sk-test",
             },
         )
         assert resp.status_code == 200

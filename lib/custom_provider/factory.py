@@ -45,6 +45,10 @@ def create_custom_backend(
     """
     spec = get_endpoint_spec(endpoint)
     declaration = parse_endpoint_declaration(endpoint_declaration) if endpoint_declaration is not None else None
+    # 轮询传输目前只在图片委托里接线；其它媒体类型声明 poll 会被委托静默忽略，
+    # 必须在构造期 fail loud，避免用户以为异步轮询生效、实际走的是同步单次请求。
+    if declaration is not None and declaration.poll is not None and spec.media_type != "image":
+        raise ValueError(f"poll is only supported on image endpoints, not {spec.media_type!r}")
     if declaration is None:
         backend = spec.build_backend(provider, model_id)
     elif spec.media_type == "text":

@@ -79,6 +79,12 @@ class EndpointSpec:
     # VideoGenerationRequest.reference_audio_files 并组装进供应商请求。仅 video 类有意义；
     # False 时把 reference_audio_mode 覆盖为 direct 只会让能力声明失真，执行层照旧不带音色输入。
     reference_audio_capable: bool = False
+    # 端点来源：``builtin`` = 随 Shotwise 发布、不可卸载；未来的端点市场安装条目写自己的来源
+    # 标识。纯描述性元数据——它只回答「这条从哪来」，不承载安装 / 更新 / 卸载语义，也没有任何
+    # 执行路径读它（见 docs/adr/0067-endpoint-marketplace-deferred.md）。
+    source: str = "builtin"
+    # 条目版本：内置端点随应用发布、无独立版本号，故为 None；市场安装的条目带自己的版本。
+    version: str | None = None
 
 
 class EndpointDeclarationValidationError(ValueError):
@@ -87,6 +93,22 @@ class EndpointDeclarationValidationError(ValueError):
     def __init__(self, message: str, *, field: str | None = None) -> None:
         self.field = field
         super().__init__(message)
+
+
+@dataclass(frozen=True)
+class EndpointPoll:
+    """Declarative submit-and-poll transport for asynchronous custom endpoints."""
+
+    path: str
+    job_id: str
+    status: str
+    done_value: object
+    failed_value: object | None
+    result: str | None
+    artifact_url: str | None
+    headers: Mapping[str, str]
+    interval_seconds: float
+    timeout_seconds: float
 
 
 @dataclass(frozen=True)
@@ -99,6 +121,8 @@ class EndpointDeclaration:
     body_mapping: Mapping[str, str]
     response_mapping: Mapping[str, str]
     capability_overrides: Mapping[str, object]
+    body_template: Mapping[str, object] | None = None
+    poll: EndpointPoll | None = None
 
 
 @dataclass(frozen=True)
@@ -111,12 +135,37 @@ class RenderedEndpointRequest:
     body: dict[str, object]
 
 
+@dataclass(frozen=True)
+class RenderedEndpointPoll:
+    """The safe poll request produced from an :class:`EndpointDeclaration`."""
+
+    path: str
+    headers: dict[str, str]
+
+
+def _poll_to_dict(poll: EndpointPoll | None) -> dict[str, object] | None:
+    if poll is None:
+        return None
+    return {
+        "path": poll.path,
+        "job_id": poll.job_id,
+        "status": poll.status,
+        "done_value": poll.done_value,
+        "failed_value": poll.failed_value,
+        "result": poll.result,
+        "artifact_url": poll.artifact_url,
+        "headers": dict(poll.headers),
+        "interval_seconds": poll.interval_seconds,
+        "timeout_seconds": poll.timeout_seconds,
+    }
+
+
 def endpoint_declaration_to_dict(declaration: EndpointDeclaration | None) -> dict[str, object] | None:
     """Return the JSON-safe representation used by the custom-provider API and DB."""
     if declaration is None:
         return None
     validate_endpoint_declaration(declaration)
-    return {
+    result: dict[str, object] = {
         "method": declaration.method,
         "path": declaration.path,
         "headers": dict(declaration.headers),
@@ -124,36 +173,110 @@ def endpoint_declaration_to_dict(declaration: EndpointDeclaration | None) -> dic
         "response": dict(declaration.response_mapping),
         "capability_overrides": dict(declaration.capability_overrides),
     }
+    if declaration.body_template is not None:
+        result["body_template"] = declaration.body_template
+    if declaration.poll is not None:
+        result["poll"] = _poll_to_dict(declaration.poll)
+    return result
 
 
-_DECLARATION_FIELDS = frozenset({"method", "path", "headers", "body", "response", "capability_overrides"})
+_DECLARATION_FIELDS = frozenset(
+    {"method", "path", "headers", "body", "body_template", "response", "capability_overrides", "poll"}
+)
 _DECLARATION_METHODS = frozenset({"POST"})
 _DECLARATION_HEADERS = {"accept": "Accept", "content-type": "Content-Type"}
 _SIMPLE_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 _PATH_PLACEHOLDER = re.compile(r"\{([^{}]+)\}")
+_TEMPLATE_PLACEHOLDER = re.compile(r"\{([A-Za-z][A-Za-z0-9_-]*)\}")
 _JSON_POINTER_TOKEN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 _JSON_POINTER_INDEX = re.compile(r"^(0|[1-9][0-9]*)$")
+_POLL_FIELDS = frozenset(
+    {
+        "path",
+        "job_id",
+        "status",
+        "done_value",
+        "failed_value",
+        "result",
+        "artifact_url",
+        "headers",
+        "interval_seconds",
+        "timeout_seconds",
+    }
+)
+# 允许出现在 body_template 中的声明式输入名。模板只做 JSON 结构拼装，不接受任意表达式。
+_BODY_TEMPLATE_INPUTS = frozenset(
+    {
+        "model",
+        "prompt",
+        "system_prompt",
+        "max_output_tokens",
+        "aspect_ratio",
+        "image_size",
+        "seed",
+        "reference_images",
+        "text",
+        "voice",
+        "language_type",
+        "speed",
+        "duration",
+        "duration_seconds",
+        "resolution",
+        "start_image",
+        "end_image",
+        "reference_audio_files",
+        "generate_audio",
+    }
+)
+_POLL_POINTER_PLACEHOLDERS = frozenset({"job_id", "model"})
+_MAX_TEMPLATE_DEPTH = 32
+_DEFAULT_POLL_INTERVAL_SECONDS = 2.0
+_DEFAULT_POLL_TIMEOUT_SECONDS = 300.0
+_MIN_POLL_INTERVAL_SECONDS = 0.05
+_MAX_POLL_INTERVAL_SECONDS = 60.0
+_MAX_POLL_TIMEOUT_SECONDS = 3600.0
 
 
 def _declaration_error(message: str, field: str) -> EndpointDeclarationValidationError:
     return EndpointDeclarationValidationError(f"{field}: {message}", field=field)
 
 
-def _validate_path(path: object) -> str:
+def _validate_path(
+    path: object,
+    *,
+    field: str = "path",
+    placeholders: frozenset[str] | None = frozenset({"model"}),
+    allow_query: bool = False,
+) -> str:
     if not isinstance(path, str) or not path:
-        raise _declaration_error("must be a non-empty relative path", "path")
+        raise _declaration_error("must be a non-empty relative path", field)
     parsed = urlsplit(path)
-    if not path.startswith("/") or parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
-        raise _declaration_error("must be an absolute-path reference without a URL or query", "path")
+    if (
+        not path.startswith("/")
+        or parsed.scheme
+        or parsed.netloc
+        or parsed.fragment
+        or (parsed.query and not allow_query)
+    ):
+        raise _declaration_error("must be an absolute-path reference without a URL or query", field)
     if any(part == ".." for part in path.split("/")):
-        raise _declaration_error("must not contain path traversal", "path")
+        raise _declaration_error("must not contain path traversal", field)
     for placeholder in _PATH_PLACEHOLDER.findall(path):
-        if placeholder != "model":
-            raise _declaration_error("only the {model} placeholder is allowed", "path")
+        if not _SIMPLE_NAME.fullmatch(placeholder):
+            raise _declaration_error("placeholder names must be simple field names", field)
+        if placeholders is not None and placeholder not in placeholders:
+            allowed = ", ".join(f"{{{name}}}" for name in sorted(placeholders))
+            raise _declaration_error(f"only the {allowed} placeholder(s) are allowed", field)
     return path
 
 
-def _validate_object_pointer(pointer: object, *, field: str, allow_array: bool) -> str:
+def _validate_object_pointer(
+    pointer: object,
+    *,
+    field: str,
+    allow_array: bool,
+    placeholders: frozenset[str] = frozenset(),
+) -> str:
     if not isinstance(pointer, str) or not pointer.startswith("/"):
         raise _declaration_error("must be a JSON Pointer-like path starting with '/'", field)
     tokens = pointer[1:].split("/")
@@ -163,6 +286,13 @@ def _validate_object_pointer(pointer: object, *, field: str, allow_array: bool) 
         if re.search(r"~(?![01])", token):
             raise _declaration_error("contains an unsupported path component", field)
         decoded = token.replace("~1", "/").replace("~0", "~")
+        placeholder_match = _TEMPLATE_PLACEHOLDER.fullmatch(decoded)
+        if placeholder_match is not None:
+            placeholder = placeholder_match.group(1)
+            if placeholder not in placeholders:
+                allowed = ", ".join(f"{{{name}}}" for name in sorted(placeholders)) or "none"
+                raise _declaration_error(f"placeholder {{{placeholder}}} is not allowed; allowed: {allowed}", field)
+            decoded = "job_id"
         if allow_array:
             if not (_JSON_POINTER_TOKEN.fullmatch(decoded) or _JSON_POINTER_INDEX.fullmatch(decoded)):
                 raise _declaration_error("contains an unsupported response path component", field)
@@ -209,6 +339,119 @@ def _validate_mapping(raw: object, *, field: str, response: bool) -> dict[str, s
     return result
 
 
+def _iter_template_placeholders(value: str, *, field: str) -> list[str]:
+    names: list[str] = []
+    index = 0
+    while index < len(value):
+        if value[index] != "{":
+            index += 1
+            continue
+        end = value.find("}", index + 1)
+        if end == -1:
+            raise _declaration_error("contains an unclosed template placeholder", field)
+        name = value[index + 1 : end]
+        if not _SIMPLE_NAME.fullmatch(name):
+            raise _declaration_error("placeholder names must be simple field names", field)
+        names.append(name)
+        index = end + 1
+    return names
+
+
+def _validate_template(value: object, *, field: str, depth: int = 0) -> object:
+    if depth > _MAX_TEMPLATE_DEPTH:
+        raise _declaration_error("nesting is too deep", field)
+    if isinstance(value, str):
+        for name in _iter_template_placeholders(value, field=field):
+            if name not in _BODY_TEMPLATE_INPUTS:
+                raise _declaration_error(f"placeholder {{{name}}} is not an allowed input", field)
+        return value
+    if isinstance(value, Mapping):
+        result: dict[str, object] = {}
+        for key, item in value.items():
+            if not isinstance(key, str) or not key:
+                raise _declaration_error("object keys must be non-empty strings", field)
+            result[key] = _validate_template(item, field=field, depth=depth + 1)
+        return result
+    if isinstance(value, list):
+        return [_validate_template(item, field=field, depth=depth + 1) for item in value]
+    if isinstance(value, (bool, int, float)) or value is None:
+        return value
+    raise _declaration_error("must contain only JSON-compatible values", field)
+
+
+def _validate_scalar(value: object, *, field: str) -> object:
+    if isinstance(value, (str, bool, int, float)) or value is None:
+        return value
+    raise _declaration_error("must be a scalar JSON value", field)
+
+
+def _validate_poll(raw: object) -> EndpointPoll | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise _declaration_error("must be an object", "poll")
+    unknown = set(raw) - _POLL_FIELDS
+    if unknown:
+        raise _declaration_error(f"unknown fields: {sorted(unknown)!r}", "poll")
+    path = _validate_path(raw.get("path"), field="poll.path", placeholders=frozenset({"model", "job_id"}))
+    job_id = _validate_object_pointer(
+        raw.get("job_id"), field="poll.job_id", allow_array=True, placeholders=_POLL_POINTER_PLACEHOLDERS
+    )
+    status = _validate_object_pointer(
+        raw.get("status"), field="poll.status", allow_array=True, placeholders=_POLL_POINTER_PLACEHOLDERS
+    )
+    done_value = _validate_scalar(raw.get("done_value"), field="poll.done_value")
+    # done 哨兵必须显式给出：缺省为 None 时，取不到状态（含状态指针缺失）的轮询响应会命中
+    # `status == None`，把未完成任务误判为已完成。
+    if done_value is None:
+        raise _declaration_error("is required and must not be null", "poll.done_value")
+    failed_value = _validate_scalar(raw.get("failed_value"), field="poll.failed_value")
+    result_raw = raw.get("result")
+    result = (
+        None
+        if result_raw is None
+        else _validate_object_pointer(
+            result_raw, field="poll.result", allow_array=True, placeholders=_POLL_POINTER_PLACEHOLDERS
+        )
+    )
+    artifact_url_raw = raw.get("artifact_url")
+    artifact_url = (
+        None
+        if artifact_url_raw is None
+        else _validate_path(artifact_url_raw, field="poll.artifact_url", placeholders=None, allow_query=True)
+    )
+    headers = _validate_headers(raw.get("headers", {}))
+    interval = raw.get("interval_seconds", _DEFAULT_POLL_INTERVAL_SECONDS)
+    timeout = raw.get("timeout_seconds", _DEFAULT_POLL_TIMEOUT_SECONDS)
+    if isinstance(interval, bool) or not isinstance(interval, (int, float)):
+        raise _declaration_error("must be a number", "poll.interval_seconds")
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+        raise _declaration_error("must be a number", "poll.timeout_seconds")
+    interval_seconds = float(interval)
+    timeout_seconds = float(timeout)
+    if not _MIN_POLL_INTERVAL_SECONDS <= interval_seconds <= _MAX_POLL_INTERVAL_SECONDS:
+        raise _declaration_error(
+            f"must be between {_MIN_POLL_INTERVAL_SECONDS} and {_MAX_POLL_INTERVAL_SECONDS} seconds",
+            "poll.interval_seconds",
+        )
+    if not interval_seconds <= timeout_seconds <= _MAX_POLL_TIMEOUT_SECONDS:
+        raise _declaration_error(
+            f"must be between the poll interval and {_MAX_POLL_TIMEOUT_SECONDS} seconds", "poll.timeout_seconds"
+        )
+    return EndpointPoll(
+        path=path,
+        job_id=job_id,
+        status=status,
+        done_value=done_value,
+        failed_value=failed_value,
+        result=result,
+        artifact_url=artifact_url,
+        headers=headers,
+        interval_seconds=interval_seconds,
+        timeout_seconds=timeout_seconds,
+    )
+
+
 def validate_endpoint_declaration(declaration: EndpointDeclaration) -> EndpointDeclaration:
     """Validate an already parsed declaration and return it unchanged."""
     if not isinstance(declaration, EndpointDeclaration):
@@ -219,6 +462,16 @@ def validate_endpoint_declaration(declaration: EndpointDeclaration) -> EndpointD
     _validate_headers(declaration.headers)
     _validate_mapping(declaration.body_mapping, field="body", response=False)
     _validate_mapping(declaration.response_mapping, field="response", response=True)
+    if declaration.body_mapping and declaration.body_template is not None:
+        raise _declaration_error("body and body_template are mutually exclusive", "body_template")
+    if declaration.body_template is not None:
+        if not isinstance(declaration.body_template, Mapping):
+            raise _declaration_error("must be an object", "body_template")
+        _validate_template(declaration.body_template, field="body_template")
+    if declaration.poll is not None:
+        if not isinstance(declaration.poll, EndpointPoll):
+            raise _declaration_error("must be an EndpointPoll", "poll")
+        _validate_poll(_poll_to_dict(declaration.poll))
     if not isinstance(declaration.capability_overrides, Mapping):
         raise _declaration_error("must be an object", "capability_overrides")
     for key, value in declaration.capability_overrides.items():
@@ -243,29 +496,71 @@ def parse_endpoint_declaration(raw: object) -> EndpointDeclaration:
     if method not in _DECLARATION_METHODS:
         raise _declaration_error(f"method {method!r} is not allowed", "method")
     path = _validate_path(raw.get("path"))
+    body_raw = raw.get("body", {})
+    body_template_raw = raw.get("body_template")
+    if body_raw and body_template_raw is not None:
+        raise _declaration_error("body and body_template are mutually exclusive", "body_template")
+    if body_template_raw is not None:
+        if not isinstance(body_template_raw, Mapping):
+            raise _declaration_error("must be an object", "body_template")
+        _validate_template(body_template_raw, field="body_template")
 
     declaration = EndpointDeclaration(
         method=method,
         path=path,
         headers=_validate_headers(raw.get("headers", {})),
-        body_mapping=_validate_mapping(raw.get("body", {}), field="body", response=False),
+        body_mapping=_validate_mapping(body_raw, field="body", response=False),
         response_mapping=_validate_mapping(raw.get("response", {}), field="response", response=True),
         capability_overrides=dict(raw.get("capability_overrides", {}))
         if isinstance(raw.get("capability_overrides", {}), Mapping)
         else {},
+        body_template=dict(body_template_raw) if isinstance(body_template_raw, Mapping) else None,
+        poll=_validate_poll(raw.get("poll")),
     )
     if "capability_overrides" in raw and not isinstance(raw["capability_overrides"], Mapping):
         raise _declaration_error("must be an object", "capability_overrides")
     return validate_endpoint_declaration(declaration)
 
 
-def _render_path(path: str, inputs: Mapping[str, object]) -> str:
+def _render_path(path: str, inputs: Mapping[str, object], *, allowed: frozenset[str], allow_empty: bool = False) -> str:
     def replace(match: re.Match[str]) -> str:
-        if "model" not in inputs or not isinstance(inputs["model"], str) or not inputs["model"]:
-            raise _declaration_error("missing non-empty model value", "input")
-        return quote(inputs["model"], safe="-._~")
+        name = match.group(1)
+        if name not in allowed:
+            raise _declaration_error(f"placeholder {{{name}}} is not allowed", "path")
+        value = inputs.get(name)
+        if not isinstance(value, str) or (not value and not allow_empty):
+            raise _declaration_error(f"missing non-empty {name} value", "input")
+        return quote(value, safe="-._~")
 
     return _PATH_PLACEHOLDER.sub(replace, path)
+
+
+def _render_template(value: object, inputs: Mapping[str, object], *, depth: int = 0) -> object:
+    if depth > _MAX_TEMPLATE_DEPTH:
+        raise _declaration_error("nesting is too deep", "body_template")
+    if isinstance(value, str):
+        whole = _TEMPLATE_PLACEHOLDER.fullmatch(value)
+        if whole is not None:
+            name = whole.group(1)
+            if name not in inputs:
+                raise _declaration_error(f"missing input {name!r}", "input")
+            return inputs[name]
+
+        def replace(match: re.Match[str]) -> str:
+            name = match.group(1)
+            if name not in inputs:
+                raise _declaration_error(f"missing input {name!r}", "input")
+            item = inputs[name]
+            if isinstance(item, (Mapping, list)) or item is None:
+                raise _declaration_error(f"input {name!r} must be a scalar for inline interpolation", "input")
+            return str(item)
+
+        return _TEMPLATE_PLACEHOLDER.sub(replace, value)
+    if isinstance(value, Mapping):
+        return {str(key): _render_template(item, inputs, depth=depth + 1) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_render_template(item, inputs, depth=depth + 1) for item in value]
+    return value
 
 
 def _set_body_value(body: dict[str, object], pointer: str, value: object) -> None:
@@ -292,16 +587,73 @@ def render_endpoint_declaration(
     if runtime_headers or "headers" in inputs:
         raise _declaration_error("runtime headers are not permitted", "header")
     body: dict[str, object] = {}
-    for pointer, input_name in declaration.body_mapping.items():
-        if input_name not in inputs:
-            raise _declaration_error(f"missing input {input_name!r}", "input")
-        _set_body_value(body, pointer, inputs[input_name])
+    if declaration.body_template is not None:
+        rendered = _render_template(declaration.body_template, inputs)
+        if not isinstance(rendered, dict):
+            raise _declaration_error("must render to a JSON object", "body_template")
+        body = rendered
+    else:
+        for pointer, input_name in declaration.body_mapping.items():
+            if input_name not in inputs:
+                raise _declaration_error(f"missing input {input_name!r}", "input")
+            _set_body_value(body, pointer, inputs[input_name])
     return RenderedEndpointRequest(
         method=declaration.method,
-        path=_render_path(declaration.path, inputs),
+        path=_render_path(declaration.path, inputs, allowed=frozenset({"model"})),
         headers=dict(declaration.headers),
         body=body,
     )
+
+
+def render_endpoint_poll(declaration: EndpointDeclaration, inputs: Mapping[str, object]) -> RenderedEndpointPoll | None:
+    """Render the declared poll path and headers, if the endpoint declares polling."""
+    validate_endpoint_declaration(declaration)
+    if declaration.poll is None:
+        return None
+    return RenderedEndpointPoll(
+        path=_render_path(declaration.poll.path, inputs, allowed=frozenset({"model", "job_id"})),
+        headers=dict(declaration.poll.headers),
+    )
+
+
+def render_poll_pointer(pointer: str, inputs: Mapping[str, object]) -> str:
+    """Substitute allowed placeholders in a poll JSON pointer, escaping pointer tokens."""
+
+    def replace(match: re.Match[str]) -> str:
+        name = match.group(1)
+        if name not in _POLL_POINTER_PLACEHOLDERS:
+            raise _declaration_error(f"placeholder {{{name}}} is not allowed", "poll")
+        value = inputs.get(name)
+        if not isinstance(value, str) or not value:
+            raise _declaration_error(f"missing non-empty {name} value", "input")
+        return value.replace("~", "~0").replace("/", "~1")
+
+    return _TEMPLATE_PLACEHOLDER.sub(replace, pointer)
+
+
+def get_json_pointer(document: object, pointer: str) -> object:
+    """Read a JSON Pointer-like path from a provider document."""
+    return _pointer_get(document, pointer)
+
+
+def render_endpoint_artifact_url(poll: EndpointPoll, result: object) -> str | None:
+    """Render the artifact URL template from a completed poll result."""
+    if poll.artifact_url is None:
+        return None
+    inputs: dict[str, object] = {}
+    if isinstance(result, Mapping):
+        inputs.update({str(key): value for key, value in result.items()})
+    elif isinstance(result, str):
+        inputs["result"] = result
+
+    def replace(match: re.Match[str]) -> str:
+        name = match.group(1)
+        value = inputs.get(name)
+        if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+            raise _declaration_error(f"artifact URL is missing scalar {name!r}", "poll.artifact_url")
+        return quote(str(value), safe="-._~")
+
+    return _TEMPLATE_PLACEHOLDER.sub(replace, poll.artifact_url)
 
 
 def _pointer_get(document: object, pointer: str) -> object:

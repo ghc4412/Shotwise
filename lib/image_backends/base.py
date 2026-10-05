@@ -11,6 +11,7 @@ from typing import Protocol
 
 import httpx
 
+from lib.outbound_url import validate_outbound_url
 from lib.video_backends.base import IMAGE_MIME_TYPES
 
 
@@ -25,6 +26,8 @@ def image_to_base64_data_uri(image_path: Path) -> str:
 
 async def download_image_to_path(url: str, output_path: Path, *, timeout: int = 60) -> None:
     """从 URL 异步下载图片到本地文件。"""
+    # 产物地址由供应商签发，出站前统一校验形态（query 放行，签名参数常挂在这里）。
+    url = validate_outbound_url(url)
     async with httpx.AsyncClient() as client:
         resp = await client.get(url, timeout=timeout)
         resp.raise_for_status()

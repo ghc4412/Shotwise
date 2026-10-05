@@ -11,6 +11,7 @@ from openai import OpenAI
 from lib.config.anthropic_url import derive_anthropic_endpoints
 from lib.custom_provider.endpoints import endpoint_to_media_type, infer_endpoint
 from lib.httpx_shared import get_http_client
+from lib.outbound_url import validate_outbound_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,9 @@ async def discover_models(
         list of dict: model_id, display_name, endpoint, is_default, is_enabled,
         context_window (尽力而为；端点未提供时为 None)
     """
+    # 三个分支都直接拿 base_url 出站，入口处统一校验一次；为空表示走各家官方默认端点。
+    if base_url:
+        base_url = validate_outbound_base_url(base_url)
     if discovery_format == "openai":
         return await _discover_openai(base_url, api_key)
     elif discovery_format == "google":

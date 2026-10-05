@@ -18,6 +18,10 @@ export interface EndpointDescriptor {
   image_capabilities: ImageCap[] | null;
   /** 执行层是否真的下传尾帧约束；仅 video 类有意义，其余恒为 false。 */
   end_image_capable: boolean;
+  /** 端点来源（builtin = 随应用内置）；纯描述性元数据，不承载安装 / 更新 / 卸载语义。 */
+  source?: string;
+  /** 条目版本；内置端点为 null。 */
+  version?: string | null;
 }
 
 export interface CustomProviderInfo {

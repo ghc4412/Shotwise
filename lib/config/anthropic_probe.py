@@ -21,6 +21,7 @@ import httpx
 from lib.agent_provider_catalog import CUSTOM_SENTINEL_ID, get_preset
 from lib.config.anthropic_url import AnthropicEndpoints, derive_anthropic_endpoints
 from lib.httpx_shared import get_http_client
+from lib.outbound_url import validate_outbound_url
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,7 @@ async def _post(
     timeout_s: float,
 ) -> httpx.Response:
     """间接层：测试时 patch 这一个。"""
+    url = validate_outbound_url(url)
     client = get_http_client()
     return await client.post(url, headers=headers, json=payload, timeout=timeout_s)
 
@@ -168,6 +170,7 @@ def classify_probe_failure(result: ProbeResult) -> DiagnosisCode:
 
 async def _get(*, url: str, headers: dict[str, str], timeout_s: float) -> httpx.Response:
     """间接层：测试时 patch 这一个。"""
+    url = validate_outbound_url(url)
     client = get_http_client()
     return await client.get(url, headers=headers, timeout=timeout_s)
 

@@ -380,3 +380,133 @@ class TestDeclarativeEndpointRuntime:
         assert isinstance(result, CustomVideoBackend)
         assert result.endpoint == "openai-video"
         assert result.video_capabilities.max_reference_images == 1
+
+
+class _FakeResponse:
+    def __init__(self, payload: object = None, *, content: bytes = b"") -> None:
+        self._payload = payload
+        self.content = content
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> object:
+        return self._payload
+
+
+class _FakeAsyncClient:
+    def __init__(self, responses: list[_FakeResponse]) -> None:
+        self._responses = responses
+        self.calls: list[tuple[str, str]] = []
+
+    async def __aenter__(self) -> _FakeAsyncClient:
+        return self
+
+    async def __aexit__(self, *args: object) -> bool:
+        return False
+
+    async def request(self, method: str, url: str, **kwargs: object) -> _FakeResponse:
+        self.calls.append((method, url))
+        return self._responses.pop(0)
+
+    async def get(self, url: str, **kwargs: object) -> _FakeResponse:
+        self.calls.append(("GET", url))
+        return self._responses.pop(0)
+
+
+def _comfy_declaration() -> dict[str, object]:
+    return {
+        "method": "POST",
+        "path": "/prompt",
+        "body_template": {"prompt": {"9": {"inputs": {"text": "{prompt}"}}}},
+        "response": {},
+        "poll": {
+            "path": "/history/{job_id}",
+            "job_id": "/prompt_id",
+            "status": "/{job_id}/status/status_str",
+            "done_value": "success",
+            "failed_value": "error",
+            "result": "/{job_id}/outputs/9/images/0",
+            "artifact_url": "/view?filename={filename}&subfolder={subfolder}&type={type}",
+            "interval_seconds": 0.05,
+            "timeout_seconds": 5,
+        },
+    }
+
+
+async def test_declarative_image_poll_downloads_artifact(tmp_path) -> None:
+    from lib.custom_provider.backends import DeclarativeImageDelegate
+    from lib.custom_provider.endpoints import parse_endpoint_declaration
+    from lib.image_backends.base import ImageGenerationRequest
+
+    declaration = parse_endpoint_declaration(_comfy_declaration())
+    submit = _FakeAsyncClient([_FakeResponse({"prompt_id": "job-1"})])
+    poll = _FakeAsyncClient(
+        [
+            _FakeResponse({"job-1": {"status": {"status_str": "processing"}}}),
+            _FakeResponse(
+                {
+                    "job-1": {
+                        "status": {"status_str": "success"},
+                        "outputs": {"9": {"images": [{"filename": "out.png", "subfolder": "", "type": "output"}]}},
+                    }
+                }
+            ),
+        ]
+    )
+    download = _FakeAsyncClient([_FakeResponse(content=b"image-bytes")])
+    delegate = DeclarativeImageDelegate(
+        provider_id="custom-42",
+        base_url="https://relay.example.com",
+        api_key="sk-test",
+        model="comfy",
+        declaration=declaration,
+    )
+
+    with patch("lib.custom_provider.backends.httpx.AsyncClient", side_effect=[submit, poll, download]):
+        result = await delegate.generate(
+            ImageGenerationRequest(prompt="a cat", output_path=tmp_path / "out.png", seed=7)
+        )
+
+    assert result.image_path == tmp_path / "out.png"
+    assert (tmp_path / "out.png").read_bytes() == b"image-bytes"
+    assert submit.calls == [("POST", "https://relay.example.com/prompt")]
+    assert poll.calls == [
+        ("GET", "https://relay.example.com/history/job-1"),
+        ("GET", "https://relay.example.com/history/job-1"),
+    ]
+    assert download.calls == [("GET", "https://relay.example.com/view?filename=out.png&subfolder=&type=output")]
+
+
+async def test_declarative_image_poll_raises_on_failed_status(tmp_path) -> None:
+    from lib.custom_provider.backends import DeclarativeImageDelegate
+    from lib.custom_provider.endpoints import parse_endpoint_declaration
+    from lib.image_backends.base import ImageGenerationRequest
+
+    declaration = parse_endpoint_declaration(_comfy_declaration())
+    submit = _FakeAsyncClient([_FakeResponse({"prompt_id": "job-1"})])
+    poll = _FakeAsyncClient([_FakeResponse({"job-1": {"status": {"status_str": "error"}}})])
+    delegate = DeclarativeImageDelegate(
+        provider_id="custom-42",
+        base_url="https://relay.example.com",
+        api_key="sk-test",
+        model="comfy",
+        declaration=declaration,
+    )
+
+    with (
+        patch("lib.custom_provider.backends.httpx.AsyncClient", side_effect=[submit, poll]),
+        pytest.raises(RuntimeError, match="failed"),
+    ):
+        await delegate.generate(ImageGenerationRequest(prompt="a cat", output_path=tmp_path / "out.png"))
+
+
+def test_declarative_poll_rejected_on_non_image_endpoint() -> None:
+    provider = _make_provider()
+    with pytest.raises(ValueError, match="poll is only supported on image endpoints"):
+        create_custom_backend(
+            provider=provider,
+            model_id="sora-2",
+            endpoint="openai-video",
+            endpoint_declaration=_comfy_declaration(),
+        )

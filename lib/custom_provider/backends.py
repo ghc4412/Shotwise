@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 from collections.abc import Mapping
@@ -21,6 +22,7 @@ from lib.audio_backends.base import (
     VoiceOption,
 )
 from lib.image_backends.base import ImageBackend, ImageCapability, ImageGenerationRequest, ImageGenerationResult
+from lib.outbound_url import validate_outbound_base_url, validate_outbound_url
 from lib.text_backends.base import TextBackend, TextCapability, TextGenerationRequest, TextGenerationResult
 from lib.video_backends.base import (
     VideoBackend,
@@ -36,6 +38,36 @@ def _declarative_url(base_url: str, path: str) -> str:
     return base_url.rstrip("/") + path
 
 
+async def _post_declarative_raw(
+    *,
+    base_url: str,
+    api_key: str,
+    declaration,
+    model: str,
+    inputs: Mapping[str, object],
+) -> object:
+    from lib.custom_provider.endpoints import render_endpoint_declaration
+
+    # 声明式端点的出站根是用户配置值，发起请求前统一校验形态。
+    effective_base_url = validate_outbound_base_url(base_url)
+    rendered = render_endpoint_declaration(declaration, inputs)
+    headers = dict(rendered.headers)
+    headers.setdefault("Authorization", f"Bearer {api_key}")
+    async with httpx.AsyncClient() as client:
+        response = await client.request(
+            rendered.method,
+            _declarative_url(effective_base_url, rendered.path),
+            headers=headers,
+            json=rendered.body,
+            timeout=120,
+        )
+    response.raise_for_status()
+    try:
+        return response.json()
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise ValueError(f"declarative endpoint returned non-JSON response for {model}") from exc
+
+
 async def _post_declarative(
     *,
     base_url: str,
@@ -44,25 +76,117 @@ async def _post_declarative(
     model: str,
     inputs: Mapping[str, object],
 ) -> dict[str, object]:
-    from lib.custom_provider.endpoints import normalize_endpoint_response, render_endpoint_declaration
+    from lib.custom_provider.endpoints import normalize_endpoint_response
 
-    rendered = render_endpoint_declaration(declaration, inputs)
-    headers = dict(rendered.headers)
-    headers.setdefault("Authorization", f"Bearer {api_key}")
-    async with httpx.AsyncClient() as client:
-        response = await client.request(
-            rendered.method,
-            _declarative_url(base_url, rendered.path),
-            headers=headers,
-            json=rendered.body,
-            timeout=120,
-        )
-    response.raise_for_status()
-    try:
-        document = response.json()
-    except (ValueError, json.JSONDecodeError) as exc:
-        raise ValueError(f"declarative endpoint returned non-JSON response for {model}") from exc
+    document = await _post_declarative_raw(
+        base_url=base_url,
+        api_key=api_key,
+        declaration=declaration,
+        model=model,
+        inputs=inputs,
+    )
     return normalize_endpoint_response(declaration, document)
+
+
+async def _poll_declarative(
+    *,
+    base_url: str,
+    api_key: str,
+    declaration,
+    model: str,
+    submission: object,
+) -> object:
+    """Read the submitted job id and poll the declared status endpoint until it finishes."""
+    from lib.custom_provider.endpoints import get_json_pointer, render_endpoint_poll, render_poll_pointer
+
+    poll = declaration.poll
+    if poll is None:
+        return None
+    if not isinstance(submission, Mapping):
+        raise ValueError(f"declarative endpoint returned non-object submission for {model}")
+    effective_base_url = validate_outbound_base_url(base_url)
+    job_pointer = render_poll_pointer(poll.job_id, {"model": model})
+    try:
+        job_id_value = get_json_pointer(submission, job_pointer)
+    except (IndexError, KeyError, TypeError) as exc:
+        raise ValueError(f"declarative endpoint submission is missing job id at {job_pointer!r}") from exc
+    if isinstance(job_id_value, bool) or not isinstance(job_id_value, (str, int)):
+        raise ValueError(f"declarative endpoint job id must be a string or integer, got {job_id_value!r}")
+    job_id = str(job_id_value)
+    pointer_inputs: dict[str, object] = {"model": model, "job_id": job_id}
+    poll_request = render_endpoint_poll(declaration, pointer_inputs)
+    if poll_request is None:
+        return None
+    status_pointer = render_poll_pointer(poll.status, pointer_inputs)
+    result_pointer = None if poll.result is None else render_poll_pointer(poll.result, pointer_inputs)
+    headers = dict(poll_request.headers)
+    headers.setdefault("Authorization", f"Bearer {api_key}")
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + poll.timeout_seconds
+    last_status: object = None
+    async with httpx.AsyncClient() as client:
+        while True:
+            response = await client.get(
+                _declarative_url(effective_base_url, poll_request.path), headers=headers, timeout=120
+            )
+            response.raise_for_status()
+            try:
+                document = response.json()
+            except (ValueError, json.JSONDecodeError) as exc:
+                raise ValueError(f"declarative endpoint returned non-JSON poll response for {model}") from exc
+            try:
+                status = get_json_pointer(document, status_pointer)
+            except (IndexError, KeyError, TypeError):
+                status = None
+            else:
+                if poll.failed_value is not None and status == poll.failed_value:
+                    raise RuntimeError(f"declarative endpoint job {job_id} failed with status {status!r}")
+                if status == poll.done_value:
+                    if result_pointer is None:
+                        return None
+                    try:
+                        return get_json_pointer(document, result_pointer)
+                    except (IndexError, KeyError, TypeError) as exc:
+                        raise ValueError(
+                            f"declarative endpoint completed without a result at {result_pointer!r}"
+                        ) from exc
+            last_status = status
+            if loop.time() >= deadline:
+                raise TimeoutError(
+                    f"declarative endpoint job {job_id} did not finish within {poll.timeout_seconds:g}s "
+                    f"(last status {last_status!r})"
+                )
+            await asyncio.sleep(poll.interval_seconds)
+
+
+async def _store_image_value(value: object, output_path: Path) -> None:
+    if isinstance(value, str) and value.startswith("data:"):
+        value = value.split(",", 1)[-1]
+    if isinstance(value, str) and not value.startswith("http"):
+        await _write_bytes(output_path, base64.b64decode(value))
+        return
+    from lib.image_backends.base import download_image_to_path
+
+    await download_image_to_path(str(value), output_path)
+
+
+async def _store_polled_image(*, base_url: str, poll, result: object, output_path: Path) -> None:
+    from lib.custom_provider.endpoints import render_endpoint_artifact_url
+
+    url = render_endpoint_artifact_url(poll, result)
+    if url is None:
+        await _store_image_value(result, output_path)
+        return
+    if not url.startswith("http") and not url.startswith("data:"):
+        url = _declarative_url(validate_outbound_base_url(base_url), url)
+    if url.startswith("data:"):
+        await _store_image_value(url, output_path)
+        return
+    artifact_url = validate_outbound_url(url)
+    async with httpx.AsyncClient() as client:
+        response = await client.get(artifact_url, timeout=120)
+    response.raise_for_status()
+    await _write_bytes(output_path, response.content)
 
 
 def _request_inputs(model: str, **values: object) -> dict[str, object]:
@@ -136,30 +260,45 @@ class DeclarativeImageDelegate:
         return {ImageCapability.TEXT_TO_IMAGE}
 
     async def generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
-        response = await _post_declarative(
-            base_url=self._base_url,
-            api_key=self._api_key,
-            declaration=self._declaration,
-            model=self._model,
-            inputs=_request_inputs(
-                self._model,
-                prompt=request.prompt,
-                aspect_ratio=request.aspect_ratio,
-                image_size=request.image_size,
-                seed=request.seed,
-                reference_images=request.reference_images,
-            ),
+        inputs = _request_inputs(
+            self._model,
+            prompt=request.prompt,
+            aspect_ratio=request.aspect_ratio,
+            image_size=request.image_size,
+            seed=request.seed,
+            reference_images=request.reference_images,
         )
-        value = _response_value(response, "image_url", "result_url", "url", "image_base64", "b64_json")
-        if isinstance(value, str) and value.startswith("data:"):
-            value = value.split(",", 1)[-1]
-        if isinstance(value, str) and not value.startswith("http"):
-            content = base64.b64decode(value)
-            await _write_bytes(request.output_path, content)
+        if self._declaration.poll is not None:
+            submission = await _post_declarative_raw(
+                base_url=self._base_url,
+                api_key=self._api_key,
+                declaration=self._declaration,
+                model=self._model,
+                inputs=inputs,
+            )
+            result = await _poll_declarative(
+                base_url=self._base_url,
+                api_key=self._api_key,
+                declaration=self._declaration,
+                model=self._model,
+                submission=submission,
+            )
+            await _store_polled_image(
+                base_url=self._base_url,
+                poll=self._declaration.poll,
+                result=result,
+                output_path=request.output_path,
+            )
         else:
-            from lib.image_backends.base import download_image_to_path
-
-            await download_image_to_path(str(value), request.output_path)
+            response = await _post_declarative(
+                base_url=self._base_url,
+                api_key=self._api_key,
+                declaration=self._declaration,
+                model=self._model,
+                inputs=inputs,
+            )
+            value = _response_value(response, "image_url", "result_url", "url", "image_base64", "b64_json")
+            await _store_image_value(value, request.output_path)
         return ImageGenerationResult(
             image_path=request.output_path,
             provider=self._provider_id,
@@ -256,8 +395,10 @@ class DeclarativeAudioDelegate:
         )
         value = _response_value(response, "audio_url", "result_url", "url", "audio_base64", "b64_json")
         if isinstance(value, str) and value.startswith("http"):
+            # 产物地址由供应商签发，出站前统一校验形态（query 放行，签名参数常挂在这里）。
+            audio_url = validate_outbound_url(value)
             async with httpx.AsyncClient() as client:
-                download = await client.get(value, timeout=120)
+                download = await client.get(audio_url, timeout=120)
             download.raise_for_status()
             content = download.content
         else:
