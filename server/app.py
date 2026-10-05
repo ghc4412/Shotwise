@@ -77,6 +77,7 @@ from server.routers import (
     products,
     project_events,
     projects,
+    prompt_registry,
     props,
     providers,
     publishing,
@@ -729,6 +730,9 @@ app.include_router(
 )
 app.include_router(agent_chat.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["Agent 对话"])
 app.include_router(agent_config.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["Agent 配置"])
+app.include_router(
+    prompt_registry.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["提示词模板"]
+)
 app.include_router(
     custom_providers.router, prefix="/api/v1", dependencies=[Depends(get_current_user)], tags=["自定义供应商"]
 )
