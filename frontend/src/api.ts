@@ -101,6 +101,10 @@ import type {
 } from "@/types";
 import type { GenerationRoute } from "@/utils/generation-mode";
 import type { GridCapability, GridGeneration } from "@/types/grid";
+import type {
+  PromptRegistryResponse,
+  PromptTemplateDetailResponse,
+} from "@/types/prompt-registry";
 import type { Asset, AssetType, AssetCreatePayload, AssetUpdatePayload } from "@/types/asset";
 import type {
   CreateDurableBatchRequest,
@@ -731,6 +735,19 @@ class API {
 
   static async getSystemVersion(): Promise<GetSystemVersionResponse> {
     return this.request("/system/version");
+  }
+
+  // ==================== 提示词模板注册表 ====================
+
+  /** 全部提示词模板的元数据（不含正文），顺序即设置页展示顺序。 */
+  static async getPromptRegistry(): Promise<PromptRegistryResponse> {
+    return this.request("/prompts/registry");
+  }
+
+  /** 单条提示词模板的元数据与正文；path 是相对 profile 根目录的 POSIX 路径。 */
+  static async getPromptTemplate(path: string): Promise<PromptTemplateDetailResponse> {
+    const encoded = path.split("/").map(encodeURIComponent).join("/");
+    return this.request(`/prompts/registry/${encoded}`);
   }
 
   // ==================== 首次使用引导 ====================
@@ -2272,15 +2289,19 @@ class API {
 
   static async cancelAllPreview(
     projectName: string
-  ): Promise<{ queued_count: number }> {
+  ): Promise<{ active_count: number }> {
     return this.request(
       `/projects/${encodeURIComponent(projectName)}/tasks/cancel-all-preview`
     );
   }
 
-  static async cancelAllQueued(
+  static async cancelAllActive(
     projectName: string
-  ): Promise<{ cancelled_count: number; skipped_running_count: number }> {
+  ): Promise<{
+    cancelled_count: number;
+    cancelling_count: number;
+    skipped_terminal_count: number;
+  }> {
     return this.request(
       `/projects/${encodeURIComponent(projectName)}/tasks/cancel-all`,
       { method: "POST" }

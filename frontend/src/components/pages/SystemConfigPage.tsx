@@ -7,6 +7,7 @@ import {
   Brain,
   Bot,
   ChevronLeft,
+  FileText,
   Film,
   Info,
   KeyRound,
@@ -24,6 +25,7 @@ import { AboutSection } from "./settings/AboutSection";
 import { AppearanceSection } from "./settings/AppearanceSection";
 import { MediaModelSection } from "./settings/MediaModelSection";
 import { MemorySection } from "./settings/MemorySection";
+import { PromptRegistrySection } from "./settings/PromptRegistrySection";
 import { ProviderSection } from "./ProviderSection";
 import { UsageStatsSection } from "./settings/UsageStatsSection";
 import {
@@ -40,7 +42,16 @@ import { consumeSettingsReturnTo } from "@/utils/settings-return-to";
 // Types
 // ---------------------------------------------------------------------------
 
-type SettingsSection = "agent" | "providers" | "media" | "usage" | "api-keys" | "memory" | "appearance" | "about";
+type SettingsSection =
+  | "agent"
+  | "providers"
+  | "media"
+  | "usage"
+  | "api-keys"
+  | "memory"
+  | "prompt-templates"
+  | "appearance"
+  | "about";
 
 /** 引导第 5/6 步指向的侧栏入口——只有这两项挂锚点，其余小节不在当前引导覆盖范围内。 */
 const SECTION_ONBOARDING_ANCHORS: Partial<Record<SettingsSection, string>> = {
@@ -85,6 +96,7 @@ const SECTION_GROUPS: SectionGroup[] = [
     kickerKey: "dashboard:settings_group_system",
     items: [
       { id: "appearance", labelKey: "dashboard:appearance", Icon: Palette },
+      { id: "prompt-templates", labelKey: "dashboard:prompt_registry_nav_title", Icon: FileText },
       { id: "about", labelKey: "dashboard:about", Icon: Info },
     ],
   },
@@ -106,6 +118,7 @@ export function SystemConfigPage() {
     if (section === "usage") return "usage";
     if (section === "api-keys") return "api-keys";
     if (section === "memory") return "memory";
+    if (section === "prompt-templates") return "prompt-templates";
     if (section === "appearance") return "appearance";
     if (section === "about") return "about";
     return "providers";
@@ -330,6 +343,7 @@ export function SystemConfigPage() {
               {activeSection === "media" && <MediaModelSection />}
               {activeSection === "usage" && <UsageStatsSection />}
               {activeSection === "memory" && <MemorySection />}
+              {activeSection === "prompt-templates" && <PromptRegistrySection />}
               {activeSection === "api-keys" && (
                 <div className="p-6">
                   <ApiKeysTab />

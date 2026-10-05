@@ -5,10 +5,12 @@ step2 视觉生成（step2 由 agent 的 generate_episode_script 执行，读时
 drama（utterances + source_text）与 narration（结构化 novel_text）共用本机制。
 """
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Body
 
+from lib import pending_authoring
 from lib.api_errors import NotFoundError
 from lib.i18n import Translator
 from lib.project_manager import get_project_manager
@@ -74,6 +76,28 @@ async def get_script_review(project_name: str, episode: int, _t: Translator):
         return state
     except ScriptReviewError as exc:
         raise_review_error(exc, episode, _t)
+    except FileNotFoundError as exc:
+        raise NotFoundError("project_not_found", name=project_name) from exc
+
+
+@router.get("/projects/{project_name}/episodes/{episode}/pending-authoring")
+async def get_pending_authoring(project_name: str, episode: int):
+    """列出该集官方剧本里「正文变了、视觉层待重新编写」的条目（只读推导，不落盘）。
+
+    供时间线 / 分镜列表按 ``pending_authoring`` 显示「待编写」徽标，以及对「只重写有改动的
+    条目」做提示。判定口径与范围（step1 侧改动权威、剧本侧改动仅提示）见
+    ``lib.pending_authoring`` 的模块 docstring；这里只把纯计算卸载到线程、原样返回报告。
+    """
+    try:
+        manager = get_project_manager()
+        project = await asyncio.to_thread(manager.load_project, project_name)
+        report = await asyncio.to_thread(
+            pending_authoring.pending_authoring_report,
+            manager.get_project_path(project_name),
+            project,
+            episode,
+        )
+        return report.to_dict()
     except FileNotFoundError as exc:
         raise NotFoundError("project_not_found", name=project_name) from exc
 
