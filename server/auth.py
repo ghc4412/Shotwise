@@ -225,6 +225,7 @@ def ensure_auth_password(env_path: str | None = None) -> str:
         当前的 AUTH_PASSWORD 值；关闭认证时返回空串。
     """
     if not is_auth_enabled():
+        logger.warning("AUTH_ENABLED=false：认证已关闭，任意凭据均可通过校验，请勿暴露到不可信网络")
         return ""
     password = os.environ.get("AUTH_PASSWORD")
     if password:

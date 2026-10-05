@@ -137,11 +137,13 @@ class OpenAIImageBackend:
     ):
         # max_retries=0：把重试收敛到 generate() 的 with_retry_async 单层（text/audio
         # backend 同此约定），避免 SDK 内建重试与外层重试相乘放大单任务总时长。
+        # 同一超时同时作为整个 generate 操作的墙钟预算，避免每次重试都重新获得完整超时。
+        self._request_timeout = _resolve_request_timeout(timeout)
         self._client = create_openai_client(
             api_key=api_key,
             base_url=base_url,
             max_retries=0,
-            timeout=_resolve_request_timeout(timeout),
+            timeout=self._request_timeout,
         )
         self._model = model or DEFAULT_MODEL
         self._capabilities = set(self._MODE_TO_CAPS[mode])
@@ -158,8 +160,13 @@ class OpenAIImageBackend:
     def capabilities(self) -> set[ImageCapability]:
         return self._capabilities
 
-    @with_retry_async(retryable_errors=OPENAI_RETRYABLE_ERRORS)
     async def generate(self, request: ImageGenerationRequest) -> ImageGenerationResult:
+        # 超时是整次生成操作的预算，调用方不会因内部重试再等一个完整的 600s 窗口。
+        async with asyncio.timeout(self._request_timeout):
+            return await self._generate_with_retry(request)
+
+    @with_retry_async(retryable_errors=OPENAI_RETRYABLE_ERRORS)
+    async def _generate_with_retry(self, request: ImageGenerationRequest) -> ImageGenerationResult:
         has_refs = bool(request.reference_images)
         if has_refs and ImageCapability.IMAGE_TO_IMAGE not in self._capabilities:
             raise ImageCapabilityError("image_endpoint_mismatch_no_i2i", model=self._model)

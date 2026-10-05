@@ -34,7 +34,13 @@ def _conflict(exc: service.RenderRevisionConflictError | service.RenderJobConfli
 
 
 def _artifact_file_response(metadata: dict[str, Any], path) -> FileResponse:
-    return FileResponse(path, media_type=metadata["mime_type"], filename=path.name)
+    # 渲染产物字节来自生成流水线、mime_type 由元数据驱动，加 nosniff 防内容嗅探型 XSS。
+    return FileResponse(
+        path,
+        media_type=metadata["mime_type"],
+        filename=path.name,
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
 
 
 def _not_ready(exc: service.FinalRenderNotReadyError) -> HTTPException:

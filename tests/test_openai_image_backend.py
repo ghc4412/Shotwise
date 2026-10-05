@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -12,6 +13,7 @@ from lib.image_backends import ImageCapabilityError
 from lib.image_backends.base import (
     ImageCapability,
     ImageGenerationRequest,
+    ImageGenerationResult,
     ReferenceImage,
 )
 from lib.providers import PROVIDER_OPENAI
@@ -565,3 +567,25 @@ class TestOpenAIImageBackendRequestBounds:
         monkeypatch.setenv("IMAGE_REQUEST_TIMEOUT_SECONDS", raw)
         captured = self._capture_client_kwargs(monkeypatch)
         assert captured["timeout"] == 600.0
+
+    @pytest.mark.asyncio
+    async def test_generate_total_timeout_cancels_retry_loop(self, monkeypatch, tmp_path):
+        """整个生成操作的超时应包住重试循环，而不是每次尝试各跑满一次超时。"""
+        monkeypatch.setattr("lib.openai_shared.AsyncOpenAI", lambda **kwargs: None)
+        from lib.image_backends.openai import OpenAIImageBackend
+
+        backend = OpenAIImageBackend(api_key="k", timeout=0.02)
+        calls = 0
+
+        async def _never_returns(request: ImageGenerationRequest) -> ImageGenerationResult:
+            nonlocal calls
+            calls += 1
+            await asyncio.sleep(0.1)
+            raise ConnectionError("connection reset")
+
+        backend._generate_create = _never_returns
+        request = ImageGenerationRequest(prompt="p", output_path=tmp_path / "o.png")
+
+        with pytest.raises(TimeoutError):
+            await backend.generate(request)
+        assert calls == 1

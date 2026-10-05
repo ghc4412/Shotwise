@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from lib.api_errors import BadRequestError, NotFoundError
+from lib.path_safety import safe_join, try_safe_join
 from lib.resource_paths import RESOURCE_TYPES as _RESOURCE_TYPES
 from lib.resource_paths import resource_extension
 
@@ -105,9 +106,13 @@ class VersionManager:
             # 添加 is_current 和 file_url 字段
             versions = []
             for v in resource_data.get("versions", []):
+                raw_file = v.get("file")
+                # versions.json 可被篡改：file 越界时不为它生成指向项目外的 URL，直接跳过该条。
+                if not isinstance(raw_file, str) or try_safe_join(self.project_path, raw_file) is None:
+                    continue
                 version_info = v.copy()
                 version_info["is_current"] = v["version"] == resource_data["current_version"]
-                version_info["file_url"] = f"/api/v1/files/{self.project_path.name}/{v['file']}"
+                version_info["file_url"] = f"/api/v1/files/{self.project_path.name}/{raw_file}"
                 versions.append(version_info)
 
             return {"current_version": resource_data.get("current_version", 0), "versions": versions}
@@ -236,7 +241,10 @@ class VersionManager:
                 if not basename.startswith(prefix):
                     continue
                 new_basename = f"{new_id}_v{basename[len(prefix) :]}"
-                src = self.project_path / version["file"]
+                src = try_safe_join(self.project_path, version["file"])
+                if src is None:
+                    # 元数据 file 越界：不搬动项目外的文件，也不改写该条记录。
+                    continue
                 dst = self.versions_dir / resource_type / new_basename
                 if src.exists():
                     src.replace(dst)
@@ -347,9 +355,9 @@ class VersionManager:
             if not target_version:
                 raise NotFoundError("version_not_found", version=version)
 
-            target_file = self.project_path / target_version["file"]
-            if not target_file.exists():
-                raise FileNotFoundError(f"版本文件不存在: {target_file}")
+            # versions.json 是持久化元数据、可被篡改：回读的 file 必须落在项目内，越界抛
+            # PathTraversalError；目标缺失抛 FileNotFoundError（与 versions.py 同口径）。
+            target_file = safe_join(self.project_path, target_version["file"], require_file=True)
 
             current_file.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(target_file, current_file)

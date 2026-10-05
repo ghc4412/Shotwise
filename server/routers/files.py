@@ -213,8 +213,10 @@ async def serve_project_file(project_name: str, path: str, request: Request, _t:
 
         file_path = await asyncio.to_thread(_sync)
 
-        # 内容寻址缓存：带 ?v= 参数或 versions/ 路径时设 immutable
-        headers = {}
+        # 内容寻址缓存：带 ?v= 参数或 versions/ 路径时设 immutable。
+        # X-Content-Type-Options 一并设置：本路由服务的字节来自用户上传/生成，缺 nosniff
+        # 时浏览器可能把非图片内容嗅探成 HTML/脚本，构成存储型 XSS 向量。
+        headers = {"X-Content-Type-Options": "nosniff"}
         if request.query_params.get("v") or path.startswith("versions/"):
             headers["Cache-Control"] = "public, max-age=31536000, immutable"
 
@@ -242,7 +244,8 @@ async def serve_global_asset(asset_type: str, filename: str, _t: Translator):
     if not path.is_file():
         raise HTTPException(status_code=404, detail=_t("file_not_found", path=filename))
 
-    return FileResponse(str(path))
+    # 与 serve_project_file 同口径：全局资产字节同样来自用户上传/生成，禁内容嗅探。
+    return FileResponse(str(path), headers={"X-Content-Type-Options": "nosniff"})
 
 
 @router.post("/projects/{project_name}/upload/{upload_type}")

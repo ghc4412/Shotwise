@@ -124,7 +124,13 @@ async def get_media_content(project_id: str, media_asset_id: str):
         raise HTTPException(status_code=404, detail="media_file_not_found") from exc
     if not (project_root / safe_path).is_file():
         raise HTTPException(status_code=404, detail="media_file_not_found")
-    return FileResponse(project_root / safe_path, media_type=asset.get("mime_type"), filename=asset["original_name"])
+    # mime_type / 文件名由资产记录驱动（用户上传或生成内容），加 nosniff 防内容嗅探型 XSS。
+    return FileResponse(
+        project_root / safe_path,
+        media_type=asset.get("mime_type"),
+        filename=asset["original_name"],
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
 
 
 @router.get("/projects/{project_id}/media-assets/{media_asset_id}")

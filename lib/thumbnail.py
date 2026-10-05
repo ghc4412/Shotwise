@@ -8,6 +8,14 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# 子进程 deadline：损坏/超长视频会让 ffmpeg/ffprobe 永久挂起，占死当次 asyncio 任务。
+# 按操作开销分档——读容器元数据瞬时返回，全量解码统计帧数最慢，抽帧居中。超时一律
+# kill 回收，不等已僵死的子进程。
+_PROBE_METADATA_TIMEOUT_SECONDS = 10.0
+_PROBE_COUNT_FRAMES_TIMEOUT_SECONDS = 120.0
+_EXTRACT_FRAME_TIMEOUT_SECONDS = 60.0
+_THUMBNAIL_TIMEOUT_SECONDS = 30.0
+
 
 @functools.cache
 def _ffmpeg_available() -> bool:
@@ -55,9 +63,12 @@ async def extract_video_thumbnail(
 
     thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
 
+    proc: asyncio.subprocess.Process | None = None
     try:
         proc = await asyncio.create_subprocess_exec(
             "ffmpeg",
+            "-protocol_whitelist",
+            "file",
             "-i",
             str(video_path),
             "-vframes",
@@ -69,15 +80,21 @@ async def extract_video_thumbnail(
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        await proc.wait()
-
-        if proc.returncode != 0 or not thumbnail_path.exists():
-            return None
-
-        return thumbnail_path
+        await asyncio.wait_for(proc.wait(), timeout=_THUMBNAIL_TIMEOUT_SECONDS)
+    except TimeoutError:
+        if proc is not None:
+            proc.kill()
+            await proc.wait()
+        logger.warning("提取视频缩略图超时: %s", video_path)
+        return None
     except Exception:
         logger.warning("提取视频缩略图失败: %s", video_path, exc_info=True)
         return None
+
+    if proc.returncode != 0 or not thumbnail_path.exists():
+        return None
+
+    return thumbnail_path
 
 
 async def _probe_frame_count(video_path: Path, *, count_frames: bool) -> int | None:
@@ -98,16 +115,25 @@ async def _probe_frame_count(video_path: Path, *, count_frames: bool) -> int | N
         entry,
         "-of",
         "csv=p=0",
+        "-protocol_whitelist",
+        "file",
         str(video_path),
     ]
+    timeout = _PROBE_COUNT_FRAMES_TIMEOUT_SECONDS if count_frames else _PROBE_METADATA_TIMEOUT_SECONDS
 
+    probe: asyncio.subprocess.Process | None = None
     try:
         probe = await asyncio.create_subprocess_exec(
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
         )
-        stdout, _ = await probe.communicate()
+        stdout, _ = await asyncio.wait_for(probe.communicate(), timeout=timeout)
+    except TimeoutError:
+        if probe is not None:
+            probe.kill()
+            await probe.wait()
+        return None
     except (FileNotFoundError, OSError):
         return None
 
@@ -129,22 +155,34 @@ async def _extract_frame_at_index(
     if temp_path.exists():
         temp_path.unlink()
 
-    proc = await asyncio.create_subprocess_exec(
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(video_path),
-        "-vf",
-        f"select='eq(n\\,{frame_index})'",
-        "-fps_mode",
-        "vfr",
-        "-frames:v",
-        "1",
-        str(temp_path),
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
-    )
-    await proc.wait()
+    proc: asyncio.subprocess.Process | None = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-y",
+            "-protocol_whitelist",
+            "file",
+            "-i",
+            str(video_path),
+            "-vf",
+            f"select='eq(n\\,{frame_index})'",
+            "-fps_mode",
+            "vfr",
+            "-frames:v",
+            "1",
+            str(temp_path),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await asyncio.wait_for(proc.wait(), timeout=_EXTRACT_FRAME_TIMEOUT_SECONDS)
+    except TimeoutError:
+        if proc is not None:
+            proc.kill()
+            await proc.wait()
+        if temp_path.exists():
+            temp_path.unlink()
+        logger.warning("抽帧超时: %s (frame=%s)", video_path, frame_index)
+        return False
 
     if proc.returncode != 0 or not temp_path.exists() or temp_path.stat().st_size < 1:
         if temp_path.exists():
