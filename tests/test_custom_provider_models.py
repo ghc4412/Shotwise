@@ -49,6 +49,7 @@ class TestCustomProviderTable:
             "image_max_workers",
             "video_max_workers",
             "audio_max_workers",
+            "image_request_timeout_seconds",
             "is_enabled",
             "created_at",
             "updated_at",

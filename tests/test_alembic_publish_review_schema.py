@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import sqlalchemy as sa
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 from alembic import command
 
@@ -16,8 +17,19 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _REVIEW_REVISION = "20260914_render_review_snapshots"
 _PUBLISH_REVISION = "20260914_publish_jobs"
 _ACCOUNTS_REVISION = "20260914_publishing_accounts"
-_HEAD_REVISION = "20260914_publish_job_leases"
 _PARENT_REVISION = "20260913_render_job_active_unique"
+
+
+def _resolve_head_revision() -> str:
+    """Resolve the live single alembic head so appended migrations keep this contract honest."""
+    cfg = Config(str(PROJECT_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(PROJECT_ROOT / "alembic"))
+    heads = ScriptDirectory.from_config(cfg).get_heads()
+    assert len(heads) == 1, f"expected exactly one alembic head, got {heads}"
+    return heads[0]
+
+
+_HEAD_REVISION = _resolve_head_revision()
 
 
 @pytest.fixture

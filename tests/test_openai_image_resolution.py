@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from lib.image_backends.base import ImageCapability, ImageGenerationRequest, ReferenceImage
-from lib.image_backends.openai import OpenAIImageBackend
+from lib.image_backends.openai import DEFAULT_REQUEST_TIMEOUT_SECONDS, OpenAIImageBackend
 
 pytestmark = pytest.mark.unit
 
@@ -22,6 +22,8 @@ def _make_backend():
     backend._model = "gpt-image-2"
     # 全能力（默认 mode="both"），让 generate() 的 capability gating 放行 T2I 与 I2I
     backend._capabilities = {ImageCapability.TEXT_TO_IMAGE, ImageCapability.IMAGE_TO_IMAGE}
+    # generate() 以墙钟预算包裹整次操作，__new__ 绕过 __init__ 时需显式补齐
+    backend._request_timeout = DEFAULT_REQUEST_TIMEOUT_SECONDS
     return backend
 
 
