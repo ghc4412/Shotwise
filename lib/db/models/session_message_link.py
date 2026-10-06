@@ -9,7 +9,7 @@ from lib.db.base import Base, TimestampMixin, UserOwnedMixin
 
 
 class AgentSessionUserMessageLink(TimestampMixin, UserOwnedMixin, Base):
-    """ArcReel 合成的用户消息 id ↔ SDK transcript entry uuid 的映射。
+    """Shotwise 合成的用户消息 id ↔ SDK transcript entry uuid 的映射。
 
     事件日志（agent_session_event_log）与 transcript 镜像（agent_session_entries）
     是两套独立的 id 体系，同一条用户消息在两边各有身份。本表把二者的对应关系

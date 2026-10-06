@@ -24,7 +24,7 @@ IMAGE_ONLY_SENTINEL = "__image_only__"
 class PendingUserEcho:
     """待 SDK 回放的用户消息：识别指纹 + 其事件日志条目身份。
 
-    ``entry_uuid`` 是 ArcReel 合成的用户消息 id，随命中的回放副本一起交给写入点，
+    ``entry_uuid`` 是 Shotwise 合成的用户消息 id，随命中的回放副本一起交给写入点，
     与副本携带的 SDK transcript uuid 配成映射落库。条目尚未分配身份时为 None，
     此时只做去重、不落映射。
     """
