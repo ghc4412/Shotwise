@@ -7,6 +7,7 @@ from lib.media_assembly.plan import (
     AssemblyPlanValidationError,
     assert_transition,
     resolve_timeline_sources,
+    resolve_timeline_transitions,
     source_fingerprint,
     validate_plan_document,
 )
@@ -69,6 +70,72 @@ def test_timeline_rejects_empty_trimmed_duration_and_bad_audio_policy() -> None:
         validate_plan_document(**document)
     codes = {error["code"] for error in exc_info.value.errors}
     assert {"empty_after_trim", "invalid_audio_policy"} <= codes
+
+
+def test_timeline_transition_types_and_duration_constraints() -> None:
+    for transition_type in ("fade", "dissolve", "wipe"):
+        document = _document()
+        document["timeline"] = [
+            {
+                "id": "unit-1",
+                "order": 0,
+                "kind": "video_unit",
+                "source_ref": "media/unit-1.mp4",
+                "duration_seconds": 8,
+                "transition": {"type": transition_type, "duration_seconds": 1},
+            }
+        ]
+        validate_plan_document(**document)
+
+    unknown = _document()
+    unknown["timeline"] = [
+        {
+            "id": "unit-1",
+            "order": 0,
+            "kind": "video_unit",
+            "source_ref": "media/unit-1.mp4",
+            "duration_seconds": 8,
+            "transition": {"type": "cube", "duration_seconds": 1},
+        }
+    ]
+    _assert_invalid(unknown, "unsupported_transition")
+
+    missing_duration = _document()
+    missing_duration["timeline"] = [
+        {
+            "id": "unit-1",
+            "order": 0,
+            "kind": "video_unit",
+            "source_ref": "media/unit-1.mp4",
+            "duration_seconds": 8,
+            "transition": {"type": "fade"},
+        }
+    ]
+    _assert_invalid(missing_duration, "positive_number_required")
+
+    hard_cut = _document()
+    hard_cut["timeline"] = [
+        {
+            "id": "unit-1",
+            "order": 0,
+            "kind": "video_unit",
+            "source_ref": "media/unit-1.mp4",
+            "duration_seconds": 8,
+            "transition": {"type": "cut", "duration_seconds": 0},
+        }
+    ]
+    validate_plan_document(**hard_cut)
+
+
+def test_resolve_timeline_transitions_degrades_invalid_or_crowded_overlaps() -> None:
+    assert resolve_timeline_transitions(
+        [("fade", 1), ("dissolve", 2)],
+        [4.0, 5.0, 6.0],
+    ) == [1.0, 2.0]
+    assert resolve_timeline_transitions([("fade", 1)], [1.0, 5.0]) == [0.0]
+    assert resolve_timeline_transitions([("cube", 1), ("fade", 1)], [5.0, 5.0, 5.0]) == [0.0, 1.0]
+    assert resolve_timeline_transitions([("fade", 2), ("dissolve", 2)], [5.0, 3.0, 5.0]) == [0.0, 2.0]
+    assert resolve_timeline_transitions([("fade", 0), ("dissolve", -1)], [5.0, 5.0, 5.0]) == [0.0, 0.0]
 
 
 def test_subtitle_cues_must_not_overlap() -> None:

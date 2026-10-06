@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Mapping, Sequence
 from typing import Any, TypeGuard
 
@@ -22,6 +23,10 @@ PLAN_STATUSES = frozenset(
 )
 
 _RUNNING_STATUSES = frozenset({"preview_pending", "render_pending", "rendering"})
+
+SUPPORTED_TIMELINE_TRANSITIONS = frozenset({"cut", "fade", "dissolve", "wipe"})
+
+RENDERABLE_TIMELINE_TRANSITIONS = frozenset(SUPPORTED_TIMELINE_TRANSITIONS - {"cut"})
 
 
 class AssemblyPlanValidationError(ValueError):
@@ -132,18 +137,28 @@ def _validate_timeline(value: Any, errors: list[dict[str, Any]]) -> None:
         if transition is not None:
             transition_obj = _mapping(transition, f"{path}.transition", errors)
             if transition_obj is not None:
-                _non_empty_string(transition_obj.get("type"), f"{path}.transition.type", errors)
-                transition_duration = transition_obj.get("duration_seconds", 0)
-                if _non_negative_number(transition_duration, f"{path}.transition.duration_seconds", errors):
-                    if isinstance(duration, (int, float)) and isinstance(transition_duration, (int, float)):
-                        if transition_duration >= duration:
-                            errors.append(
-                                _error(
-                                    f"{path}.transition.duration_seconds",
-                                    "transition_too_long",
-                                    "transition must be shorter than the item",
-                                )
+                transition_type = transition_obj.get("type")
+                if _non_empty_string(transition_type, f"{path}.transition.type", errors):
+                    if transition_type not in SUPPORTED_TIMELINE_TRANSITIONS:
+                        errors.append(
+                            _error(
+                                f"{path}.transition.type",
+                                "unsupported_transition",
+                                "transition type must be cut, fade, dissolve, or wipe",
                             )
+                        )
+                transition_duration = transition_obj.get("duration_seconds", 0)
+                if transition_type == "cut":
+                    _non_negative_number(transition_duration, f"{path}.transition.duration_seconds", errors)
+                elif _positive_number(transition_duration, f"{path}.transition.duration_seconds", errors):
+                    if isinstance(duration, (int, float)) and transition_duration >= duration:
+                        errors.append(
+                            _error(
+                                f"{path}.transition.duration_seconds",
+                                "transition_too_long",
+                                "transition must be shorter than the item",
+                            )
+                        )
 
     if seen_orders and seen_orders != set(range(len(value))):
         errors.append(_error("timeline", "non_contiguous_order", "timeline order must be contiguous from zero"))
@@ -262,6 +277,43 @@ def resolve_timeline_sources(timeline: Any, source_snapshot: Any) -> list[Any]:
     return resolved
 
 
+def resolve_timeline_transitions(
+    transitions: Sequence[tuple[object, object]],
+    durations: Sequence[float | None],
+) -> list[float]:
+    """Resolve declared timeline transitions into the overlap each boundary renders.
+
+    A declared transition degrades to a hard cut when its type is not renderable,
+    its duration is not a positive number, either neighbouring clip is too short to
+    carry the overlap, or the clip between two overlaps cannot carry both.  Entries
+    line up with the boundaries between consecutive timeline items, so callers can
+    subtract their sum from the runtime a hard-cut assembly would produce.
+    """
+    boundaries = [0.0] * max(min(len(durations), len(transitions) + 1) - 1, 0)
+    for index in range(len(boundaries)):
+        declared_type, declared_duration = transitions[index]
+        if declared_type not in RENDERABLE_TIMELINE_TRANSITIONS:
+            continue
+        if isinstance(declared_duration, bool) or not isinstance(declared_duration, (int, float)):
+            continue
+        overlap = float(declared_duration)
+        if not math.isfinite(overlap) or overlap <= 0:
+            continue
+        left = durations[index]
+        right = durations[index + 1]
+        if left is None or right is None or left <= overlap or right <= overlap:
+            continue
+        boundaries[index] = overlap
+
+    for index in range(1, len(boundaries)):
+        middle = durations[index]
+        if middle is None or boundaries[index - 1] <= 0 or boundaries[index] <= 0:
+            continue
+        if middle < boundaries[index - 1] + boundaries[index]:
+            boundaries[index - 1] = 0.0
+    return boundaries
+
+
 def _validate_packaging(value: Any, errors: list[dict[str, Any]]) -> None:
     packaging = _mapping(value, "packaging", errors)
     if packaging is None:
@@ -352,10 +404,13 @@ __all__ = [
     "AssemblyPlanTransitionError",
     "AssemblyPlanValidationError",
     "PLAN_STATUSES",
+    "RENDERABLE_TIMELINE_TRANSITIONS",
+    "SUPPORTED_TIMELINE_TRANSITIONS",
     "assert_transition",
     "is_running_status",
     "packaging_section_enabled",
     "resolve_timeline_sources",
+    "resolve_timeline_transitions",
     "source_fingerprint",
     "validate_plan_document",
 ]

@@ -264,6 +264,37 @@ async def test_create_plan_accepts_legacy_agent_timeline_shape(
 
 
 @pytest.mark.unit
+def test_service_timeline_emits_supported_transition_metadata() -> None:
+    manifest = {"items": [{"unit_id": "E1S01", "source": {"path": "videos/E1S01.mp4"}}]}
+
+    timeline = episode_editing._service_timeline(
+        [
+            {
+                "unit_id": "E1S01",
+                "duration_seconds": 6,
+                "transition_to_next": "fade",
+                "transition_duration_seconds": 0.75,
+            }
+        ],
+        manifest,
+    )
+
+    assert timeline[0]["transition"] == {"type": "fade", "duration_seconds": 0.75}
+
+    defaulted = episode_editing._service_timeline(
+        [{"unit_id": "E1S01", "duration_seconds": 6, "transition_to_next": "wipe"}],
+        manifest,
+    )
+    assert defaulted[0]["transition"] == {"type": "wipe", "duration_seconds": 0.5}
+
+    with pytest.raises(ValueError, match="transition_to_next"):
+        episode_editing._service_timeline(
+            [{"unit_id": "E1S01", "duration_seconds": 6, "transition_to_next": "cube"}],
+            manifest,
+        )
+
+
+@pytest.mark.unit
 async def test_create_plan_reports_structured_domain_validation_errors(
     ctx: ToolContext, monkeypatch: pytest.MonkeyPatch
 ) -> None:

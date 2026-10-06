@@ -58,6 +58,121 @@ def test_timeline_clips_reject_project_escape(tmp_path: Path) -> None:
     assert exc_info.value.code == "source_file_missing"
 
 
+def test_timeline_clips_parse_transitions_and_reject_invalid_values(tmp_path: Path) -> None:
+    source = tmp_path / "unit.mp4"
+    source.write_bytes(b"source")
+
+    clips = rendering.resolve_timeline_clips(
+        [
+            {
+                "source_ref": "unit.mp4",
+                "duration_seconds": 4,
+                "transition": {"type": "dissolve", "duration_seconds": 0.75},
+            }
+        ],
+        project_root=tmp_path,
+    )
+
+    assert clips[0].transition_type == "dissolve"
+    assert clips[0].transition_duration_seconds == 0.75
+
+    with pytest.raises(rendering.RenderToolError) as exc_info:
+        rendering.resolve_timeline_clips(
+            [{"source_ref": "unit.mp4", "transition": {"type": "cube", "duration_seconds": 1}}],
+            project_root=tmp_path,
+        )
+    assert exc_info.value.code == "transition_type_invalid"
+
+    with pytest.raises(rendering.RenderToolError) as exc_info:
+        rendering.resolve_timeline_clips(
+            [{"source_ref": "unit.mp4", "transition": {"type": "fade", "duration_seconds": 0}}],
+            project_root=tmp_path,
+        )
+    assert exc_info.value.code == "transition_duration_invalid"
+
+
+def test_build_concat_filter_chains_xfade_and_acrossfade_with_offsets() -> None:
+    clips = [
+        rendering.TimelineClip(
+            path=Path("a.mp4"),
+            start_seconds=0,
+            duration_seconds=4,
+            transition_type="fade",
+            transition_duration_seconds=1,
+        ),
+        rendering.TimelineClip(
+            path=Path("b.mp4"),
+            start_seconds=0,
+            duration_seconds=5,
+            transition_type="wipe",
+            transition_duration_seconds=0.5,
+        ),
+        rendering.TimelineClip(path=Path("c.mp4"), start_seconds=0, duration_seconds=3),
+    ]
+
+    graph = rendering.build_concat_filter(
+        clips,
+        probes=[{"audio_present": True}] * 3,
+        width=480,
+        height=854,
+        fps=30,
+    )
+
+    assert "xfade=transition=fade:duration=1.000000:offset=3.000000" in graph
+    assert "xfade=transition=wipeleft:duration=0.500000:offset=7.500000" in graph
+    assert graph.count("acrossfade=d=") == 2
+    assert "concat=n=3" not in graph
+
+
+def test_build_concat_filter_keeps_cut_boundaries_between_xfade_groups() -> None:
+    clips = [
+        rendering.TimelineClip(path=Path("a.mp4"), start_seconds=0, duration_seconds=3),
+        rendering.TimelineClip(
+            path=Path("b.mp4"),
+            start_seconds=0,
+            duration_seconds=2,
+            transition_type="fade",
+            transition_duration_seconds=0.5,
+        ),
+        rendering.TimelineClip(path=Path("c.mp4"), start_seconds=0, duration_seconds=4),
+    ]
+
+    graph = rendering.build_concat_filter(
+        clips,
+        probes=[{"audio_present": True}] * 3,
+        width=480,
+        height=854,
+        fps=30,
+    )
+
+    assert "xfade=transition=fade:duration=0.500000:offset=1.500000" in graph
+    assert "concat=n=2:v=1:a=1[outv][outa]" in graph
+
+
+def test_build_concat_filter_degrades_transition_on_too_short_clip() -> None:
+    clips = [
+        rendering.TimelineClip(
+            path=Path("a.mp4"),
+            start_seconds=0,
+            duration_seconds=0.25,
+            transition_type="fade",
+            transition_duration_seconds=0.5,
+        ),
+        rendering.TimelineClip(path=Path("b.mp4"), start_seconds=0, duration_seconds=3),
+    ]
+
+    graph = rendering.build_concat_filter(
+        clips,
+        probes=[{"audio_present": True}] * 2,
+        width=480,
+        height=854,
+        fps=30,
+    )
+
+    assert "xfade" not in graph
+    assert "concat=n=2:v=1:a=1[outv][outa]" in graph
+
+
 async def test_preview_uses_direct_process_args_and_validates_probe(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -90,6 +90,33 @@ def test_expected_timeline_duration_applies_trim() -> None:
     )
 
 
+def test_expected_timeline_duration_subtracts_renderable_transition_overlap() -> None:
+    assert (
+        expected_timeline_duration(
+            [
+                {
+                    "duration_seconds": 10,
+                    "transition": {"type": "fade", "duration_seconds": 2},
+                },
+                {"duration_seconds": 5},
+            ]
+        )
+        == 13
+    )
+    assert (
+        expected_timeline_duration(
+            [
+                {
+                    "duration_seconds": 1,
+                    "transition": {"type": "fade", "duration_seconds": 2},
+                },
+                {"duration_seconds": 5},
+            ]
+        )
+        == 6
+    )
+
+
 def test_black_frame_classification_marks_edges_and_middle() -> None:
     result = classify_black_frame_edges(
         [
