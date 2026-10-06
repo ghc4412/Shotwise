@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.30.0](https://github.com/ghc4412/Shotwise/compare/v0.29.0...v0.30.0) (2026-10-06)
+
+
+### ✨ 新功能
+
+* **assembly:** make render jobs durable with progress and cancellation ([#80](https://github.com/ghc4412/Shotwise/issues/80)) ([07a1927](https://github.com/ghc4412/Shotwise/commit/07a19270ecd0e15f9854be7b5ccfed673686b52e))
+* **assembly:** render supported timeline transitions ([#79](https://github.com/ghc4412/Shotwise/issues/79)) ([ad1ec0c](https://github.com/ghc4412/Shotwise/commit/ad1ec0c3004a4d92e3f5a83ddd78c1d9d6d8cd15))
+* **usage:** add call provenance and failure classification ([#78](https://github.com/ghc4412/Shotwise/issues/78)) ([c252475](https://github.com/ghc4412/Shotwise/commit/c2524757f72a72b6a8f6f90470042f4c193d58fa))
+
+
+### 🐛 Bug 修复
+
+* **jianying:** export reference video drafts across modes ([#76](https://github.com/ghc4412/Shotwise/issues/76)) ([a3b30c5](https://github.com/ghc4412/Shotwise/commit/a3b30c5bfdad465ee41af3b68c91444792557b8d))
+
 ## [0.29.0](https://github.com/ghc4412/Shotwise/compare/v0.28.0...v0.29.0) (2026-10-06)
 
 
