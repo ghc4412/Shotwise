@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from lib.db.base import Base
@@ -17,14 +17,15 @@ class RenderJob(Base):
     __table_args__ = (
         Index("ix_render_jobs_user_project_status", "user_id", "project_name", "status"),
         Index("ix_render_jobs_plan_revision", "plan_id", "revision_number"),
+        Index("ix_render_jobs_heartbeat", "status", "heartbeat_at"),
         Index(
             "uq_render_jobs_active_plan_revision_kind",
             "plan_id",
             "revision_number",
             "kind",
             unique=True,
-            sqlite_where=text("status IN ('queued', 'running')"),
-            postgresql_where=text("status IN ('queued', 'running')"),
+            sqlite_where=text("status IN ('queued', 'running', 'cancelling')"),
+            postgresql_where=text("status IN ('queued', 'running', 'cancelling')"),
         ),
     )
 
@@ -40,8 +41,13 @@ class RenderJob(Base):
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="3")
     input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    progress: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    progress_stage: Mapped[str] = mapped_column(String(32), nullable=False, server_default="queued")
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

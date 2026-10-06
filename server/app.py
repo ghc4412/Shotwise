@@ -99,6 +99,8 @@ from server.services.project_events import ProjectEventService
 from server.services.publishing_adapters import get_publishing_adapter
 from server.services.publishing_events import emit_publish_job_event
 from server.services.publishing_worker import PublishingWorker
+from server.services.render_events import emit_render_job_event
+from server.services.render_worker import RenderWorker
 from server.services.workflow_execution import workflow_executor_loop
 
 # Windows 事件循环修正的兜底：reload 模式的完整修复见 server/run_dev.py（uvicorn
@@ -490,6 +492,12 @@ async def lifespan(app: FastAPI):
     await publishing_worker.start()
     logger.info("PublishingWorker 已启动")
 
+    logger.info("启动 RenderWorker...")
+    render_worker = create_render_worker()
+    app.state.render_worker = render_worker
+    await render_worker.start()
+    logger.info("RenderWorker 已启动")
+
     logger.info("启动 WorkflowExecutor...")
     workflow_executor_task = asyncio.create_task(workflow_executor_loop())
     app.state.workflow_executor_task = workflow_executor_task
@@ -507,6 +515,11 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
         logger.info("WorkflowExecutor 已停止")
+    render_worker = getattr(app.state, "render_worker", None)
+    if render_worker:
+        logger.info("正在停止 RenderWorker...")
+        await render_worker.stop()
+        logger.info("RenderWorker 已停止")
     publishing_worker = getattr(app.state, "publishing_worker", None)
     if publishing_worker:
         logger.info("正在停止 PublishingWorker...")
@@ -772,6 +785,16 @@ def create_publishing_worker() -> PublishingWorker:
     return PublishingWorker(
         session_factory=async_session_factory,
         adapter_registry=get_publishing_adapter,
+        on_job_updated=on_job_updated,
+    )
+
+
+def create_render_worker() -> RenderWorker:
+    def on_job_updated(job) -> None:
+        emit_render_job_event(job.project_name, job.id)
+
+    return RenderWorker(
+        session_factory=async_session_factory,
         on_job_updated=on_job_updated,
     )
 

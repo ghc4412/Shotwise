@@ -25,6 +25,7 @@ import type {
   AssemblyPackagingConfig,
   AssemblyPlanRevision,
   AssemblyRenderJob,
+  AssemblyRenderJobStatus,
   AssemblyFinalReview,
   AssemblyFinalReviewFramePosition,
   AssemblySubtitleMode,
@@ -119,6 +120,88 @@ function errorMessage(reason: unknown): string {
 
 const FINAL_REVIEW_POSITIONS: AssemblyFinalReviewFramePosition[] = ["first", "middle", "last"];
 
+const RENDER_JOB_ACTIVE_STATUSES: AssemblyRenderJobStatus[] = ["queued", "running", "cancelling"];
+const RENDER_JOB_RETRYABLE_STATUSES: AssemblyRenderJobStatus[] = ["failed", "cancelled"];
+
+function isRenderJobActive(job: AssemblyRenderJob | null): boolean {
+  return job != null && RENDER_JOB_ACTIVE_STATUSES.includes(job.status);
+}
+
+function isRenderJobRetryable(job: AssemblyRenderJob | null): boolean {
+  return job != null && RENDER_JOB_RETRYABLE_STATUSES.includes(job.status);
+}
+
+function renderJobProgressRatio(job: AssemblyRenderJob): number {
+  if (!Number.isFinite(job.progress)) return 0;
+  return Math.min(1, Math.max(0, job.progress));
+}
+
+function clampPercent(value: number): number {
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
+
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+type RenderJobKind = "preview" | "final";
+
+function renderJobStatusLabel(job: AssemblyRenderJob, kind: RenderJobKind, t: Translate): string {
+  switch (job.status) {
+    case "queued":
+      return kind === "final" ? t("assembly_final_render_queued") : t("assembly_preview_pending");
+    case "running":
+      return kind === "final" ? t("assembly_final_rendering") : t("assembly_preview_rendering");
+    case "cancelling":
+      return t("assembly_status_cancelling");
+    case "succeeded":
+      return kind === "final" ? t("assembly_final_render_completed") : t("assembly_preview_ready");
+    case "failed":
+      return kind === "final" ? t("assembly_final_render_failed") : t("assembly_status_failed");
+    case "cancelled":
+      return kind === "final" ? t("assembly_final_render_cancelled") : t("assembly_preview_render_cancelled");
+  }
+}
+
+function renderJobStageLabel(job: AssemblyRenderJob, t: Translate): string {
+  const stage = typeof job.progress_stage === "string" ? job.progress_stage.trim() : "";
+  if (!stage) return t("assembly_render_stage_pending");
+  switch (stage) {
+    case "preparing":
+      return t("assembly_render_stage_preparing");
+    case "rendering_video":
+      return t("assembly_render_stage_rendering_video");
+    case "burning_subtitles":
+      return t("assembly_render_stage_burning_subtitles");
+    case "finalizing":
+      return t("assembly_render_stage_finalizing");
+    default:
+      // Unknown machine-readable stages are surfaced verbatim rather than hidden.
+      return t("assembly_render_stage_unknown", { stage });
+  }
+}
+
+function RenderJobProgress({ job, testId, t }: { job: AssemblyRenderJob; testId: string; t: Translate }) {
+  const ratio = renderJobProgressRatio(job);
+  const percent = clampPercent(ratio * 100);
+  return (
+    <div className="mt-3" data-testid={testId}>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-[var(--color-text-3)]">
+        <span data-testid={`${testId}-stage`}>{renderJobStageLabel(job, t)}</span>
+        <span data-testid={`${testId}-percent`}>{t("assembly_render_progress", { percent })}</span>
+      </div>
+      <div
+        className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-shell-field)]"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent}
+        aria-label={renderJobStageLabel(job, t)}
+      >
+        <div className="h-full rounded-full bg-[var(--color-accent)] transition-[width]" style={{ width: `${percent}%` }} />
+      </div>
+    </div>
+  );
+}
+
 export interface AssemblyPlanPageProps {
   projectName: string;
 }
@@ -153,13 +236,17 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
   const [finalJob, setFinalJob] = useState<AssemblyRenderJob | null>(null);
   const [creatingFinalRender, setCreatingFinalRender] = useState(false);
   const [retryingFinalRender, setRetryingFinalRender] = useState(false);
+  const [cancellingFinalJob, setCancellingFinalJob] = useState(false);
   const [finalRenderError, setFinalRenderError] = useState<string | null>(null);
+  const [finalCancelError, setFinalCancelError] = useState<string | null>(null);
   const [confirmingPlan, setConfirmingPlan] = useState(false);
   const [planConfirmError, setPlanConfirmError] = useState<string | null>(null);
   const [previewJob, setPreviewJob] = useState<AssemblyRenderJob | null>(null);
   const [creatingPreviewRender, setCreatingPreviewRender] = useState(false);
   const [retryingPreviewRender, setRetryingPreviewRender] = useState(false);
+  const [cancellingPreviewJob, setCancellingPreviewJob] = useState(false);
   const [previewRenderError, setPreviewRenderError] = useState<string | null>(null);
+  const [previewCancelError, setPreviewCancelError] = useState<string | null>(null);
   const refreshedPreviewJobRef = useRef<string | null>(null);
   const [finalArtifactBlob, setFinalArtifactBlob] = useState<{ jobId: string; url: string } | null>(null);
   const [finalReview, setFinalReview] = useState<AssemblyFinalReview | null>(null);
@@ -229,6 +316,10 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
       setConfirmingPlan(false);
       setCreatingPreviewRender(false);
       setRetryingPreviewRender(false);
+      setCancellingFinalJob(false);
+      setFinalCancelError(null);
+      setCancellingPreviewJob(false);
+      setPreviewCancelError(null);
       refreshedPreviewJobRef.current = null;
       return;
     }
@@ -253,6 +344,10 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
     setConfirmingPlan(false);
     setCreatingPreviewRender(false);
     setRetryingPreviewRender(false);
+    setCancellingFinalJob(false);
+    setFinalCancelError(null);
+    setCancellingPreviewJob(false);
+    setPreviewCancelError(null);
     refreshedPreviewJobRef.current = null;
     void API.getAssemblyPlan(matchingPlan.id, { signal: controller.signal })
       .then(setPlan)
@@ -292,11 +387,13 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
   const previewConfirmed = Boolean(plan?.preview_confirmed_by && plan?.preview_confirmed_at);
   const renderConfirmed = Boolean(plan?.render_confirmed_by && plan?.render_confirmed_at);
   const finalRenderAvailable = true;
-  const finalRenderRunning = finalJob?.status === "queued" || finalJob?.status === "running";
+  const finalRenderRunning = isRenderJobActive(finalJob);
+  const finalRenderCancelling = finalJob?.status === "cancelling";
+  const finalRenderCancelled = finalJob?.status === "cancelled";
   const finalRenderCompleted = finalJob?.status === "succeeded";
-  const finalRenderFailed = finalJob?.status === "failed";
-  const previewRenderRunning = previewJob?.status === "queued" || previewJob?.status === "running";
-  const previewRenderFailed = previewJob?.status === "failed";
+  const previewRenderRunning = isRenderJobActive(previewJob);
+  const previewRenderCancelling = previewJob?.status === "cancelling";
+  const previewRenderCancelled = previewJob?.status === "cancelled";
   const previewRenderHasArtifact = Boolean(
     revision && previewRevisionMatches && plan?.preview_artifact && previewUrl && !isStale,
   );
@@ -391,12 +488,13 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
   }, [reviewFrameUrls]);
 
   useEffect(() => {
-    if (!finalJob || !["queued", "running"].includes(finalJob.status)) return;
+    if (finalJob == null || !isRenderJobActive(finalJob)) return;
+    const jobId = finalJob.id;
     let disposed = false;
     let timer: number | undefined;
     const poll = async () => {
       try {
-        const next = await API.getRenderJob(finalJob.id);
+        const next = await API.getRenderJob(jobId);
         if (disposed) return;
         setFinalJob(next);
         setFinalRenderError(null);
@@ -438,7 +536,7 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
 
   useEffect(() => {
     if (!previewJob || !plan) return;
-    if (previewJob.status !== "succeeded" && previewJob.status !== "failed") return;
+    if (previewJob.status !== "succeeded" && previewJob.status !== "failed" && previewJob.status !== "cancelled") return;
     if (refreshedPreviewJobRef.current === previewJob.id) return;
     refreshedPreviewJobRef.current = previewJob.id;
     const planId = plan.id;
@@ -453,7 +551,7 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
   }, [previewJob, plan]);
 
   useEffect(() => {
-    if (!previewJob || !["queued", "running"].includes(previewJob.status)) return;
+    if (previewJob == null || !isRenderJobActive(previewJob)) return;
     const jobId = previewJob.id;
     let disposed = false;
     let timer: number | undefined;
@@ -592,7 +690,7 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
   };
 
   const retryFinalRender = async () => {
-    if (!finalJob || !finalRenderFailed || retryingFinalRender) return;
+    if (!finalJob || !isRenderJobRetryable(finalJob) || retryingFinalRender) return;
     setRetryingFinalRender(true);
     setFinalRenderError(null);
     try {
@@ -605,6 +703,33 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
       setFinalRenderError(errorMessage(reason));
     } finally {
       setRetryingFinalRender(false);
+    }
+  };
+
+  const cancelFinalRender = async () => {
+    if (
+      !plan ||
+      !finalJob ||
+      cancellingFinalJob ||
+      finalJob.status === "cancelling" ||
+      !isRenderJobActive(finalJob)
+    ) {
+      return;
+    }
+    if (!window.confirm(t("assembly_cancel_render_confirm"))) return;
+    const jobId = finalJob.id;
+    const planId = plan.id;
+    setCancellingFinalJob(true);
+    setFinalCancelError(null);
+    try {
+      const job = await API.cancelRenderJob(jobId);
+      setFinalJob(job);
+      const refreshed = await API.getAssemblyPlan(planId).catch(() => null);
+      if (refreshed) setPlan(refreshed);
+    } catch (reason: unknown) {
+      setFinalCancelError(errorMessage(reason));
+    } finally {
+      setCancellingFinalJob(false);
     }
   };
 
@@ -678,7 +803,7 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
   };
 
   const retryPreviewRender = async () => {
-    if (!previewJob || !previewRenderFailed || retryingPreviewRender) return;
+    if (!previewJob || !isRenderJobRetryable(previewJob) || retryingPreviewRender) return;
     setRetryingPreviewRender(true);
     setPreviewRenderError(null);
     try {
@@ -688,6 +813,33 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
       setPreviewRenderError(errorMessage(reason));
     } finally {
       setRetryingPreviewRender(false);
+    }
+  };
+
+  const cancelPreviewRender = async () => {
+    if (
+      !plan ||
+      !previewJob ||
+      cancellingPreviewJob ||
+      previewJob.status === "cancelling" ||
+      !isRenderJobActive(previewJob)
+    ) {
+      return;
+    }
+    if (!window.confirm(t("assembly_cancel_render_confirm"))) return;
+    const jobId = previewJob.id;
+    const planId = plan.id;
+    setCancellingPreviewJob(true);
+    setPreviewCancelError(null);
+    try {
+      const job = await API.cancelRenderJob(jobId);
+      setPreviewJob(job);
+      const refreshed = await API.getAssemblyPlan(planId).catch(() => null);
+      if (refreshed) setPlan(refreshed);
+    } catch (reason: unknown) {
+      setPreviewCancelError(errorMessage(reason));
+    } finally {
+      setCancellingPreviewJob(false);
     }
   };
 
@@ -818,21 +970,50 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
                     data-testid="assembly-generate-preview"
                   >
                     {creatingPreviewRender || previewRenderRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <PlayCircle className="h-3.5 w-3.5" aria-hidden />}
-                    {previewRenderRunning ? t("assembly_preview_rendering") : previewRenderHasArtifact ? t("assembly_regenerate_preview") : t("assembly_generate_preview")}
+                    {previewRenderRunning && previewJob
+                      ? renderJobStatusLabel(previewJob, "preview", t)
+                      : previewRenderHasArtifact
+                        ? t("assembly_regenerate_preview")
+                        : t("assembly_generate_preview")}
                   </button>
                 </div>
               </div>
+              {previewJob && previewRenderRunning ? (
+                <RenderJobProgress job={previewJob} testId="assembly-preview-render-progress" t={t} />
+              ) : null}
               {plan.status === "draft" ? <p className="mt-3 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-amber-800" data-testid="assembly-confirm-plan-hint">{t("assembly_confirm_plan_hint")}</p> : null}
               {previewRenderError || previewJob?.error_message ? (
                 <p className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-700" role="alert" data-testid="assembly-preview-render-error">
                   {t("assembly_preview_render_error", { message: previewRenderError ?? previewJob?.error_message ?? "" })}
                 </p>
               ) : null}
-              {previewRenderFailed ? (
+              {isRenderJobRetryable(previewJob) ? (
                 <button type="button" onClick={() => void retryPreviewRender()} disabled={retryingPreviewRender} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[var(--color-hairline)] px-3 py-2 text-xs font-medium text-[var(--color-text)] disabled:opacity-50" data-testid="assembly-preview-retry">
                   {retryingPreviewRender ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
                   {t("assembly_preview_retry")}
                 </button>
+              ) : null}
+              {previewJob && previewRenderRunning ? (
+                <button
+                  type="button"
+                  onClick={() => void cancelPreviewRender()}
+                  disabled={cancellingPreviewJob || previewRenderCancelling}
+                  className="mt-3 inline-flex items-center gap-2 rounded-lg border border-red-500/40 px-3 py-2 text-xs font-medium text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  data-testid="assembly-preview-cancel"
+                >
+                  {cancellingPreviewJob || previewRenderCancelling ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+                  {t(cancellingPreviewJob || previewRenderCancelling ? "assembly_cancelling_render" : "assembly_cancel_render")}
+                </button>
+              ) : null}
+              {previewCancelError ? (
+                <p className="mt-2 text-xs text-red-700" role="alert" data-testid="assembly-preview-cancel-error">
+                  {t("assembly_cancel_render_error", { message: previewCancelError })}
+                </p>
+              ) : null}
+              {previewRenderCancelled ? (
+                <p className="mt-3 rounded-lg bg-[var(--color-shell-field)] px-3 py-2 text-xs text-[var(--color-text-2)]" data-testid="assembly-preview-cancelled">
+                  {t("assembly_preview_render_cancelled")}
+                </p>
               ) : null}
               {previewUrl ? (
                 <div className="mt-4 overflow-hidden rounded-lg border border-[var(--color-hairline-soft)] bg-black">
@@ -954,7 +1135,7 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
                 </div>
                 <button type="button" onClick={() => void createFinalRender()} disabled={finalRenderBlocked} className="inline-flex items-center gap-2 rounded-lg bg-[var(--color-accent)] px-3 py-2 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-40" data-testid="assembly-final-render">
                   {creatingFinalRender || finalRenderRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Clapperboard className="h-3.5 w-3.5" aria-hidden />}
-                  {finalRenderRunning ? t(finalJob?.status === "queued" ? "assembly_final_render_queued" : "assembly_final_rendering") : t("assembly_final_render")}
+                  {finalRenderRunning && finalJob ? renderJobStatusLabel(finalJob, "final", t) : t("assembly_final_render")}
                 </button>
               </div>
               <ul className="mt-3 grid gap-2 text-xs text-[var(--color-text-2)] md:grid-cols-2">
@@ -989,12 +1170,27 @@ export function AssemblyPlanPage({ projectName }: AssemblyPlanPageProps) {
               {finalJob ? (
                 <div className="mt-3 rounded-lg border border-[var(--color-hairline-soft)] p-3" data-testid="assembly-final-status">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <span className="font-medium text-[var(--color-text)]">{t(finalRenderCompleted ? "assembly_final_render_completed" : finalRenderFailed ? "assembly_final_render_failed" : finalJob.status === "queued" ? "assembly_final_render_queued" : "assembly_final_rendering")}</span>
+                    <span className="font-medium text-[var(--color-text)]">{renderJobStatusLabel(finalJob, "final", t)}</span>
                     <span className="text-[10px] text-[var(--color-text-3)]">{t("assembly_final_render_revision", { revision: finalJob.revision_number })}</span>
                   </div>
                   {finalJob.attempt != null ? <p className="mt-1 text-[10px] text-[var(--color-text-3)]">{t("assembly_final_render_attempt", { attempt: finalJob.attempt, max: finalJob.max_attempts ?? "—" })}</p> : null}
+                  {finalRenderRunning ? <RenderJobProgress job={finalJob} testId="assembly-final-render-progress" t={t} /> : null}
+                  {isRenderJobActive(finalJob) ? (
+                    <button
+                      type="button"
+                      onClick={() => void cancelFinalRender()}
+                      disabled={cancellingFinalJob || finalRenderCancelling}
+                      className="mt-3 inline-flex items-center gap-2 rounded-lg border border-red-500/40 px-3 py-2 text-xs font-medium text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      data-testid="assembly-final-cancel"
+                    >
+                      {cancellingFinalJob || finalRenderCancelling ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}
+                      {t(cancellingFinalJob || finalRenderCancelling ? "assembly_cancelling_render" : "assembly_cancel_render")}
+                    </button>
+                  ) : null}
+                  {finalCancelError ? <p className="mt-2 text-xs text-red-700" role="alert" data-testid="assembly-final-cancel-error">{t("assembly_cancel_render_error", { message: finalCancelError })}</p> : null}
                   {finalRenderError || finalJob.error_message ? <p className="mt-2 text-xs text-red-700" role="alert">{t("assembly_final_render_error", { message: finalRenderError ?? finalJob.error_message })}</p> : null}
-                  {finalRenderFailed ? <button type="button" onClick={() => void retryFinalRender()} disabled={retryingFinalRender} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[var(--color-hairline)] px-3 py-2 text-xs font-medium text-[var(--color-text)] disabled:opacity-50" data-testid="assembly-final-retry">{retryingFinalRender ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}{t("assembly_final_render_retry")}</button> : null}
+                  {finalRenderCancelled ? <p className="mt-3 rounded-lg bg-[var(--color-shell-field)] px-3 py-2 text-xs text-[var(--color-text-2)]" data-testid="assembly-final-cancelled">{t("assembly_final_render_cancelled")}</p> : null}
+                  {isRenderJobRetryable(finalJob) ? <button type="button" onClick={() => void retryFinalRender()} disabled={retryingFinalRender} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[var(--color-hairline)] px-3 py-2 text-xs font-medium text-[var(--color-text)] disabled:opacity-50" data-testid="assembly-final-retry">{retryingFinalRender ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : null}{t("assembly_final_render_retry")}</button> : null}
                 </div>
               ) : null}
               {finalRenderCompleted && finalArtifactUrl ? (
