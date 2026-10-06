@@ -1,4 +1,37 @@
-﻿# Changelog
+# Changelog
+
+## [0.29.0](https://github.com/ghc4412/Shotwise/compare/v0.28.0...v0.29.0) (2026-10-06)
+
+
+### ✨ 新功能
+
+* **assembly:** add plan confirmation and preview rendering controls ([7a7b8c5](https://github.com/ghc4412/Shotwise/commit/7a7b8c5db04e3457671df567e939a88a3de4fbe6))
+* **prompts:** add read-only prompt registry and pending authoring view ([d3ce60d](https://github.com/ghc4412/Shotwise/commit/d3ce60da92c0adca2b6e3fa781d08e79e00e6866))
+* **prompts:** register prompt registry router ([66fbffc](https://github.com/ghc4412/Shotwise/commit/66fbffc5fc884e2287ad7ea4333014fe247e5810))
+* **providers:** validate outbound URLs and declarative poll support ([aa0b915](https://github.com/ghc4412/Shotwise/commit/aa0b9152c3ca8575df38b73b9b3b3fb7d5aca25c))
+* **queue:** cancel all active tasks and sync worker interruption ([aeb8ba7](https://github.com/ghc4412/Shotwise/commit/aeb8ba7f95b56e9a4b8aa662e6ff143ea135bd88))
+* **queue:** expose queue observability snapshot ([8d88aad](https://github.com/ghc4412/Shotwise/commit/8d88aad937e61769a9c1022d9b71df23a353297f))
+* **queue:** split worker-offline from lane-stalled queue alerts ([3136167](https://github.com/ghc4412/Shotwise/commit/3136167f36b9ee616510aa7b715b7bb621e4957a))
+* **queue:** trip unhealthy provider lanes out of rotation ([768e722](https://github.com/ghc4412/Shotwise/commit/768e7229cab3ff1581b61d2974e8d1bc4d559ba9))
+* **settings:** allow per-provider image request timeout ([49a6855](https://github.com/ghc4412/Shotwise/commit/49a68559ef7e19bf4f4501331ebcb06964c936fd))
+
+
+### 🐛 Bug 修复
+
+* **assembly:** localize render errors and allow preview re-renders ([d840d5b](https://github.com/ghc4412/Shotwise/commit/d840d5b2682558a0e0f45fdc041191fc9bc7feeb))
+* **assembly:** persist plan writes and surface preview errors ([f4b77e4](https://github.com/ghc4412/Shotwise/commit/f4b77e4f3f0a9ffb14367cefcdd6569269fabe11))
+* **assembly:** render previews from mixed-resolution timeline sources ([876350c](https://github.com/ghc4412/Shotwise/commit/876350c4586f9155e079f26a9cd6753be23787f9))
+* **security:** harden response headers, path guards, and download timeouts ([6e3e604](https://github.com/ghc4412/Shotwise/commit/6e3e6043e13f8e7fff6174c67163eed6472a6bd0))
+* **settings:** report agent endpoint timeouts separately ([4eb8890](https://github.com/ghc4412/Shotwise/commit/4eb8890ccbd3f675601c1ad2d365988e54e22e06))
+* **ui:** correct task elapsed time and batch design generation ([eaa0efa](https://github.com/ghc4412/Shotwise/commit/eaa0efabb760eb4168f3256b1db37ce1d8ce1d60))
+* **usage:** settle image pending ledger calls on cancel ([cd4277a](https://github.com/ghc4412/Shotwise/commit/cd4277a79269456efb08f92c362fa2f2ac6ad378))
+* **usage:** settle interrupted calls and push usage events ([1ad94f3](https://github.com/ghc4412/Shotwise/commit/1ad94f3a4019d259711f8536011c8017c724002c))
+
+
+### 📚 文档
+
+* **adr:** record task row lease fields as reserved ([12f801f](https://github.com/ghc4412/Shotwise/commit/12f801fdd7effb5aec31ba045fbfd3ebd6b645fa))
+* refine issue tracker and content-mode guidance ([4db7aa5](https://github.com/ghc4412/Shotwise/commit/4db7aa5fa13b2efde733bdd861b1f8e3a09ceb52))
 
 ## [0.24.0](https://github.com/ghc4412/Shotwise/compare/v0.23.0...v0.24.0) (2026-07-29)
 
