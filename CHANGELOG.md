@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.1](https://github.com/ghc4412/Shotwise/compare/v0.30.0...v0.30.1) (2026-10-06)
+
+
+### 📚 文档
+
+* use Shotwise in synthesized user message docstrings ([#81](https://github.com/ghc4412/Shotwise/issues/81)) ([9eb421c](https://github.com/ghc4412/Shotwise/commit/9eb421c2aefad01f4d17f2a9a7cd9c11acf1601f))
+
 ## [0.30.0](https://github.com/ghc4412/Shotwise/compare/v0.29.0...v0.30.0) (2026-10-06)
 
 
