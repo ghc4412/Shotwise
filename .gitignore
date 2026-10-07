@@ -113,8 +113,16 @@ deploy/production/pgdata/
 
 # Local test artifacts
 /.pytest-*/
-/.test-tmp-*/
+/.test-tmp-*
 /.tmp-pytest-*/
 
 # Local generated output
 /output/
+
+# Local scratch / capture artifacts (personal, not shared)
+/memory/
+/.tmp-*
+/.tmp_*
+/.kling-*
+/.recovery-*
+/$null
